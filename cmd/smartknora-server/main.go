@@ -31,6 +31,7 @@ func main() {
 	dbPass := getEnv("SMART_DB_PASSWORD", "postgres")
 	dbName := getEnv("SMART_DB_NAME", "smartknora")
 	redisAddr := getEnv("REDIS_ADDR", "")
+	redisPassword := getEnv("REDIS_PASSWORD", "")
 	jwtSecret := getEnv("SMARTKNORA_JWT_SECRET", "")
 	if jwtSecret == "" {
 		log.Println("WARNING: Using default JWT secret. Set SMARTKNORA_JWT_SECRET in production!")
@@ -56,7 +57,7 @@ func main() {
 	// ── Redis (optional) ───────────────────────────────────────
 	var redisClient *redis.Client
 	if redisAddr != "" {
-		redisClient = redis.NewClient(&redis.Options{Addr: redisAddr})
+		redisClient = redis.NewClient(&redis.Options{Addr: redisAddr, Password: redisPassword})
 		if err := redisClient.Ping(context.Background()).Err(); err != nil {
 			log.Printf("[Redis] Warning: %v", err)
 		} else {

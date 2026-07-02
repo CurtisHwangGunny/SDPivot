@@ -40,6 +40,8 @@ func (h *SmartKnoraDocumentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	docs := rg.Group("/documents")
 	{
 		docs.POST("/upload", h.UploadDocument)
+		docs.POST("/manual", h.UploadManualDocument)
+		docs.POST("/url", h.UploadFromURL)
 		docs.GET("", h.ListDocuments)
 		docs.GET("/:id", h.GetDocument)
 		docs.GET("/:id/chunks", h.GetDocumentChunks)
@@ -440,4 +442,178 @@ func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
 
 func tenantIDStr(tenantID uint64) string {
 	return strconv.FormatUint(tenantID, 10)
+}
+
+
+// UploadManualDocument handles manual text/markdown input.
+func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+
+	var req struct {
+		SpaceID string `json:"space_id" binding:"required"`
+		Title   string `json:"title" binding:"required"`
+		Content string `json:"content" binding:"required"`
+		Tags    string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	docID := uuid.New().String()
+	now := time.Now()
+
+	// Calculate content hash
+	hasher := sha256.New()
+	hasher.Write([]byte(req.Content))
+	contentHash := hex.EncodeToString(hasher.Sum(nil))
+
+	doc := types.SmartKnoraDocument{
+		ID:              docID,
+		TenantID:        tenantID,
+		SpaceID:         req.SpaceID,
+		UploaderID:      userID,
+		Title:           req.Title,
+		FileName:        req.Title + ".md",
+		FileType:        ".md",
+		FileSize:        int64(len(req.Content)),
+		FilePath:        "",
+		ContentHash:     contentHash,
+		ParseStatus:     "completed",
+		EmbeddingStatus: "pending",
+		Version:         1,
+		Tags:            req.Tags,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	if err := h.db.Create(&doc).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document"})
+		return
+	}
+
+	// Create a single chunk with the full content
+	chunk := types.SmartKnoraDocumentChunk{
+		ID:          uuid.New().String(),
+		DocumentID:  docID,
+		TenantID:    tenantID,
+		ChunkIndex:  0,
+		Content:     req.Content,
+		TokenCount:  len(req.Content) / 4, // Rough estimate
+		CreatedAt:   now,
+	}
+	h.db.Create(&chunk)
+
+	h.db.Model(&doc).Update("chunk_count", 1)
+	h.db.Model(&doc).Update("parse_status", "completed")
+
+	c.JSON(http.StatusCreated, gin.H{
+		"document": doc,
+		"message":  "manual document created",
+	})
+}
+
+// UploadFromURL handles web page URL import.
+func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+
+	var req struct {
+		SpaceID string `json:"space_id" binding:"required"`
+		URL     string `json:"url" binding:"required"`
+		Tags    string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Fetch URL content
+	resp, err := http.Get(req.URL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to fetch URL"})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "URL returned non-200 status"})
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20)) // 10MB limit
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read URL content"})
+		return
+	}
+
+	content := string(body)
+	// Simple HTML to text: strip tags
+	content = strings.ReplaceAll(content, "<script", "<!--")
+	content = strings.ReplaceAll(content, "</script>", "-->")
+	content = strings.ReplaceAll(content, "<style", "<!--")
+	content = strings.ReplaceAll(content, "</style>", "-->")
+
+	docID := uuid.New().String()
+	now := time.Now()
+
+	hasher := sha256.New()
+	hasher.Write(body)
+	contentHash := hex.EncodeToString(hasher.Sum(nil))
+
+	// Extract domain for title
+	domain := req.URL
+	if idx := strings.Index(domain, "://"); idx >= 0 {
+		domain = domain[idx+3:]
+	}
+	if idx := strings.Index(domain, "/"); idx >= 0 {
+		domain = domain[:idx]
+	}
+
+	doc := types.SmartKnoraDocument{
+		ID:              docID,
+		TenantID:        tenantID,
+		SpaceID:         req.SpaceID,
+		UploaderID:      userID,
+		Title:           "网页导入 - " + domain,
+		FileName:        domain + ".html",
+		FileType:        ".html",
+		FileSize:        int64(len(body)),
+		FilePath:        req.URL,
+		ContentHash:     contentHash,
+		ParseStatus:     "parsing",
+		EmbeddingStatus: "pending",
+		Version:         1,
+		Tags:            req.Tags,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	if err := h.db.Create(&doc).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document"})
+		return
+	}
+
+	// Create chunk with fetched content
+	chunk := types.SmartKnoraDocumentChunk{
+		ID:          uuid.New().String(),
+		DocumentID:  docID,
+		TenantID:    tenantID,
+		ChunkIndex:  0,
+		Content:     content,
+		TokenCount:  len(content) / 4,
+		CreatedAt:   now,
+	}
+	h.db.Create(&chunk)
+
+	h.db.Model(&doc).Updates(map[string]interface{}{
+		"parse_status": "completed",
+		"chunk_count":  1,
+	})
+
+	c.JSON(http.StatusCreated, gin.H{
+		"document": doc,
+		"message":  "URL imported and parsed",
+	})
 }

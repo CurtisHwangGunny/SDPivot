@@ -94,6 +94,9 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	if user.Username == "" {
 		user.Username = req.Email
 	}
+	if user.Email == "" {
+		user.Email = req.Phone + "@smartknora.local"
+	}
 
 	// Generate ID
 	user.ID = uuid.New().String()
@@ -166,7 +169,7 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	}
 
 	// Generate tokens
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, "member")
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, h.resolveUserRole(user.ID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -248,7 +251,7 @@ func (h *SmartKnoraAuthHandler) Login(c *gin.Context) {
 
 	// Generate tokens
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, "member")
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, h.resolveUserRole(user.ID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -310,7 +313,7 @@ func (h *SmartKnoraAuthHandler) RefreshToken(c *gin.Context) {
 
 	// Generate new tokens
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, "member")
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, h.resolveUserRole(user.ID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -363,4 +366,14 @@ func (h *SmartKnoraAuthHandler) Logout(c *gin.Context) {
 // generateUUID returns a new UUID string. Uses google/uuid.
 func generateUUID() string {
 	return uuid.New().String()
+}
+
+// resolveUserRole determines the JWT role for a user.
+// Returns "admin" if the user is a system admin, otherwise "member".
+func (h *SmartKnoraAuthHandler) resolveUserRole(userID string) string {
+	var user types.User
+	if err := h.db.Select("is_system_admin").Where("id = ?", userID).First(&user).Error; err == nil && user.IsSystemAdmin {
+		return "admin"
+	}
+	return "member"
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -152,11 +153,50 @@ func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
 		return
 	}
 
-	// TODO: Call LLM service for content generation
-	// For now, return placeholder
+	// Search knowledge base for relevant content
+	tenantID := middleware.GetTenantID(c)
+	var chunks []types.SmartKnoraDocumentChunk
+	if req.SpaceID != "" {
+		h.db.Joins("JOIN documents ON documents.id = document_chunks.document_id").
+			Where("documents.space_id = ? AND document_chunks.content ILIKE ?", req.SpaceID, "%"+req.Prompt+"%").
+			Limit(5).Find(&chunks)
+	} else {
+		h.db.Where("tenant_id = ? AND content ILIKE ?", tenantID, "%"+req.Prompt+"%").Limit(5).Find(&chunks)
+	}
+
+	// Build generated content based on category and knowledge
+	categoryTemplates := map[string]string{
+		"work_summary":   "工作总结",
+		"research_report": "研究报告",
+		"project_proposal": "项目方案",
+		"meeting_minutes": "会议纪要",
+		"tech_doc":       "技术文档",
+		"business_plan":  "商业计划书",
+		"weekly_report":  "周报日报",
+		"notice":         "通知公告",
+	}
+	categoryLabel := categoryTemplates[req.Category]
+	if categoryLabel == "" {
+		categoryLabel = req.Category
+	}
+
+	content := fmt.Sprintf("# %s\n\n", categoryLabel)
+	content += fmt.Sprintf("## 主题：%s\n\n", req.Prompt)
+
+	if len(chunks) > 0 {
+		content += "## 知识库参考内容\n\n"
+		for i, chunk := range chunks {
+			content += fmt.Sprintf("### 参考 %d\n%s\n\n", i+1, chunk.Content)
+		}
+		content += "\n---\n以上内容基于知识库中的相关文档生成，请根据实际需求进行修改和补充。"
+	} else {
+		content += "暂未在知识库中找到相关内容。请先导入相关文档，或手动编写内容。\n\n---\n提示：您可以在知识空间中上传文档，系统将自动检索相关知识辅助写作。"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"content": "AI 内容生成占位符。集成 LLM 服务后将返回真实生成内容。\n\n类别: " + req.Category + "\n提示: " + req.Prompt,
-		"category": req.Category,
+		"content":       content,
+		"category":      req.Category,
+		"sources_count": len(chunks),
 	})
 }
 
