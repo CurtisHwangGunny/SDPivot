@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -132,14 +134,38 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 	}
 	h.db.Create(&userMsg)
 
-	// TODO: Call RAG pipeline for AI response
-	// For now, return a placeholder response
+	// Search knowledge base for relevant content
+	sources := "[]"
+	aiContent := "暂未找到相关知识内容。请先在知识空间中导入文档。"
+
+	// Try to find relevant chunks in the user's spaces
+	var chunks []types.SmartKnoraDocumentChunk
+	if session.SpaceID != "" {
+		h.db.Joins("JOIN documents ON documents.id = document_chunks.document_id").
+			Where("documents.space_id = ? AND document_chunks.content ILIKE ?", session.SpaceID, "%"+req.Content+"%").
+			Limit(5).Find(&chunks)
+	} else {
+		h.db.Where("content ILIKE ?", "%"+req.Content+"%").Limit(5).Find(&chunks)
+	}
+
+	if len(chunks) > 0 {
+		// Build response from relevant chunks
+		aiContent = "根据知识库中的内容，为您找到以下相关信息：\n\n"
+		sourceList := []string{}
+		for i, chunk := range chunks {
+			aiContent += fmt.Sprintf("%d. %s\n\n", i+1, chunk.Content)
+			sourceList = append(sourceList, chunk.DocumentID)
+		}
+		sourcesBytes, _ := json.Marshal(sourceList)
+		sources = string(sourcesBytes)
+	}
+
 	aiMsg := types.QAMessage{
 		ID:        uuid.New().String(),
 		SessionID: sessionID,
 		Role:      "assistant",
-		Content:   "这是 AI 回答的占位符。RAG 管道集成后将返回基于知识库的真实回答。",
-		Sources:   "[]",
+		Content:   aiContent,
+		Sources:   sources,
 		CreatedAt: now,
 	}
 	h.db.Create(&aiMsg)
