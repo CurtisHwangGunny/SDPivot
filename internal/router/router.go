@@ -86,6 +86,7 @@ type RouterParams struct {
 	DataSourceCredentialsHandler *handler.DataSourceCredentialsHandler
 	WeKnoraCloudHandler          *handler.WeKnoraCloudHandler
 	WikiPageHandler              *handler.WikiPageHandler
+	SmartKnoraRouter             *SmartKnoraRouter
 }
 
 // NewRouter 创建新的路由
@@ -231,6 +232,11 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler, rbacGuards)
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
+	}
+
+	// Register smartKnora (随越·智枢) routes
+	if params.SmartKnoraRouter != nil {
+		params.SmartKnoraRouter.RegisterRoutes(r)
 	}
 
 	return r
