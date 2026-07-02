@@ -185,10 +185,13 @@ async function handleChangePassword() {
 }
 
 .ops-login-btn {
-  width: 100%;
+  width: 50%;
   height: 40px;
   font-size: 14px;
   margin-top: 8px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
 }
 .error-msg {
   color: #e34d59;
