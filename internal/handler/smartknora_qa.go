@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -17,12 +18,13 @@ import (
 
 // SmartKnoraQAHandler handles AI Q&A sessions.
 type SmartKnoraQAHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	llm *SmartKnoraLLMService
 }
 
 // NewSmartKnoraQAHandler creates a new QA handler.
 func NewSmartKnoraQAHandler(db *gorm.DB) *SmartKnoraQAHandler {
-	return &SmartKnoraQAHandler{db: db}
+	return &SmartKnoraQAHandler{db: db, llm: NewSmartKnoraLLMService(db)}
 }
 
 // RegisterRoutes registers Q&A routes.
@@ -133,21 +135,37 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 	}
 
 	sources := "[]"
-	aiContent := "暂未找到相关知识内容。请先在知识空间中导入文档。"
-	if len(chunks) > 0 {
-		aiContent = "根据知识库中的内容，为您找到以下相关信息：\n\n"
-		sourceSet := map[string]struct{}{}
-		sourceList := []string{}
-		for i, chunk := range chunks {
-			aiContent += fmt.Sprintf("%d. %s\n\n", i+1, chunk.Content)
-			if _, ok := sourceSet[chunk.DocumentID]; !ok {
-				sourceSet[chunk.DocumentID] = struct{}{}
-				sourceList = append(sourceList, chunk.DocumentID)
-			}
+	sourceSet := map[string]struct{}{}
+	sourceList := []string{}
+	for _, chunk := range chunks {
+		if _, ok := sourceSet[chunk.DocumentID]; !ok {
+			sourceSet[chunk.DocumentID] = struct{}{}
+			sourceList = append(sourceList, chunk.DocumentID)
 		}
+	}
+	if len(sourceList) > 0 {
 		sourcesBytes, _ := json.Marshal(sourceList)
 		sources = string(sourcesBytes)
 	}
+
+	systemPrompt := "你是 SmartKnora 的企业知识库问答助手。请严格基于给定参考资料回答；如果参考资料不足，请说明缺少哪些信息。回答要准确、简洁，并优先使用中文。"
+	userPrompt := buildSmartKnoraQAPrompt(req.Content, chunks)
+	llmResult, err := h.llm.Generate(c.Request.Context(), tenantID, systemPrompt, userPrompt, 1400)
+	if err != nil {
+		status := http.StatusBadGateway
+		message := "failed to call configured llm"
+		if errors.Is(err, ErrSmartKnoraLLMNotConfigured) {
+			status = http.StatusPreconditionFailed
+			message = "llm model is not configured. Please configure a KnowledgeQA model in WeKnora model settings first"
+		}
+		c.JSON(status, gin.H{"error": message, "detail": err.Error()})
+		return
+	}
+	aiContent := llmResult.Content
+	if strings.TrimSpace(aiContent) == "" {
+		aiContent = "模型未返回有效内容，请稍后重试。"
+	}
+	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/smartknora/qa/sessions/:id/messages", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
 
 	aiMsg := types.QAMessage{ID: uuid.New().String(), SessionID: sessionID, Role: "assistant", Content: aiContent, Sources: sources, CreatedAt: now}
 	h.db.Create(&aiMsg)
@@ -176,6 +194,22 @@ func escapeQAQuery(input string) string {
 	value = strings.ReplaceAll(value, "%", `\%`)
 	value = strings.ReplaceAll(value, "_", `\_`)
 	return value
+}
+
+func buildSmartKnoraQAPrompt(question string, chunks []types.SmartKnoraDocumentChunk) string {
+	var b strings.Builder
+	b.WriteString("用户问题:\n")
+	b.WriteString(question)
+	b.WriteString("\n\n参考资料:\n")
+	if len(chunks) == 0 {
+		b.WriteString("（未检索到相关知识库内容）\n")
+	} else {
+		for i, chunk := range chunks {
+			b.WriteString(fmt.Sprintf("[%d] 文档ID:%s\n%s\n\n", i+1, chunk.DocumentID, chunk.Content))
+		}
+	}
+	b.WriteString("请输出最终回答，并在必要时说明依据来自哪些参考资料编号。")
+	return b.String()
 }
 
 // GetMessages gets messages in a Q&A session.

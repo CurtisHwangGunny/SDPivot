@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,12 +17,13 @@ import (
 
 // SmartKnoraWritingHandler handles AI writing assistant.
 type SmartKnoraWritingHandler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	llm *SmartKnoraLLMService
 }
 
 // NewSmartKnoraWritingHandler creates a new writing handler.
 func NewSmartKnoraWritingHandler(db *gorm.DB) *SmartKnoraWritingHandler {
-	return &SmartKnoraWritingHandler{db: db}
+	return &SmartKnoraWritingHandler{db: db, llm: NewSmartKnoraLLMService(db)}
 }
 
 // RegisterRoutes registers writing and ops routes.
@@ -152,23 +154,52 @@ func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search knowledge base"})
 		return
 	}
-	categoryTemplates := map[string]string{"work_summary": "工作总结", "research_report": "研究报告", "project_proposal": "项目方案", "meeting_minutes": "会议纪要", "tech_doc": "技术文档", "business_plan": "商业计划书", "weekly_report": "周报日报", "notice": "通知公告"}
-	categoryLabel := categoryTemplates[req.Category]
-	if categoryLabel == "" {
-		categoryLabel = req.Category
-	}
-	content := fmt.Sprintf("# %s\n\n", categoryLabel)
-	content += fmt.Sprintf("## 主题：%s\n\n", req.Prompt)
-	if len(chunks) > 0 {
-		content += "## 知识库参考内容\n\n"
-		for i, chunk := range chunks {
-			content += fmt.Sprintf("### 参考 %d\n%s\n\n", i+1, chunk.Content)
+	categoryLabel := smartKnoraWritingCategoryLabel(req.Category)
+	systemPrompt := "你是 SmartKnora 的企业写作助手。请根据用户写作要求和知识库参考内容生成结构清晰、可直接编辑的中文 Markdown 文稿。不要编造参考资料中没有的事实；如资料不足，请在文末列出需要补充的信息。"
+	userPrompt := buildSmartKnoraWritingPrompt(categoryLabel, req.Prompt, chunks)
+	llmResult, err := h.llm.Generate(c.Request.Context(), tenantID, systemPrompt, userPrompt, 2200)
+	if err != nil {
+		status := http.StatusBadGateway
+		message := "failed to call configured llm"
+		if errors.Is(err, ErrSmartKnoraLLMNotConfigured) {
+			status = http.StatusPreconditionFailed
+			message = "llm model is not configured. Please configure a KnowledgeQA model in WeKnora model settings first"
 		}
-		content += "\n---\n以上内容基于当前租户知识库中的相关文档生成，请根据实际需求进行修改和补充。"
-	} else {
-		content += "暂未在知识库中找到相关内容。请先导入相关文档，或手动编写内容。\n\n---\n提示：您可以在知识空间中上传文档，系统将自动检索相关知识辅助写作。"
+		c.JSON(status, gin.H{"error": message, "detail": err.Error()})
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"content": content, "category": req.Category, "sources_count": len(chunks)})
+	content := llmResult.Content
+	if strings.TrimSpace(content) == "" {
+		content = fmt.Sprintf("# %s\n\n模型未返回有效内容，请稍后重试。", categoryLabel)
+	}
+	userID := middleware.GetUserID(c)
+	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/smartknora/writing/generate", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
+	c.JSON(http.StatusOK, gin.H{"content": content, "category": req.Category, "sources_count": len(chunks), "model_id": llmResult.ModelID, "model": llmResult.ModelName})
+}
+
+func smartKnoraWritingCategoryLabel(category string) string {
+	categoryTemplates := map[string]string{"work_summary": "工作总结", "research_report": "研究报告", "project_proposal": "项目方案", "meeting_minutes": "会议纪要", "tech_doc": "技术文档", "business_plan": "商业计划书", "weekly_report": "周报日报", "notice": "通知公告"}
+	if label := categoryTemplates[category]; label != "" {
+		return label
+	}
+	return category
+}
+
+func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, chunks []types.SmartKnoraDocumentChunk) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("写作类型:%s\n", categoryLabel))
+	b.WriteString("写作要求:\n")
+	b.WriteString(prompt)
+	b.WriteString("\n\n知识库参考内容:\n")
+	if len(chunks) == 0 {
+		b.WriteString("（未检索到相关知识库内容）\n")
+	} else {
+		for i, chunk := range chunks {
+			b.WriteString(fmt.Sprintf("[%d] 文档ID:%s\n%s\n\n", i+1, chunk.DocumentID, chunk.Content))
+		}
+	}
+	b.WriteString("请生成一份结构完整、标题清晰、段落可读的 Markdown 文稿。")
+	return b.String()
 }
 
 func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantID uint64, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
