@@ -296,6 +296,7 @@ func (WritingDraft) TableName() string { return "writing_drafts" }
 // Announcement represents a system announcement.
 type Announcement struct {
 	ID        string    `json:"id" gorm:"type:varchar(36);primaryKey"`
+	TenantID  uint64    `json:"tenant_id" gorm:"not null;index"`
 	Title     string    `json:"title" gorm:"type:varchar(500);not null"`
 	Content   string    `json:"content" gorm:"type:text"`
 	Status    string    `json:"status" gorm:"type:varchar(20);default:draft"`
@@ -325,7 +326,7 @@ type QAMessage struct {
 	SessionID string    `json:"session_id" gorm:"type:varchar(36);not null;index"`
 	Role      string    `json:"role" gorm:"type:varchar(20);not null"`
 	Content   string    `json:"content" gorm:"type:text;not null"`
-	Sources   string    `json:"sources" gorm:"type:jsonb;default:'[]'"`
+	Sources   string    `json:"sources" gorm:"type:text"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

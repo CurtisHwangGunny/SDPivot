@@ -1,0 +1,94 @@
+import axios from 'axios'
+
+const opsClient = axios.create({
+  baseURL: '/api/v1/smartknora',
+  timeout: 30000,
+})
+
+let refreshPromise: Promise<string> | null = null
+
+opsClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('ops_access_token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+function clearOpsSession() {
+  localStorage.removeItem('ops_access_token')
+  localStorage.removeItem('ops_refresh_token')
+  localStorage.removeItem('ops_user')
+}
+
+async function refreshOpsToken() {
+  const refreshToken = localStorage.getItem('ops_refresh_token')
+  if (!refreshToken) throw new Error('missing ops refresh token')
+  const response = await axios.post('/api/v1/smartknora/ops/refresh', { refresh_token: refreshToken })
+  const accessToken = response.data.access_token
+  localStorage.setItem('ops_access_token', accessToken)
+  localStorage.setItem('ops_refresh_token', response.data.refresh_token)
+  return accessToken
+}
+
+function redirectToOpsLogin() {
+  if (window.location.pathname !== '/ops-login') window.location.href = '/ops-login'
+}
+
+opsClient.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config as any
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      originalRequest._retry = true
+      try {
+        if (!refreshPromise) refreshPromise = refreshOpsToken().finally(() => { refreshPromise = null })
+        const accessToken = await refreshPromise
+        originalRequest.headers = originalRequest.headers || {}
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`
+        return opsClient(originalRequest)
+      } catch {
+        clearOpsSession()
+        redirectToOpsLogin()
+      }
+    } else if (error.response?.status === 401) {
+      clearOpsSession()
+      redirectToOpsLogin()
+    }
+    return Promise.reject(error)
+  },
+)
+
+export function getOpsDashboard() { return opsClient.get('/ops/dashboard') }
+export function listEnterprises(params?: any) { return opsClient.get('/ops/enterprises', { params }) }
+export function getEnterprise(id: string) { return opsClient.get(`/ops/enterprises/${id}`) }
+export function updateEnterpriseStatus(id: string, status: string) { return opsClient.put(`/ops/enterprises/${id}/status`, { status }) }
+export function listUsers(params?: any) { return opsClient.get('/ops/users', { params }) }
+export function updateUserStatus(id: string, isActive: boolean) { return opsClient.put(`/ops/users/${id}/status`, { is_active: isActive }) }
+export function getAuditLogs(params?: any) { return opsClient.get('/ops/audit-logs', { params }) }
+export function exportAuditLogs(params?: any) { return opsClient.get('/ops/audit-logs/export', { params, responseType: 'blob' }) }
+export function createAnnouncement(data: { title: string; content: string }) { return opsClient.post('/ops/announcements', data) }
+export function listAnnouncements() { return opsClient.get('/ops/announcements') }
+export function deleteAnnouncement(id: string) { return opsClient.delete(`/ops/announcements/${id}`) }
+export function getActiveAnnouncements() { return opsClient.get('/ops/announcements/active') }
+export function listSensitiveWords(params?: any) { return opsClient.get('/ops/filters/words', { params }) }
+export function createSensitiveWord(data: { word: string; category?: string }) { return opsClient.post('/ops/filters/words', data) }
+export function deleteSensitiveWord(id: string) { return opsClient.delete(`/ops/filters/words/${id}`) }
+export function listFilterHits(params?: any) { return opsClient.get('/ops/filters/hits', { params }) }
+export function updateFilterHit(orgId: string, action: string) { return opsClient.put(`/ops/filters/hits/${orgId}`, { action }) }
+export function listBillingPlans() { return opsClient.get('/ops/billing/plans') }
+export function createBillingPlan(data: any) { return opsClient.post('/ops/billing/plans', data) }
+export function updateBillingPlan(id: string, data: any) { return opsClient.put(`/ops/billing/plans/${id}`, data) }
+export function deleteBillingPlan(id: string) { return opsClient.delete(`/ops/billing/plans/${id}`) }
+export function listSubscriptions(params?: any) { return opsClient.get('/ops/billing/subscriptions', { params }) }
+export function updateSubscription(orgId: string, data: { plan_id: string; expires_at?: string }) { return opsClient.put(`/ops/billing/subscriptions/${orgId}`, data) }
+export function listInvoices(params?: any) { return opsClient.get('/ops/billing/invoices', { params }) }
+export function listConfigs() { return opsClient.get('/ops/config') }
+export function updateConfig(key: string, value: string, description?: string) { return opsClient.put(`/ops/config/${key}`, { value, description }) }
+export function getTrialConfig() { return opsClient.get('/ops/config/trial') }
+export function updateTrialConfig(data: { trial_days: number; extended_trial_days: number; downgrade_space_limit: number }) { return opsClient.put('/ops/config/trial', data) }
+export function listModels() { return opsClient.get('/ops/models') }
+export function createModel(data: any) { return opsClient.post('/ops/models', data) }
+export function updateModel(id: string, data: any) { return opsClient.put(`/ops/models/${id}`, data) }
+export function deleteModel(id: string) { return opsClient.delete(`/ops/models/${id}`) }
+export function setDefaultModel(id: string) { return opsClient.put(`/ops/models/${id}/default`) }
+
+export default opsClient

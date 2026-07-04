@@ -3,10 +3,13 @@ package handler
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -173,13 +176,14 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 		return
 	}
 
-	// TODO: Trigger async parsing job (Asynq task)
-	// For now, mark as parsing and return
-	h.db.Model(&doc).Update("parse_status", "parsing")
+	parseMessage := "document uploaded and parsed"
+	if err := h.parseAndStoreDocument(&doc, content); err != nil {
+		parseMessage = "document uploaded, parsing failed: " + err.Error()
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"document": doc,
-		"message":  "document uploaded, parsing started",
+		"message":  parseMessage,
 	})
 }
 
@@ -219,10 +223,10 @@ func (h *SmartKnoraDocumentHandler) ListDocuments(c *gin.Context) {
 	db.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&docs)
 
 	c.JSON(http.StatusOK, gin.H{
-		"documents":  docs,
-		"total":      total,
-		"page":       page,
-		"page_size":  pageSize,
+		"documents": docs,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
 
@@ -278,16 +282,28 @@ func (h *SmartKnoraDocumentHandler) ReparseDocument(c *gin.Context) {
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
-	h.db.Model(&types.SmartKnoraDocument{}).Where("id = ? AND tenant_id = ?", docID, tenantID).Updates(map[string]interface{}{
-		"parse_status":     "pending",
-		"embedding_status": "pending",
-		"chunk_count":      0,
-		"updated_at":       time.Now(),
-	})
+	var doc types.SmartKnoraDocument
+	if err := h.db.Where("id = ? AND tenant_id = ?", docID, tenantID).First(&doc).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
 
-	// TODO: Trigger async parsing job
+	content, err := h.loadDocumentContent(&doc)
+	if err != nil {
+		h.db.Model(&doc).Updates(map[string]interface{}{
+			"parse_status": "failed",
+			"updated_at":   time.Now(),
+		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "re-parse initiated"})
+	if err := h.parseAndStoreDocument(&doc, content); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "re-parse completed"})
 }
 
 // GetChunk gets a specific chunk.
@@ -440,10 +456,130 @@ func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"results": results, "total": len(results)})
 }
 
+var htmlBlockRE = regexp.MustCompile(`(?is)<(script|style)[^>]*>.*?</(script|style)>`)
+var htmlTagRE = regexp.MustCompile(`(?s)<[^>]+>`)
+
+func (h *SmartKnoraDocumentHandler) loadDocumentContent(doc *types.SmartKnoraDocument) ([]byte, error) {
+	if strings.HasPrefix(doc.FilePath, "http://") || strings.HasPrefix(doc.FilePath, "https://") {
+		resp, err := http.Get(doc.FilePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch document URL")
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("document URL returned non-200 status")
+		}
+		return io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	}
+	if doc.FilePath == "" {
+		return nil, fmt.Errorf("document has no file path")
+	}
+	return os.ReadFile(doc.FilePath)
+}
+
+func (h *SmartKnoraDocumentHandler) parseAndStoreDocument(doc *types.SmartKnoraDocument, content []byte) error {
+	now := time.Now()
+	h.db.Model(doc).Updates(map[string]interface{}{"parse_status": "parsing", "updated_at": now})
+
+	text, err := normalizeDocumentContent(doc.FileType, content)
+	if err != nil {
+		h.db.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "chunk_count": 0, "updated_at": time.Now()})
+		return err
+	}
+	chunks := splitDocumentText(text, 2000, 200)
+	if len(chunks) == 0 {
+		h.db.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "chunk_count": 0, "updated_at": time.Now()})
+		return fmt.Errorf("document content is empty")
+	}
+
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("document_id = ? AND tenant_id = ?", doc.ID, doc.TenantID).Delete(&types.SmartKnoraDocumentChunk{}).Error; err != nil {
+			return err
+		}
+		for i, part := range chunks {
+			chunk := types.SmartKnoraDocumentChunk{ID: uuid.New().String(), DocumentID: doc.ID, TenantID: doc.TenantID, ChunkIndex: i, Content: part, TokenCount: estimateTokenCount(part), Metadata: "{}", CreatedAt: now}
+			if err := tx.Create(&chunk).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(doc).Updates(map[string]interface{}{"parse_status": "completed", "chunk_count": len(chunks), "updated_at": time.Now()}).Error
+	})
+	if err != nil {
+		h.db.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "updated_at": time.Now()})
+		return fmt.Errorf("failed to store chunks")
+	}
+	return nil
+}
+
+func normalizeDocumentContent(fileType string, content []byte) (string, error) {
+	ext := strings.ToLower(strings.TrimPrefix(fileType, "."))
+	text := string(content)
+	switch ext {
+	case "md", "markdown", "txt", "text":
+		return normalizeWhitespace(text), nil
+	case "html", "htm":
+		return normalizeWhitespace(stripHTMLTags(text)), nil
+	default:
+		return "", fmt.Errorf("unsupported file type for fallback parser: %s", fileType)
+	}
+}
+
+func stripHTMLTags(input string) string {
+	withoutBlocks := htmlBlockRE.ReplaceAllString(input, " ")
+	withoutTags := htmlTagRE.ReplaceAllString(withoutBlocks, " ")
+	return html.UnescapeString(withoutTags)
+}
+
+func normalizeWhitespace(input string) string { return strings.Join(strings.Fields(input), " ") }
+
+func splitDocumentText(text string, chunkSize int, overlap int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	runes := []rune(text)
+	if chunkSize <= 0 {
+		chunkSize = 2000
+	}
+	if overlap < 0 || overlap >= chunkSize {
+		overlap = 0
+	}
+	chunks := make([]string, 0, (len(runes)/chunkSize)+1)
+	for start := 0; start < len(runes); {
+		end := start + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		part := strings.TrimSpace(string(runes[start:end]))
+		if part != "" {
+			chunks = append(chunks, part)
+		}
+		if end == len(runes) {
+			break
+		}
+		start = end - overlap
+	}
+	return chunks
+}
+
+func estimateTokenCount(text string) int {
+	count := len([]rune(text)) / 4
+	if count < 1 {
+		return 1
+	}
+	return count
+}
+
+func escapeILike(input string) string {
+	value := strings.ReplaceAll(input, `\`, `\\`)
+	value = strings.ReplaceAll(value, "%", `\%`)
+	value = strings.ReplaceAll(value, "_", `\_`)
+	return value
+}
+
 func tenantIDStr(tenantID uint64) string {
 	return strconv.FormatUint(tenantID, 10)
 }
-
 
 // UploadManualDocument handles manual text/markdown input.
 func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
@@ -493,24 +629,14 @@ func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 		return
 	}
 
-	// Create a single chunk with the full content
-	chunk := types.SmartKnoraDocumentChunk{
-		ID:          uuid.New().String(),
-		DocumentID:  docID,
-		TenantID:    tenantID,
-		ChunkIndex:  0,
-		Content:     req.Content,
-		TokenCount:  len(req.Content) / 4, // Rough estimate
-		CreatedAt:   now,
+	if err := h.parseAndStoreDocument(&doc, []byte(req.Content)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse manual document"})
+		return
 	}
-	h.db.Create(&chunk)
-
-	h.db.Model(&doc).Update("chunk_count", 1)
-	h.db.Model(&doc).Update("parse_status", "completed")
 
 	c.JSON(http.StatusCreated, gin.H{
 		"document": doc,
-		"message":  "manual document created",
+		"message":  "manual document created and parsed",
 	})
 }
 
@@ -548,12 +674,7 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		return
 	}
 
-	content := string(body)
-	// Simple HTML to text: strip tags
-	content = strings.ReplaceAll(content, "<script", "<!--")
-	content = strings.ReplaceAll(content, "</script>", "-->")
-	content = strings.ReplaceAll(content, "<style", "<!--")
-	content = strings.ReplaceAll(content, "</style>", "-->")
+	content := normalizeWhitespace(stripHTMLTags(string(body)))
 
 	docID := uuid.New().String()
 	now := time.Now()
@@ -595,22 +716,10 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		return
 	}
 
-	// Create chunk with fetched content
-	chunk := types.SmartKnoraDocumentChunk{
-		ID:          uuid.New().String(),
-		DocumentID:  docID,
-		TenantID:    tenantID,
-		ChunkIndex:  0,
-		Content:     content,
-		TokenCount:  len(content) / 4,
-		CreatedAt:   now,
+	if err := h.parseAndStoreDocument(&doc, []byte(content)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse URL content"})
+		return
 	}
-	h.db.Create(&chunk)
-
-	h.db.Model(&doc).Updates(map[string]interface{}{
-		"parse_status": "completed",
-		"chunk_count":  1,
-	})
 
 	c.JSON(http.StatusCreated, gin.H{
 		"document": doc,

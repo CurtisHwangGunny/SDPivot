@@ -11,5 +11,5 @@ RUN chmod -R a+rX /home/ubuntu/
 RUN groupadd -r appgroup && useradd -r -g appgroup -s /usr/sbin/nologin appuser
 USER appuser
 EXPOSE 8081
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -f http://localhost:8081/api/v1/smartknora/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -f http://localhost:8081/health || exit 1
 CMD ["./smartknora-server"]

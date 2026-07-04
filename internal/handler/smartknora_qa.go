@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -94,7 +95,7 @@ func (h *SmartKnoraQAHandler) GetSession(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
 	var session types.QASession
-	if err := h.db.Where("id = ? AND user_id = ?", sessionID, userID).First(&session).Error; err != nil {
+	if err := h.db.Where("id = ? AND user_id = ? AND tenant_id = ?", sessionID, userID, middleware.GetTenantID(c)).First(&session).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
 	}
@@ -106,10 +107,10 @@ func (h *SmartKnoraQAHandler) GetSession(c *gin.Context) {
 func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 	sessionID := c.Param("id")
 	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
 
-	// Verify session belongs to user
 	var session types.QASession
-	if err := h.db.Where("id = ? AND user_id = ?", sessionID, userID).First(&session).Error; err != nil {
+	if err := h.db.Where("id = ? AND user_id = ? AND tenant_id = ?", sessionID, userID, tenantID).First(&session).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
 	}
@@ -121,62 +122,60 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	now := time.Now()
-
-	// Save user message
-	userMsg := types.QAMessage{
-		ID:        uuid.New().String(),
-		SessionID: sessionID,
-		Role:      "user",
-		Content:   req.Content,
-		CreatedAt: now,
-	}
+	userMsg := types.QAMessage{ID: uuid.New().String(), SessionID: sessionID, Role: "user", Content: req.Content, CreatedAt: now}
 	h.db.Create(&userMsg)
 
-	// Search knowledge base for relevant content
-	sources := "[]"
-	aiContent := "暂未找到相关知识内容。请先在知识空间中导入文档。"
-
-	// Try to find relevant chunks in the user's spaces
-	var chunks []types.SmartKnoraDocumentChunk
-	if session.SpaceID != "" {
-		h.db.Joins("JOIN documents ON documents.id = document_chunks.document_id").
-			Where("documents.space_id = ? AND document_chunks.content ILIKE ?", session.SpaceID, "%"+req.Content+"%").
-			Limit(5).Find(&chunks)
-	} else {
-		h.db.Where("content ILIKE ?", "%"+req.Content+"%").Limit(5).Find(&chunks)
+	chunks, err := h.searchRelevantChunks(tenantID, session.SpaceID, req.Content, 5)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search knowledge base"})
+		return
 	}
 
+	sources := "[]"
+	aiContent := "暂未找到相关知识内容。请先在知识空间中导入文档。"
 	if len(chunks) > 0 {
-		// Build response from relevant chunks
 		aiContent = "根据知识库中的内容，为您找到以下相关信息：\n\n"
+		sourceSet := map[string]struct{}{}
 		sourceList := []string{}
 		for i, chunk := range chunks {
 			aiContent += fmt.Sprintf("%d. %s\n\n", i+1, chunk.Content)
-			sourceList = append(sourceList, chunk.DocumentID)
+			if _, ok := sourceSet[chunk.DocumentID]; !ok {
+				sourceSet[chunk.DocumentID] = struct{}{}
+				sourceList = append(sourceList, chunk.DocumentID)
+			}
 		}
 		sourcesBytes, _ := json.Marshal(sourceList)
 		sources = string(sourcesBytes)
 	}
 
-	aiMsg := types.QAMessage{
-		ID:        uuid.New().String(),
-		SessionID: sessionID,
-		Role:      "assistant",
-		Content:   aiContent,
-		Sources:   sources,
-		CreatedAt: now,
-	}
+	aiMsg := types.QAMessage{ID: uuid.New().String(), SessionID: sessionID, Role: "assistant", Content: aiContent, Sources: sources, CreatedAt: now}
 	h.db.Create(&aiMsg)
+	h.db.Model(&types.QASession{}).Where("id = ? AND tenant_id = ?", sessionID, tenantID).Update("updated_at", now)
+	c.JSON(http.StatusOK, gin.H{"user_message": userMsg, "assistant_message": aiMsg})
+}
 
-	// Update session
-	h.db.Model(&types.QASession{}).Where("id = ?", sessionID).Update("updated_at", now)
+func (h *SmartKnoraQAHandler) searchRelevantChunks(tenantID uint64, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
+	if topK <= 0 || topK > 20 {
+		topK = 5
+	}
+	search := escapeQAQuery(query)
+	db := h.db.Model(&types.SmartKnoraDocumentChunk{}).
+		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
+		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
+	if spaceID != "" {
+		db = db.Where("documents.space_id = ?", spaceID)
+	}
+	var chunks []types.SmartKnoraDocumentChunk
+	err := db.Order("document_chunks.created_at DESC").Limit(topK).Find(&chunks).Error
+	return chunks, err
+}
 
-	c.JSON(http.StatusOK, gin.H{
-		"user_message":      userMsg,
-		"assistant_message": aiMsg,
-	})
+func escapeQAQuery(input string) string {
+	value := strings.ReplaceAll(input, `\`, `\\`)
+	value = strings.ReplaceAll(value, "%", `\%`)
+	value = strings.ReplaceAll(value, "_", `\_`)
+	return value
 }
 
 // GetMessages gets messages in a Q&A session.
@@ -186,7 +185,7 @@ func (h *SmartKnoraQAHandler) GetMessages(c *gin.Context) {
 
 	// Verify session belongs to user
 	var session types.QASession
-	if err := h.db.Where("id = ? AND user_id = ?", sessionID, userID).First(&session).Error; err != nil {
+	if err := h.db.Where("id = ? AND user_id = ? AND tenant_id = ?", sessionID, userID, middleware.GetTenantID(c)).First(&session).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
 	}
@@ -204,13 +203,13 @@ func (h *SmartKnoraQAHandler) DeleteSession(c *gin.Context) {
 
 	// Verify session belongs to user
 	var session types.QASession
-	if err := h.db.Where("id = ? AND user_id = ?", sessionID, userID).First(&session).Error; err != nil {
+	if err := h.db.Where("id = ? AND user_id = ? AND tenant_id = ?", sessionID, userID, middleware.GetTenantID(c)).First(&session).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
 	}
 
 	h.db.Where("session_id = ?", sessionID).Delete(&types.QAMessage{})
-	h.db.Where("id = ? AND user_id = ?", sessionID, userID).Delete(&types.QASession{})
+	h.db.Where("id = ? AND user_id = ? AND tenant_id = ?", sessionID, userID, middleware.GetTenantID(c)).Delete(&types.QASession{})
 
 	c.JSON(http.StatusOK, gin.H{"message": "session deleted"})
 }
