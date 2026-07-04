@@ -58,16 +58,25 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 
 	// Check if user already exists
 	var existingUser types.User
+
+	// Check username conflict (phone used as username, include soft-deleted)
+	if req.Phone != "" {
+		var existingByName types.User
+		if err := h.db.Unscoped().Where("username = ?", req.Phone).First(&existingByName).Error; err == nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "username already taken"})
+			return
+		}
+	}
 	if req.Phone != "" {
 		// Look up by phone in smartknora_user_profiles
 		var profile types.SmartKnoraUserProfile
-		if err := h.db.Where("phone = ?", req.Phone).First(&profile).Error; err == nil {
+		if err := h.db.Unscoped().Where("phone = ?", req.Phone).First(&profile).Error; err == nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "phone already registered"})
 			return
 		}
 	}
 	if req.Email != "" {
-		if err := h.db.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
+		if err := h.db.Unscoped().Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
 			return
 		}
@@ -116,6 +125,8 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 		ID:        uuid.New().String(),
 		Name:      "默认组织",
 		OwnerID:   user.ID,
+		InviteCode:    generateInviteCode(),
+		OwnerTenantID: user.TenantID,
 		CreatedAt: nowOrg,
 		UpdatedAt: nowOrg,
 	}

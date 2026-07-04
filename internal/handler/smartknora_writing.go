@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,14 +37,7 @@ func (h *SmartKnoraWritingHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		w.POST("/drafts/:id/export", h.ExportDraft)
 	}
 
-	ops := rg.Group("/ops")
-	{
-		ops.GET("/dashboard", h.GetOpsDashboard)
-		ops.GET("/tenants", h.ListTenants)
-		ops.GET("/audit-log", h.GetAuditLog)
-		ops.POST("/announcements", h.CreateAnnouncement)
-		ops.GET("/announcements", h.ListAnnouncements)
-	}
+	// Ops routes moved to smartknora_ops_admin.go
 }
 
 // CreateDraft creates a new writing draft.
@@ -152,58 +146,57 @@ func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Search knowledge base for relevant content
 	tenantID := middleware.GetTenantID(c)
-	var chunks []types.SmartKnoraDocumentChunk
-	if req.SpaceID != "" {
-		h.db.Joins("JOIN documents ON documents.id = document_chunks.document_id").
-			Where("documents.space_id = ? AND document_chunks.content ILIKE ?", req.SpaceID, "%"+req.Prompt+"%").
-			Limit(5).Find(&chunks)
-	} else {
-		h.db.Where("tenant_id = ? AND content ILIKE ?", tenantID, "%"+req.Prompt+"%").Limit(5).Find(&chunks)
+	chunks, err := h.searchRelevantWritingChunks(tenantID, req.SpaceID, req.Prompt, 5)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search knowledge base"})
+		return
 	}
-
-	// Build generated content based on category and knowledge
-	categoryTemplates := map[string]string{
-		"work_summary":   "工作总结",
-		"research_report": "研究报告",
-		"project_proposal": "项目方案",
-		"meeting_minutes": "会议纪要",
-		"tech_doc":       "技术文档",
-		"business_plan":  "商业计划书",
-		"weekly_report":  "周报日报",
-		"notice":         "通知公告",
-	}
+	categoryTemplates := map[string]string{"work_summary": "工作总结", "research_report": "研究报告", "project_proposal": "项目方案", "meeting_minutes": "会议纪要", "tech_doc": "技术文档", "business_plan": "商业计划书", "weekly_report": "周报日报", "notice": "通知公告"}
 	categoryLabel := categoryTemplates[req.Category]
 	if categoryLabel == "" {
 		categoryLabel = req.Category
 	}
-
 	content := fmt.Sprintf("# %s\n\n", categoryLabel)
 	content += fmt.Sprintf("## 主题：%s\n\n", req.Prompt)
-
 	if len(chunks) > 0 {
 		content += "## 知识库参考内容\n\n"
 		for i, chunk := range chunks {
 			content += fmt.Sprintf("### 参考 %d\n%s\n\n", i+1, chunk.Content)
 		}
-		content += "\n---\n以上内容基于知识库中的相关文档生成，请根据实际需求进行修改和补充。"
+		content += "\n---\n以上内容基于当前租户知识库中的相关文档生成，请根据实际需求进行修改和补充。"
 	} else {
 		content += "暂未在知识库中找到相关内容。请先导入相关文档，或手动编写内容。\n\n---\n提示：您可以在知识空间中上传文档，系统将自动检索相关知识辅助写作。"
 	}
+	c.JSON(http.StatusOK, gin.H{"content": content, "category": req.Category, "sources_count": len(chunks)})
+}
 
-	c.JSON(http.StatusOK, gin.H{
-		"content":       content,
-		"category":      req.Category,
-		"sources_count": len(chunks),
-	})
+func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantID uint64, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
+	if topK <= 0 || topK > 20 {
+		topK = 5
+	}
+	search := escapeWritingQuery(query)
+	db := h.db.Model(&types.SmartKnoraDocumentChunk{}).
+		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
+		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
+	if spaceID != "" {
+		db = db.Where("documents.space_id = ?", spaceID)
+	}
+	var chunks []types.SmartKnoraDocumentChunk
+	err := db.Order("document_chunks.created_at DESC").Limit(topK).Find(&chunks).Error
+	return chunks, err
+}
+
+func escapeWritingQuery(input string) string {
+	value := strings.ReplaceAll(input, `\`, `\\`)
+	value = strings.ReplaceAll(value, "%", `\%`)
+	value = strings.ReplaceAll(value, "_", `\_`)
+	return value
 }
 
 // ExportDraft exports a draft to PDF/DOCX/Markdown.
 func (h *SmartKnoraWritingHandler) ExportDraft(c *gin.Context) {
 	draftID := c.Param("id")
-
 	var req struct {
 		Format string `json:"format" binding:"required,oneof=pdf docx markdown"`
 	}
@@ -211,102 +204,38 @@ func (h *SmartKnoraWritingHandler) ExportDraft(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
 	var draft types.WritingDraft
-	if err := h.db.Where("id = ?", draftID).First(&draft).Error; err != nil {
+	if err := h.db.Where("id = ? AND user_id = ? AND tenant_id = ?", draftID, userID, tenantID).First(&draft).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "draft not found"})
 		return
 	}
-
-	// TODO: Implement actual export (Pandoc integration)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "export initiated",
-		"format":  req.Format,
-		"status":  "pending",
-	})
-}
-
-// GetOpsDashboard returns operations dashboard data.
-func (h *SmartKnoraWritingHandler) GetOpsDashboard(c *gin.Context) {
-	role, _ := c.Get("role")
-	if role != "admin" && role != "owner" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+	if req.Format != "markdown" {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "only markdown export is currently supported", "format": req.Format})
 		return
 	}
-	var tenantCount int64
-	h.db.Table("org_ext").Count(&tenantCount)
-
-	var userCount int64
-	h.db.Table("users").Count(&userCount)
-
-	var docCount int64
-	h.db.Table("documents").Count(&docCount)
-
-	c.JSON(http.StatusOK, gin.H{
-		"tenant_count": tenantCount,
-		"user_count":   userCount,
-		"document_count": docCount,
-	})
+	filename := sanitizeExportFilename(draft.Title)
+	if filename == "" {
+		filename = "smartknora-draft"
+	}
+	if !strings.HasSuffix(strings.ToLower(filename), ".md") {
+		filename += ".md"
+	}
+	content := draft.Content
+	if strings.TrimSpace(content) == "" {
+		content = fmt.Sprintf("# %s\n\n", draft.Title)
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	c.Data(http.StatusOK, "text/markdown; charset=utf-8", []byte(content))
 }
 
-// ListTenants lists all tenants for operations management.
-func (h *SmartKnoraWritingHandler) ListTenants(c *gin.Context) {
-	role, _ := c.Get("role")
-	if role != "admin" && role != "owner" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
-		return
+func sanitizeExportFilename(name string) string {
+	name = strings.TrimSpace(name)
+	replacer := strings.NewReplacer("/", "-", "\\", "-", ":", "-", "*", "-", "?", "-", "\"", "-", "<", "-", ">", "-", "|", "-", "\n", " ", "\r", " ")
+	name = strings.TrimSpace(replacer.Replace(name))
+	if len([]rune(name)) > 80 {
+		name = string([]rune(name)[:80])
 	}
-	// TODO: Implement tenant listing with pagination
-	c.JSON(http.StatusOK, gin.H{"tenants": []interface{}{}, "message": "tenant listing placeholder"})
-}
-
-// GetAuditLog returns audit log entries.
-func (h *SmartKnoraWritingHandler) GetAuditLog(c *gin.Context) {
-	role, _ := c.Get("role")
-	if role != "admin" && role != "owner" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
-		return
-	}
-	// TODO: Implement audit log
-	c.JSON(http.StatusOK, gin.H{"logs": []interface{}{}, "message": "audit log placeholder"})
-}
-
-// CreateAnnouncement creates a system announcement.
-func (h *SmartKnoraWritingHandler) CreateAnnouncement(c *gin.Context) {
-	role, _ := c.Get("role")
-	if role != "admin" && role != "owner" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
-		return
-	}
-	userID := middleware.GetUserID(c)
-
-	var req struct {
-		Title   string `json:"title" binding:"required"`
-		Content string `json:"content" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	announcement := types.Announcement{
-		ID:        uuid.New().String(),
-		Title:     req.Title,
-		Content:   req.Content,
-		Status:    "published",
-		CreatedBy: userID,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	h.db.Create(&announcement)
-	c.JSON(http.StatusCreated, gin.H{"announcement": announcement})
-}
-
-// ListAnnouncements lists system announcements.
-func (h *SmartKnoraWritingHandler) ListAnnouncements(c *gin.Context) {
-	var announcements []types.Announcement
-	h.db.Order("created_at DESC").Limit(50).Find(&announcements)
-
-	c.JSON(http.StatusOK, gin.H{"announcements": announcements})
+	return name
 }

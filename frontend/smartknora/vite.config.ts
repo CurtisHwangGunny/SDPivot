@@ -17,4 +17,13 @@ export default defineConfig({
       },
     },
   },
+  // Multi-page entry: user app + ops admin app
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        ops: resolve(__dirname, 'ops.html'),
+      },
+    },
+  },
 })

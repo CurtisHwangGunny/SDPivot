@@ -137,9 +137,21 @@ async function saveDraft() {
 async function handleExport() {
   if (!currentDraft.value) return
   try {
-    await exportDraft(currentDraft.value.id, exportFormat.value)
-    MessagePlugin.success('导出已启动')
-  } catch { MessagePlugin.error('导出失败') }
+    const res = await exportDraft(currentDraft.value.id, exportFormat.value)
+    const blob = new Blob([res.data], { type: exportFormat.value === 'markdown' ? 'text/markdown;charset=utf-8' : 'application/octet-stream' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeTitle = (currentDraft.value.title || 'smartknora-draft').replace(/[\/:*?"<>|]/g, '-')
+    link.href = url
+    link.download = exportFormat.value === 'markdown' ? `${safeTitle}.md` : `${safeTitle}.${exportFormat.value}`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    MessagePlugin.success('导出完成')
+  } catch (e: any) {
+    MessagePlugin.error(e.response?.data?.error || '导出失败')
+  }
 }
 
 onMounted(() => { loadDrafts(); loadSpaces() })

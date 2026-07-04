@@ -47,7 +47,7 @@ export function deleteDraft(id: string) {
 }
 
 export function exportDraft(id: string, format: string) {
-  return client.post(`/writing/drafts/${id}/export`, { format })
+  return client.post(`/writing/drafts/${id}/export`, { format }, { responseType: 'blob' })
 }
 
 export function getOpsDashboard() {

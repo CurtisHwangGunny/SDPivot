@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -74,7 +75,7 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3099", "http://localhost:5173", "http://localhost:3000"},
+		AllowOrigins:     getAllowedOrigins(),
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -133,6 +134,16 @@ func main() {
 		// Sprint 4: AI Writing + Operations
 		writingHandler := handler.NewSmartKnoraWritingHandler(db)
 		writingHandler.RegisterRoutes(protected)
+
+		// Ops admin auth (PRD 1.1.4)
+		opsHandler := handler.NewSmartKnoraOpsHandler(db, jwtManager)
+		opsHandler.RegisterPublicRoutes(sk)
+		opsHandler.RegisterProtectedRoutes(protected)
+
+		// Ops admin management handler (PRD 4.1)
+		opsAdminHandler := handler.NewSmartKnoraOpsAdminHandler(db)
+		opsAdminHandler.RegisterOpsRoutes(protected)
+		opsAdminHandler.RegisterPublicOpsRoutes(sk)
 	}
 
 	// ── Start Server ───────────────────────────────────────────
@@ -154,6 +165,27 @@ func main() {
 	defer cancel()
 	srv.Shutdown(ctx)
 	log.Println("[Server] Stopped")
+}
+
+func getAllowedOrigins() []string {
+	value := os.Getenv("SMARTKNORA_ALLOWED_ORIGINS")
+	if value == "" {
+		return []string{
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+			"http://43.133.61.77:3099",
+		}
+	}
+
+	parts := strings.Split(value, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		origin := strings.TrimSpace(part)
+		if origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }
 
 func getEnv(key, def string) string {

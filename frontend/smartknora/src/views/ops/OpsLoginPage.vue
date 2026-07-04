@@ -6,7 +6,6 @@
         <p class="ops-subtitle">运营管理端</p>
       </div>
 
-      <!-- 首次登录强制修改密码 -->
       <div v-if="mustChangePassword" class="ops-change-password">
         <h3>首次登录 · 修改密码</h3>
         <p class="hint">密码需满足：≥8位，包含大小写字母+数字+特殊字符</p>
@@ -24,9 +23,9 @@
             确认修改
           </t-button>
         </t-form>
+        <p v-if="error" class="error-msg">{{ error }}</p>
       </div>
 
-      <!-- 正常登录 -->
       <div v-else class="ops-login-form">
         <t-form ref="loginForm" :data="loginData" :rules="loginRules" @submit="handleLogin">
           <t-form-item name="email">
@@ -46,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import axios from 'axios'
@@ -58,13 +57,23 @@ const mustChangePassword = ref(false)
 const error = ref('')
 const currentToken = ref('')
 
-const loginData = reactive({ email: '', password: '' })
-const pwdFormData = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const loginData = reactive({
+  email: '',
+  password: '',
+})
+
+const pwdFormData = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
 
 const loginRules = {
   email: [{ required: true, message: '请输入账号' }],
   password: [{ required: true, message: '请输入密码' }],
 }
+
+const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/
 
 const pwdRules = {
   oldPassword: [{ required: true, message: '请输入当前密码' }],
@@ -72,7 +81,7 @@ const pwdRules = {
     { required: true, message: '请输入新密码' },
     { min: 8, message: '密码至少8位' },
     {
-      validator: (val: string) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/.test(val),
+      validator: (val: string) => passwordPattern.test(val),
       message: '必须包含大小写字母+数字+特殊字符',
     },
   ],
@@ -88,21 +97,23 @@ const pwdRules = {
 async function handleLogin() {
   logging.value = true
   error.value = ''
+
   try {
     const res = await axios.post('/api/v1/smartknora/ops/login', {
       email: loginData.email,
       password: loginData.password,
     })
+
     if (res.data.must_change_password) {
       mustChangePassword.value = true
       currentToken.value = res.data.access_token
-    } else {
-      // 正常进入运营管理端
-      localStorage.setItem('ops_access_token', res.data.access_token)
-      localStorage.setItem('ops_refresh_token', res.data.refresh_token)
-      localStorage.setItem('ops_user', JSON.stringify(res.data.user))
-      router.push('/ops/dashboard')
+      return
     }
+
+    localStorage.setItem('ops_access_token', res.data.access_token)
+    localStorage.setItem('ops_refresh_token', res.data.refresh_token)
+    localStorage.setItem('ops_user', JSON.stringify(res.data.user))
+    router.push('/ops')
   } catch (e: any) {
     error.value = e.response?.data?.error || '登录失败'
   } finally {
@@ -113,19 +124,24 @@ async function handleLogin() {
 async function handleChangePassword() {
   changing.value = true
   error.value = ''
+
   try {
-    const res = await axios.post(
+    await axios.post(
       '/api/v1/smartknora/ops/change-password',
       {
         old_password: pwdFormData.oldPassword,
         new_password: pwdFormData.newPassword,
       },
-      { headers: { Authorization: `Bearer ${currentToken.value}` } }
+      { headers: { Authorization: `Bearer ${currentToken.value}` } },
     )
+
     MessagePlugin.success('密码修改成功，请重新登录')
     mustChangePassword.value = false
     currentToken.value = ''
     loginData.password = ''
+    pwdFormData.oldPassword = ''
+    pwdFormData.newPassword = ''
+    pwdFormData.confirmPassword = ''
   } catch (e: any) {
     error.value = e.response?.data?.error || '修改密码失败'
   } finally {
@@ -179,19 +195,14 @@ async function handleChangePassword() {
 .ops-login-form {
   margin-top: 16px;
 }
-
 .ops-login-form .t-form-item {
   margin-bottom: 20px;
 }
-
 .ops-login-btn {
-  width: 50%;
+  width: 100% !important;
   height: 40px;
   font-size: 14px;
   margin-top: 8px;
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
 }
 .error-msg {
   color: #e34d59;

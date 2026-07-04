@@ -94,6 +94,11 @@ type User struct {
 	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
 	// Whether the user is a system administrator (independent of tenant roles)
 	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
+	// Ops admin fields (smartKnora PRD 1.1.4)
+	IsOpsAdmin          bool       `json:"is_ops_admin" gorm:"default:false;index:idx_users_ops_admin,where:is_ops_admin = true"`
+	MustChangePassword  bool       `json:"must_change_password" gorm:"default:false"`
+	PasswordChangedAt   *time.Time `json:"password_changed_at"`
+	PasswordExpiresAt   *time.Time `json:"password_expires_at"`
 	// Per-user UI/feature preferences (memory toggle, future knobs).
 	// Stored as JSON (jsonb on Postgres, TEXT on SQLite) via the
 	// driver.Valuer / sql.Scanner methods on UserPreferences.
