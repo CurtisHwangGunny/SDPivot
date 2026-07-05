@@ -7,26 +7,28 @@ export interface WritingDraft {
   content: string
   status: string
   space_id: string
+  source_type?: string
+  web_search_enabled?: boolean
   created_at: string
   updated_at: string
 }
 
 export const CATEGORIES = [
+  { value: 'notice', label: '通知' },
+  { value: 'announcement', label: '公告' },
+  { value: 'tech_doc', label: '技术文档' },
+  { value: 'meeting_minutes', label: '会议纪要' },
+  { value: 'policy_interpretation', label: '制度解读' },
+  { value: 'report', label: '报告' },
   { value: 'work_summary', label: '工作总结' },
   { value: 'research_report', label: '研究报告' },
-  { value: 'project_proposal', label: '项目方案' },
-  { value: 'meeting_minutes', label: '会议纪要' },
-  { value: 'tech_doc', label: '技术文档' },
-  { value: 'business_plan', label: '商业计划书' },
-  { value: 'weekly_report', label: '周报日报' },
-  { value: 'notice', label: '通知公告' },
 ]
 
-export function generateContent(data: { category: string; prompt: string; space_id?: string }) {
+export function generateContent(data: { category: string; prompt: string; space_id?: string; source_type?: string; web_search_enabled?: boolean }) {
   return client.post<{ content: string; category: string; sources_count: number }>('/writing/generate', data)
 }
 
-export function createDraft(data: { title: string; category: string; space_id?: string }) {
+export function createDraft(data: { title: string; category: string; space_id?: string; source_type?: string; web_search_enabled?: boolean }) {
   return client.post<{ draft: WritingDraft }>('/writing/drafts', data)
 }
 

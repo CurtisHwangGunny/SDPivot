@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 	"time"
@@ -44,42 +47,49 @@ func (h *SmartKnoraWritingHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 // CreateDraft creates a new writing draft.
 func (h *SmartKnoraWritingHandler) CreateDraft(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
 	var req struct {
-		Title    string `json:"title"`
-		Category string `json:"category"`
-		SpaceID  string `json:"space_id"`
+		Title            string `json:"title"`
+		Category         string `json:"category"`
+		SpaceID          string `json:"space_id"`
+		SourceType       string `json:"source_type"`
+		WebSearchEnabled bool   `json:"web_search_enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
+	req.SourceType, req.WebSearchEnabled = normalizeWritingSource(req.SourceType, req.WebSearchEnabled)
 
 	draft := types.WritingDraft{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		TenantID:  tenantID,
-		Title:     req.Title,
-		Category:  req.Category,
-		SpaceID:   req.SpaceID,
-		Status:    "draft",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:               uuid.New().String(),
+		UserID:           userID,
+		TenantID:         tenantID,
+		Title:            req.Title,
+		Category:         req.Category,
+		SpaceID:          req.SpaceID,
+		SourceType:       req.SourceType,
+		WebSearchEnabled: req.WebSearchEnabled,
+		Status:           "draft",
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 
-	h.db.Create(&draft)
+	tenantDB.Create(&draft)
 	c.JSON(http.StatusCreated, gin.H{"draft": draft})
 }
 
 // ListDrafts lists writing drafts.
 func (h *SmartKnoraWritingHandler) ListDrafts(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
 	var drafts []types.WritingDraft
-	h.db.Where("user_id = ? AND tenant_id = ?", userID, tenantID).
+	tenantDB.Where("user_id = ? AND tenant_id = ?", userID, tenantID).
 		Order("updated_at DESC").Find(&drafts)
 
 	c.JSON(http.StatusOK, gin.H{"drafts": drafts})
@@ -87,11 +97,13 @@ func (h *SmartKnoraWritingHandler) ListDrafts(c *gin.Context) {
 
 // GetDraft gets a specific draft.
 func (h *SmartKnoraWritingHandler) GetDraft(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	draftID := c.Param("id")
 	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
 
 	var draft types.WritingDraft
-	if err := h.db.Where("id = ? AND user_id = ?", draftID, userID).First(&draft).Error; err != nil {
+	if err := tenantDB.Where("id = ? AND user_id = ? AND tenant_id = ?", draftID, userID, tenantID).First(&draft).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "draft not found"})
 		return
 	}
@@ -101,8 +113,10 @@ func (h *SmartKnoraWritingHandler) GetDraft(c *gin.Context) {
 
 // UpdateDraft updates a draft.
 func (h *SmartKnoraWritingHandler) UpdateDraft(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	draftID := c.Param("id")
 	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
 
 	var req struct {
 		Title   *string `json:"title"`
@@ -125,38 +139,47 @@ func (h *SmartKnoraWritingHandler) UpdateDraft(c *gin.Context) {
 		updates["status"] = *req.Status
 	}
 
-	h.db.Model(&types.WritingDraft{}).Where("id = ? AND user_id = ?", draftID, userID).Updates(updates)
+	tenantDB.Model(&types.WritingDraft{}).Where("id = ? AND user_id = ? AND tenant_id = ?", draftID, userID, tenantID).Updates(updates)
 	c.JSON(http.StatusOK, gin.H{"message": "draft updated"})
 }
 
 // DeleteDraft deletes a draft.
 func (h *SmartKnoraWritingHandler) DeleteDraft(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	draftID := c.Param("id")
 	userID := middleware.GetUserID(c)
-	h.db.Where("id = ? AND user_id = ?", draftID, userID).Delete(&types.WritingDraft{})
+	tenantID := middleware.GetTenantID(c)
+	tenantDB.Where("id = ? AND user_id = ? AND tenant_id = ?", draftID, userID, tenantID).Delete(&types.WritingDraft{})
 	c.JSON(http.StatusOK, gin.H{"message": "draft deleted"})
 }
 
 // GenerateContent generates AI content for a draft.
 func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	var req struct {
-		Category string `json:"category" binding:"required"`
-		Prompt   string `json:"prompt" binding:"required"`
-		SpaceID  string `json:"space_id"`
+		Category         string `json:"category" binding:"required"`
+		Prompt           string `json:"prompt" binding:"required"`
+		SpaceID          string `json:"space_id"`
+		SourceType       string `json:"source_type"`
+		WebSearchEnabled bool   `json:"web_search_enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	tenantID := middleware.GetTenantID(c)
-	chunks, err := h.searchRelevantWritingChunks(tenantID, req.SpaceID, req.Prompt, 5)
+	req.SourceType, req.WebSearchEnabled = normalizeWritingSource(req.SourceType, req.WebSearchEnabled)
+	if req.SpaceID == "" {
+		req.SpaceID = h.defaultWritingSpaceID(tenantDB, tenantID, req.Category)
+	}
+	chunks, err := h.searchRelevantWritingChunks(tenantDB, tenantID, req.SpaceID, req.Prompt, 5)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search knowledge base"})
 		return
 	}
 	categoryLabel := smartKnoraWritingCategoryLabel(req.Category)
 	systemPrompt := "你是 SmartKnora 的企业写作助手。请根据用户写作要求和知识库参考内容生成结构清晰、可直接编辑的中文 Markdown 文稿。不要编造参考资料中没有的事实；如资料不足，请在文末列出需要补充的信息。"
-	userPrompt := buildSmartKnoraWritingPrompt(categoryLabel, req.Prompt, chunks)
+	userPrompt := buildSmartKnoraWritingPrompt(categoryLabel, req.Prompt, req.SourceType, req.WebSearchEnabled, chunks)
 	llmResult, err := h.llm.Generate(c.Request.Context(), tenantID, systemPrompt, userPrompt, 2200)
 	if err != nil {
 		status := http.StatusBadGateway
@@ -174,23 +197,58 @@ func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
 	}
 	userID := middleware.GetUserID(c)
 	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/smartknora/writing/generate", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
-	c.JSON(http.StatusOK, gin.H{"content": content, "category": req.Category, "sources_count": len(chunks), "model_id": llmResult.ModelID, "model": llmResult.ModelName})
+	c.JSON(http.StatusOK, gin.H{"content": content, "category": req.Category, "source_type": req.SourceType, "web_search_enabled": req.WebSearchEnabled, "sources_count": len(chunks), "model_id": llmResult.ModelID, "model": llmResult.ModelName})
 }
 
 func smartKnoraWritingCategoryLabel(category string) string {
-	categoryTemplates := map[string]string{"work_summary": "工作总结", "research_report": "研究报告", "project_proposal": "项目方案", "meeting_minutes": "会议纪要", "tech_doc": "技术文档", "business_plan": "商业计划书", "weekly_report": "周报日报", "notice": "通知公告"}
+	categoryTemplates := map[string]string{
+		"notice":                "通知",
+		"announcement":          "公告",
+		"tech_doc":              "技术文档",
+		"meeting_minutes":       "会议纪要",
+		"policy_interpretation": "制度解读",
+		"report":                "报告",
+		"work_summary":          "工作总结",
+		"research_report":       "研究报告",
+	}
 	if label := categoryTemplates[category]; label != "" {
 		return label
 	}
 	return category
 }
 
-func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, chunks []types.SmartKnoraDocumentChunk) string {
+func normalizeWritingSource(sourceType string, webSearchEnabled bool) (string, bool) {
+	switch sourceType {
+	case "knowledge_plus_web", "web_search":
+		return "knowledge_plus_web", true
+	default:
+		if webSearchEnabled {
+			return "knowledge_plus_web", true
+		}
+		return "knowledge_base", false
+	}
+}
+
+func (h *SmartKnoraWritingHandler) defaultWritingSpaceID(tenantDB *gorm.DB, tenantID uint64, category string) string {
+	var cfg types.WriteCategoryConfig
+	if err := tenantDB.Where("tenant_id = ? AND category = ?", tenantID, category).First(&cfg).Error; err == nil {
+		return cfg.DefaultSpaceID
+	}
+	return ""
+}
+
+func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, sourceType string, webSearchEnabled bool, chunks []types.SmartKnoraDocumentChunk) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("写作类型:%s\n", categoryLabel))
 	b.WriteString("写作要求:\n")
 	b.WriteString(prompt)
-	b.WriteString("\n\n知识库参考内容:\n")
+	b.WriteString("\n\n知识来源:")
+	if webSearchEnabled || sourceType == "knowledge_plus_web" {
+		b.WriteString("知识库 + 互联网搜索（当前版本先使用知识库内容，互联网搜索结果接入后补充）\n")
+	} else {
+		b.WriteString("仅知识库\n")
+	}
+	b.WriteString("\n知识库参考内容:\n")
 	if len(chunks) == 0 {
 		b.WriteString("（未检索到相关知识库内容）\n")
 	} else {
@@ -202,12 +260,12 @@ func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, chunks []
 	return b.String()
 }
 
-func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantID uint64, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
+func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantDB *gorm.DB, tenantID uint64, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
 	if topK <= 0 || topK > 20 {
 		topK = 5
 	}
 	search := escapeWritingQuery(query)
-	db := h.db.Model(&types.SmartKnoraDocumentChunk{}).
+	db := tenantDB.Model(&types.SmartKnoraDocumentChunk{}).
 		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
 		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
 	if spaceID != "" {
@@ -227,6 +285,7 @@ func escapeWritingQuery(input string) string {
 
 // ExportDraft exports a draft to PDF/DOCX/Markdown.
 func (h *SmartKnoraWritingHandler) ExportDraft(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	draftID := c.Param("id")
 	var req struct {
 		Format string `json:"format" binding:"required,oneof=pdf docx markdown"`
@@ -238,24 +297,36 @@ func (h *SmartKnoraWritingHandler) ExportDraft(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 	var draft types.WritingDraft
-	if err := h.db.Where("id = ? AND user_id = ? AND tenant_id = ?", draftID, userID, tenantID).First(&draft).Error; err != nil {
+	if err := tenantDB.Where("id = ? AND user_id = ? AND tenant_id = ?", draftID, userID, tenantID).First(&draft).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "draft not found"})
-		return
-	}
-	if req.Format != "markdown" {
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "only markdown export is currently supported", "format": req.Format})
 		return
 	}
 	filename := sanitizeExportFilename(draft.Title)
 	if filename == "" {
 		filename = "smartknora-draft"
 	}
-	if !strings.HasSuffix(strings.ToLower(filename), ".md") {
-		filename += ".md"
-	}
 	content := draft.Content
 	if strings.TrimSpace(content) == "" {
 		content = fmt.Sprintf("# %s\n\n", draft.Title)
+	}
+	if req.Format == "pdf" {
+		if !strings.HasSuffix(strings.ToLower(filename), ".pdf") {
+			filename += ".pdf"
+		}
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		c.Data(http.StatusOK, "application/pdf", buildSimplePDF(content))
+		return
+	}
+	if req.Format == "docx" {
+		if !strings.HasSuffix(strings.ToLower(filename), ".docx") {
+			filename += ".docx"
+		}
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buildSimpleDocx(content))
+		return
+	}
+	if !strings.HasSuffix(strings.ToLower(filename), ".md") {
+		filename += ".md"
 	}
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
 	c.Data(http.StatusOK, "text/markdown; charset=utf-8", []byte(content))
@@ -269,4 +340,94 @@ func sanitizeExportFilename(name string) string {
 		name = string([]rune(name)[:80])
 	}
 	return name
+}
+
+func buildSimpleDocx(markdown string) []byte {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	writeZipFile := func(name, content string) {
+		w, _ := zw.Create(name)
+		_, _ = w.Write([]byte(content))
+	}
+	writeZipFile("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`)
+	writeZipFile("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`)
+	var body strings.Builder
+	for _, line := range strings.Split(markdown, "\n") {
+		line = strings.TrimSpace(strings.TrimLeft(line, "#"))
+		if line == "" {
+			body.WriteString("<w:p/>")
+			continue
+		}
+		body.WriteString("<w:p><w:r><w:t xml:space=\"preserve\">")
+		body.WriteString(html.EscapeString(line))
+		body.WriteString("</w:t></w:r></w:p>")
+	}
+	writeZipFile("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>`+body.String()+`<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`)
+	_ = zw.Close()
+	return buf.Bytes()
+}
+
+func buildSimplePDF(markdown string) []byte {
+	lines := strings.Split(markdown, "\n")
+	contentLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(strings.TrimLeft(line, "#"))
+		if trimmed == "" {
+			contentLines = append(contentLines, "")
+			continue
+		}
+		for len(trimmed) > 72 {
+			contentLines = append(contentLines, trimmed[:72])
+			trimmed = trimmed[72:]
+		}
+		contentLines = append(contentLines, trimmed)
+	}
+	if len(contentLines) == 0 {
+		contentLines = []string{"SmartKnora Draft"}
+	}
+
+	var stream strings.Builder
+	stream.WriteString("BT\n/F1 12 Tf\n50 792 Td\n14 TL\n")
+	first := true
+	for _, line := range contentLines {
+		escaped := escapePDFText(line)
+		if first {
+			stream.WriteString(fmt.Sprintf("(%s) Tj\n", escaped))
+			first = false
+			continue
+		}
+		stream.WriteString("T*\n")
+		stream.WriteString(fmt.Sprintf("(%s) Tj\n", escaped))
+	}
+	stream.WriteString("ET")
+	streamStr := stream.String()
+
+	objects := []string{
+		"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+		"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+		"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+		"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+		fmt.Sprintf("5 0 obj\n<< /Length %d >>\nstream\n%s\nendstream\nendobj\n", len(streamStr), streamStr),
+	}
+
+	var pdf strings.Builder
+	pdf.WriteString("%PDF-1.4\n")
+	offsets := make([]int, 0, len(objects)+1)
+	for _, obj := range objects {
+		offsets = append(offsets, pdf.Len())
+		pdf.WriteString(obj)
+	}
+	xrefStart := pdf.Len()
+	pdf.WriteString(fmt.Sprintf("xref\n0 %d\n", len(objects)+1))
+	pdf.WriteString("0000000000 65535 f \n")
+	for _, offset := range offsets {
+		pdf.WriteString(fmt.Sprintf("%010d 00000 n \n", offset))
+	}
+	pdf.WriteString(fmt.Sprintf("trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF", len(objects)+1, xrefStart))
+	return []byte(pdf.String())
+}
+
+func escapePDFText(input string) string {
+	replacer := strings.NewReplacer("\\", "\\\\", "(", "\\(", ")", "\\)")
+	return replacer.Replace(input)
 }

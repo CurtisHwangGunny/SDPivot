@@ -19,6 +19,7 @@ import (
 //  1. Add a *T field below + JSON tag (snake_case, must match the front-end key).
 //  2. Extend the merge logic in service.UserService.UpdateUserPreferences.
 //  3. Surface the new knob in the frontend settings store.
+//
 // No DB DDL is required — preferences is a single jsonb column.
 type UserPreferences struct {
 	// EnableMemory mirrors the "开启记忆功能" switch in General Settings.
@@ -95,10 +96,17 @@ type User struct {
 	// Whether the user is a system administrator (independent of tenant roles)
 	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
 	// Ops admin fields (smartKnora PRD 1.1.4)
-	IsOpsAdmin          bool       `json:"is_ops_admin" gorm:"default:false;index:idx_users_ops_admin,where:is_ops_admin = true"`
-	MustChangePassword  bool       `json:"must_change_password" gorm:"default:false"`
-	PasswordChangedAt   *time.Time `json:"password_changed_at"`
-	PasswordExpiresAt   *time.Time `json:"password_expires_at"`
+	IsOpsAdmin         bool       `json:"is_ops_admin" gorm:"default:false;index:idx_users_ops_admin,where:is_ops_admin = true"`
+	MustChangePassword bool       `json:"must_change_password" gorm:"default:false"`
+	PasswordChangedAt  *time.Time `json:"password_changed_at"`
+	PasswordExpiresAt  *time.Time `json:"password_expires_at"`
+
+	// SmartKnora lifecycle fields (PRD v4.2): 30-day full trial, 90-day certification extension, paid conversion.
+	TrialStartedAt  *time.Time `json:"trial_started_at"`
+	TrialPhase      string     `json:"trial_phase" gorm:"type:varchar(20);default:30day;index"`
+	AuthenticatedAt *time.Time `json:"authenticated_at"`
+	AuthExtendedAt  *time.Time `json:"auth_extended_at"`
+	PaidAt          *time.Time `json:"paid_at"`
 	// Per-user UI/feature preferences (memory toggle, future knobs).
 	// Stored as JSON (jsonb on Postgres, TEXT on SQLite) via the
 	// driver.Valuer / sql.Scanner methods on UserPreferences.

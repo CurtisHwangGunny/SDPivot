@@ -40,6 +40,7 @@ func (h *SmartKnoraOrgHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 // CreateOrganization creates a new enterprise organization.
 func (h *SmartKnoraOrgHandler) CreateOrganization(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	var req types.CreateOrgRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -62,7 +63,7 @@ func (h *SmartKnoraOrgHandler) CreateOrganization(c *gin.Context) {
 		UpdatedAt:   now,
 	}
 
-	if err := h.db.Create(&org).Error; err != nil {
+	if err := tenantDB.Create(&org).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create organization"})
 		return
 	}
@@ -78,7 +79,7 @@ func (h *SmartKnoraOrgHandler) CreateOrganization(c *gin.Context) {
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
-	h.db.Create(&orgExt)
+	tenantDB.Create(&orgExt)
 
 	// Add owner as org member
 	member := types.SmartKnoraOrgMember{
@@ -89,7 +90,7 @@ func (h *SmartKnoraOrgHandler) CreateOrganization(c *gin.Context) {
 		Status:   "active",
 		JoinedAt: now,
 	}
-	h.db.Create(&member)
+	tenantDB.Create(&member)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"organization": org,
@@ -100,10 +101,11 @@ func (h *SmartKnoraOrgHandler) CreateOrganization(c *gin.Context) {
 
 // ListOrganizations lists organizations the current user belongs to.
 func (h *SmartKnoraOrgHandler) ListOrganizations(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 
 	var members []types.SmartKnoraOrgMember
-	h.db.Where("user_id = ? AND status = 'active'", userID).Find(&members)
+	tenantDB.Where("user_id = ? AND status = 'active'", userID).Find(&members)
 
 	orgIDs := make([]string, len(members))
 	for i, m := range members {
@@ -112,13 +114,13 @@ func (h *SmartKnoraOrgHandler) ListOrganizations(c *gin.Context) {
 
 	var orgs []types.Organization
 	if len(orgIDs) > 0 {
-		h.db.Where("id IN ?", orgIDs).Find(&orgs)
+		tenantDB.Where("id IN ?", orgIDs).Find(&orgs)
 	}
 
 	// Get auth status for each org
 	orgExts := make(map[string]types.OrgExt)
 	var exts []types.OrgExt
-	h.db.Where("org_id IN ?", orgIDs).Find(&exts)
+	tenantDB.Where("org_id IN ?", orgIDs).Find(&exts)
 	for _, ext := range exts {
 		orgExts[ext.OrgID] = ext
 	}
@@ -138,33 +140,35 @@ func (h *SmartKnoraOrgHandler) ListOrganizations(c *gin.Context) {
 
 // GetOrganization gets a specific organization.
 func (h *SmartKnoraOrgHandler) GetOrganization(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 
 	var org types.Organization
-	if err := h.db.Where("id = ?", orgID).First(&org).Error; err != nil {
+	if err := tenantDB.Where("id = ?", orgID).First(&org).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "organization not found"})
 		return
 	}
 
 	var ext types.OrgExt
-	h.db.Where("org_id = ?", orgID).First(&ext)
+	tenantDB.Where("org_id = ?", orgID).First(&ext)
 
 	c.JSON(http.StatusOK, gin.H{
-		"organization":  org,
-		"auth_status":   ext.AuthStatus,
-		"auth_expires":  ext.AuthExpiresAt,
+		"organization":   org,
+		"auth_status":    ext.AuthStatus,
+		"auth_expires":   ext.AuthExpiresAt,
 		"days_remaining": ext.DaysRemaining(),
 	})
 }
 
 // UpdateOrganization updates org info.
 func (h *SmartKnoraOrgHandler) UpdateOrganization(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 	userID := middleware.GetUserID(c)
 
 	// Verify ownership
 	var org types.Organization
-	if err := h.db.Where("id = ? AND owner_id = ?", orgID, userID).First(&org).Error; err != nil {
+	if err := tenantDB.Where("id = ? AND owner_id = ?", orgID, userID).First(&org).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
 		return
 	}
@@ -190,12 +194,13 @@ func (h *SmartKnoraOrgHandler) UpdateOrganization(c *gin.Context) {
 		updates["avatar"] = *req.LogoURL
 	}
 
-	h.db.Model(&org).Updates(updates)
+	tenantDB.Model(&org).Updates(updates)
 	c.JSON(http.StatusOK, gin.H{"organization": org})
 }
 
 // JoinOrganization allows a user to join via invite code.
 func (h *SmartKnoraOrgHandler) JoinOrganization(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	var req types.JoinOrgRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -206,14 +211,14 @@ func (h *SmartKnoraOrgHandler) JoinOrganization(c *gin.Context) {
 
 	// Find org by invite code
 	var org types.Organization
-	if err := h.db.Where("invite_code = ?", req.InviteCode).First(&org).Error; err != nil {
+	if err := tenantDB.Where("invite_code = ?", req.InviteCode).First(&org).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "invalid invite code"})
 		return
 	}
 
 	// Check if already a member
 	var existing types.SmartKnoraOrgMember
-	if err := h.db.Where("org_id = ? AND user_id = ?", org.ID, userID).First(&existing).Error; err == nil {
+	if err := tenantDB.Where("org_id = ? AND user_id = ?", org.ID, userID).First(&existing).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "already a member"})
 		return
 	}
@@ -227,29 +232,31 @@ func (h *SmartKnoraOrgHandler) JoinOrganization(c *gin.Context) {
 		Status:   "active",
 		JoinedAt: time.Now(),
 	}
-	h.db.Create(&member)
+	tenantDB.Create(&member)
 
 	c.JSON(http.StatusOK, gin.H{"message": "joined successfully", "organization": org})
 }
 
 // ListMembers lists members of an organization.
 func (h *SmartKnoraOrgHandler) ListMembers(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 
 	var members []types.SmartKnoraOrgMember
-	h.db.Where("org_id = ? AND status = 'active'", orgID).Find(&members)
+	tenantDB.Where("org_id = ? AND status = 'active'", orgID).Find(&members)
 
 	c.JSON(http.StatusOK, gin.H{"members": members})
 }
 
 // AddMember adds a member to an organization.
 func (h *SmartKnoraOrgHandler) AddMember(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller is owner/admin of the org
 	var caller types.SmartKnoraOrgMember
-	if err := h.db.Where("org_id = ? AND user_id = ? AND role IN ('owner','admin')", orgID, callerID).First(&caller).Error; err != nil {
+	if err := tenantDB.Where("org_id = ? AND user_id = ? AND role IN ('owner','admin')", orgID, callerID).First(&caller).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to add members"})
 		return
 	}
@@ -275,25 +282,26 @@ func (h *SmartKnoraOrgHandler) AddMember(c *gin.Context) {
 		Status:   "active",
 		JoinedAt: time.Now(),
 	}
-	h.db.Create(&member)
+	tenantDB.Create(&member)
 
 	c.JSON(http.StatusCreated, gin.H{"member": member})
 }
 
 // RemoveMember removes a member from an organization.
 func (h *SmartKnoraOrgHandler) RemoveMember(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 	targetUserID := c.Param("userId")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller is owner/admin of the org
 	var caller types.SmartKnoraOrgMember
-	if err := h.db.Where("org_id = ? AND user_id = ? AND role IN ('owner','admin')", orgID, callerID).First(&caller).Error; err != nil {
+	if err := tenantDB.Where("org_id = ? AND user_id = ? AND role IN ('owner','admin')", orgID, callerID).First(&caller).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to remove members"})
 		return
 	}
 
-	if err := h.db.Where("org_id = ? AND user_id = ?", orgID, targetUserID).Delete(&types.SmartKnoraOrgMember{}).Error; err != nil {
+	if err := tenantDB.Where("org_id = ? AND user_id = ?", orgID, targetUserID).Delete(&types.SmartKnoraOrgMember{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove member"})
 		return
 	}
@@ -303,13 +311,14 @@ func (h *SmartKnoraOrgHandler) RemoveMember(c *gin.Context) {
 
 // UpdateMemberRole updates a member's role.
 func (h *SmartKnoraOrgHandler) UpdateMemberRole(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 	targetUserID := c.Param("userId")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller is owner/admin of the org
 	var caller types.SmartKnoraOrgMember
-	if err := h.db.Where("org_id = ? AND user_id = ? AND role IN ('owner','admin')", orgID, callerID).First(&caller).Error; err != nil {
+	if err := tenantDB.Where("org_id = ? AND user_id = ? AND role IN ('owner','admin')", orgID, callerID).First(&caller).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to update member roles"})
 		return
 	}
@@ -322,7 +331,7 @@ func (h *SmartKnoraOrgHandler) UpdateMemberRole(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&types.SmartKnoraOrgMember{}).
+	tenantDB.Model(&types.SmartKnoraOrgMember{}).
 		Where("org_id = ? AND user_id = ?", orgID, targetUserID).
 		Update("role", req.Role)
 

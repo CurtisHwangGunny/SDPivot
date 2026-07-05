@@ -1,0 +1,13 @@
+DROP POLICY IF EXISTS wcc_tenant_isolation ON write_category_config;
+DROP TABLE IF EXISTS write_category_config;
+ALTER TABLE writing_drafts DROP COLUMN IF EXISTS web_search_enabled;
+ALTER TABLE writing_drafts DROP COLUMN IF EXISTS source_type;
+DROP FUNCTION IF EXISTS is_ops_admin_context();
+DROP FUNCTION IF EXISTS get_current_tenant_id();
+DROP FUNCTION IF EXISTS set_tenant_context(BIGINT, BOOLEAN);
+DROP INDEX IF EXISTS idx_users_trial_phase;
+ALTER TABLE users DROP COLUMN IF EXISTS paid_at;
+ALTER TABLE users DROP COLUMN IF EXISTS auth_extended_at;
+ALTER TABLE users DROP COLUMN IF EXISTS authenticated_at;
+ALTER TABLE users DROP COLUMN IF EXISTS trial_phase;
+ALTER TABLE users DROP COLUMN IF EXISTS trial_started_at;

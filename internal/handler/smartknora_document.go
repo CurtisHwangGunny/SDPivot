@@ -75,6 +75,7 @@ func (h *SmartKnoraDocumentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 // UploadDocument handles file upload.
 func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	// Limit upload size to 50MB
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 50<<20)
 
@@ -107,7 +108,7 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 
 	// Check duplicate
 	var existing types.SmartKnoraDocument
-	if err := h.db.Where("content_hash = ? AND space_id = ? AND deleted_at IS NULL", contentHash, spaceID).First(&existing).Error; err == nil {
+	if err := tenantDB.Where("content_hash = ? AND space_id = ? AND deleted_at IS NULL", contentHash, spaceID).First(&existing).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "document already exists", "document_id": existing.ID})
 		return
 	}
@@ -156,7 +157,7 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 		UpdatedAt:       now,
 	}
 
-	if err := h.db.Create(&doc).Error; err != nil {
+	if err := tenantDB.Create(&doc).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document record"})
 		return
 	}
@@ -171,13 +172,13 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 		CreatedAt:  now,
 		CreatedBy:  userID,
 	}
-	if err := h.db.Create(&version).Error; err != nil {
+	if err := tenantDB.Create(&version).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document version"})
 		return
 	}
 
 	parseMessage := "document uploaded and parsed"
-	if err := h.parseAndStoreDocument(&doc, content); err != nil {
+	if err := h.parseAndStoreDocument(tenantDB, &doc, content); err != nil {
 		parseMessage = "document uploaded, parsing failed: " + err.Error()
 	}
 
@@ -189,12 +190,13 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 
 // ListDocuments lists documents in a knowledge space.
 func (h *SmartKnoraDocumentHandler) ListDocuments(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
 	var query types.DocumentListQuery
 	c.ShouldBindQuery(&query)
 
-	db := h.db.Model(&types.SmartKnoraDocument{}).Where("tenant_id = ?", tenantID)
+	db := tenantDB.Model(&types.SmartKnoraDocument{}).Where("tenant_id = ?", tenantID)
 
 	if query.SpaceID != "" {
 		db = db.Where("space_id = ?", query.SpaceID)
@@ -232,11 +234,12 @@ func (h *SmartKnoraDocumentHandler) ListDocuments(c *gin.Context) {
 
 // GetDocument gets a specific document.
 func (h *SmartKnoraDocumentHandler) GetDocument(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
 	var doc types.SmartKnoraDocument
-	if err := h.db.Where("id = ? AND tenant_id = ?", docID, tenantID).First(&doc).Error; err != nil {
+	if err := tenantDB.Where("id = ? AND tenant_id = ?", docID, tenantID).First(&doc).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
 		return
 	}
@@ -246,51 +249,55 @@ func (h *SmartKnoraDocumentHandler) GetDocument(c *gin.Context) {
 
 // GetDocumentChunks gets chunks of a document.
 func (h *SmartKnoraDocumentHandler) GetDocumentChunks(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
 	var chunks []types.SmartKnoraDocumentChunk
-	h.db.Where("document_id = ? AND tenant_id = ?", docID, tenantID).Order("chunk_index").Find(&chunks)
+	tenantDB.Where("document_id = ? AND tenant_id = ?", docID, tenantID).Order("chunk_index").Find(&chunks)
 
 	c.JSON(http.StatusOK, gin.H{"chunks": chunks, "total": len(chunks)})
 }
 
 // GetDocumentVersions gets version history of a document.
 func (h *SmartKnoraDocumentHandler) GetDocumentVersions(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
 	var versions []types.SmartKnoraDocumentVersion
-	h.db.Where("document_id = ? AND tenant_id = ?", docID, tenantID).Order("version DESC").Find(&versions)
+	tenantDB.Where("document_id = ? AND tenant_id = ?", docID, tenantID).Order("version DESC").Find(&versions)
 
 	c.JSON(http.StatusOK, gin.H{"versions": versions})
 }
 
 // DeleteDocument soft-deletes a document.
 func (h *SmartKnoraDocumentHandler) DeleteDocument(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
-	h.db.Where("id = ? AND tenant_id = ?", docID, tenantID).Delete(&types.SmartKnoraDocument{})
-	h.db.Where("document_id = ? AND tenant_id = ?", docID, tenantID).Delete(&types.SmartKnoraDocumentChunk{})
+	tenantDB.Where("id = ? AND tenant_id = ?", docID, tenantID).Delete(&types.SmartKnoraDocument{})
+	tenantDB.Where("document_id = ? AND tenant_id = ?", docID, tenantID).Delete(&types.SmartKnoraDocumentChunk{})
 
 	c.JSON(http.StatusOK, gin.H{"message": "document deleted"})
 }
 
 // ReparseDocument triggers re-parsing of a document.
 func (h *SmartKnoraDocumentHandler) ReparseDocument(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
 	var doc types.SmartKnoraDocument
-	if err := h.db.Where("id = ? AND tenant_id = ?", docID, tenantID).First(&doc).Error; err != nil {
+	if err := tenantDB.Where("id = ? AND tenant_id = ?", docID, tenantID).First(&doc).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
 		return
 	}
 
 	content, err := h.loadDocumentContent(&doc)
 	if err != nil {
-		h.db.Model(&doc).Updates(map[string]interface{}{
+		tenantDB.Model(&doc).Updates(map[string]interface{}{
 			"parse_status": "failed",
 			"updated_at":   time.Now(),
 		})
@@ -298,7 +305,7 @@ func (h *SmartKnoraDocumentHandler) ReparseDocument(c *gin.Context) {
 		return
 	}
 
-	if err := h.parseAndStoreDocument(&doc, content); err != nil {
+	if err := h.parseAndStoreDocument(tenantDB, &doc, content); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -308,11 +315,12 @@ func (h *SmartKnoraDocumentHandler) ReparseDocument(c *gin.Context) {
 
 // GetChunk gets a specific chunk.
 func (h *SmartKnoraDocumentHandler) GetChunk(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	chunkID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
 	var chunk types.SmartKnoraDocumentChunk
-	if err := h.db.Where("id = ? AND tenant_id = ?", chunkID, tenantID).First(&chunk).Error; err != nil {
+	if err := tenantDB.Where("id = ? AND tenant_id = ?", chunkID, tenantID).First(&chunk).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "chunk not found"})
 		return
 	}
@@ -322,6 +330,7 @@ func (h *SmartKnoraDocumentHandler) GetChunk(c *gin.Context) {
 
 // UpdateChunk updates a chunk's content.
 func (h *SmartKnoraDocumentHandler) UpdateChunk(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	chunkID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
@@ -333,13 +342,14 @@ func (h *SmartKnoraDocumentHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&types.SmartKnoraDocumentChunk{}).Where("id = ? AND tenant_id = ?", chunkID, tenantID).Update("content", req.Content)
+	tenantDB.Model(&types.SmartKnoraDocumentChunk{}).Where("id = ? AND tenant_id = ?", chunkID, tenantID).Update("content", req.Content)
 
 	c.JSON(http.StatusOK, gin.H{"message": "chunk updated"})
 }
 
 // CreateStrategy creates a chunking strategy.
 func (h *SmartKnoraDocumentHandler) CreateStrategy(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
 	var req types.ChunkStrategyRequest
@@ -369,22 +379,24 @@ func (h *SmartKnoraDocumentHandler) CreateStrategy(c *gin.Context) {
 		UpdatedAt:    time.Now(),
 	}
 
-	h.db.Create(&strategy)
+	tenantDB.Create(&strategy)
 	c.JSON(http.StatusCreated, gin.H{"strategy": strategy})
 }
 
 // ListStrategies lists chunking strategies.
 func (h *SmartKnoraDocumentHandler) ListStrategies(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
 	var strategies []types.SmartKnoraChunkStrategy
-	h.db.Where("tenant_id = ?", tenantID).Order("created_at DESC").Find(&strategies)
+	tenantDB.Where("tenant_id = ?", tenantID).Order("created_at DESC").Find(&strategies)
 
 	c.JSON(http.StatusOK, gin.H{"strategies": strategies})
 }
 
 // UpdateStrategy updates a chunking strategy.
 func (h *SmartKnoraDocumentHandler) UpdateStrategy(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	strategyID := c.Param("id")
 
 	var req types.ChunkStrategyRequest
@@ -404,19 +416,21 @@ func (h *SmartKnoraDocumentHandler) UpdateStrategy(c *gin.Context) {
 		updates["chunk_overlap"] = req.ChunkOverlap
 	}
 
-	h.db.Model(&types.SmartKnoraChunkStrategy{}).Where("id = ?", strategyID).Updates(updates)
+	tenantDB.Model(&types.SmartKnoraChunkStrategy{}).Where("id = ?", strategyID).Updates(updates)
 	c.JSON(http.StatusOK, gin.H{"message": "strategy updated"})
 }
 
 // DeleteStrategy deletes a chunking strategy.
 func (h *SmartKnoraDocumentHandler) DeleteStrategy(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	strategyID := c.Param("id")
-	h.db.Where("id = ?", strategyID).Delete(&types.SmartKnoraChunkStrategy{})
+	tenantDB.Where("id = ?", strategyID).Delete(&types.SmartKnoraChunkStrategy{})
 	c.JSON(http.StatusOK, gin.H{"message": "strategy deleted"})
 }
 
 // SearchDocuments performs semantic search across documents.
 func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
 	var req types.SearchRequest
@@ -431,7 +445,7 @@ func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
 
 	// Simple keyword search for now (vector search requires embedding service)
 	search := strings.ReplaceAll(strings.ReplaceAll(req.Query, "%", "\\%"), "_", "\\_")
-	db := h.db.Model(&types.SmartKnoraDocumentChunk{}).
+	db := tenantDB.Model(&types.SmartKnoraDocumentChunk{}).
 		Where("tenant_id = ? AND content ILIKE ?", tenantID, "%"+search+"%")
 
 	if req.SpaceID != "" {
@@ -477,22 +491,22 @@ func (h *SmartKnoraDocumentHandler) loadDocumentContent(doc *types.SmartKnoraDoc
 	return os.ReadFile(doc.FilePath)
 }
 
-func (h *SmartKnoraDocumentHandler) parseAndStoreDocument(doc *types.SmartKnoraDocument, content []byte) error {
+func (h *SmartKnoraDocumentHandler) parseAndStoreDocument(tenantDB *gorm.DB, doc *types.SmartKnoraDocument, content []byte) error {
 	now := time.Now()
-	h.db.Model(doc).Updates(map[string]interface{}{"parse_status": "parsing", "updated_at": now})
+	tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "parsing", "updated_at": now})
 
 	text, err := normalizeDocumentContent(doc.FileType, content)
 	if err != nil {
-		h.db.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "chunk_count": 0, "updated_at": time.Now()})
+		tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "chunk_count": 0, "updated_at": time.Now()})
 		return err
 	}
 	chunks := splitDocumentText(text, 2000, 200)
 	if len(chunks) == 0 {
-		h.db.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "chunk_count": 0, "updated_at": time.Now()})
+		tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "chunk_count": 0, "updated_at": time.Now()})
 		return fmt.Errorf("document content is empty")
 	}
 
-	err = h.db.Transaction(func(tx *gorm.DB) error {
+	err = tenantDB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("document_id = ? AND tenant_id = ?", doc.ID, doc.TenantID).Delete(&types.SmartKnoraDocumentChunk{}).Error; err != nil {
 			return err
 		}
@@ -505,7 +519,7 @@ func (h *SmartKnoraDocumentHandler) parseAndStoreDocument(doc *types.SmartKnoraD
 		return tx.Model(doc).Updates(map[string]interface{}{"parse_status": "completed", "chunk_count": len(chunks), "updated_at": time.Now()}).Error
 	})
 	if err != nil {
-		h.db.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "updated_at": time.Now()})
+		tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "updated_at": time.Now()})
 		return fmt.Errorf("failed to store chunks")
 	}
 	return nil
@@ -583,6 +597,7 @@ func tenantIDStr(tenantID uint64) string {
 
 // UploadManualDocument handles manual text/markdown input.
 func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
@@ -624,12 +639,12 @@ func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 		UpdatedAt:       now,
 	}
 
-	if err := h.db.Create(&doc).Error; err != nil {
+	if err := tenantDB.Create(&doc).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document"})
 		return
 	}
 
-	if err := h.parseAndStoreDocument(&doc, []byte(req.Content)); err != nil {
+	if err := h.parseAndStoreDocument(tenantDB, &doc, []byte(req.Content)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse manual document"})
 		return
 	}
@@ -642,6 +657,7 @@ func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 
 // UploadFromURL handles web page URL import.
 func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
@@ -711,12 +727,12 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		UpdatedAt:       now,
 	}
 
-	if err := h.db.Create(&doc).Error; err != nil {
+	if err := tenantDB.Create(&doc).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document"})
 		return
 	}
 
-	if err := h.parseAndStoreDocument(&doc, []byte(content)); err != nil {
+	if err := h.parseAndStoreDocument(tenantDB, &doc, []byte(content)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse URL content"})
 		return
 	}

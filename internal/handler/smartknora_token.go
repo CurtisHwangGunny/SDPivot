@@ -33,6 +33,7 @@ func (h *SmartKnoraTokenHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 // GetUsageSummary returns aggregated token usage.
 func (h *SmartKnoraTokenHandler) GetUsageSummary(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
@@ -42,7 +43,7 @@ func (h *SmartKnoraTokenHandler) GetUsageSummary(c *gin.Context) {
 		return
 	}
 
-	db := h.db.Model(&types.SmartKnoraTokenUsage{})
+	db := tenantDB.Model(&types.SmartKnoraTokenUsage{})
 	db = db.Where("tenant_id = ?", tenantID)
 
 	// Default: user's own usage
@@ -79,6 +80,7 @@ func (h *SmartKnoraTokenHandler) GetUsageSummary(c *gin.Context) {
 
 // GetUsageHistory returns token usage history grouped by time.
 func (h *SmartKnoraTokenHandler) GetUsageHistory(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
@@ -100,7 +102,7 @@ func (h *SmartKnoraTokenHandler) GetUsageHistory(c *gin.Context) {
 		dateFormat = "YYYY-MM-DD"
 	}
 
-	db := h.db.Model(&types.SmartKnoraTokenUsage{})
+	db := tenantDB.Model(&types.SmartKnoraTokenUsage{})
 	db = db.Where("tenant_id = ? AND user_id = ?", tenantID, userID)
 
 	if query.StartAt != nil {
@@ -110,9 +112,9 @@ func (h *SmartKnoraTokenHandler) GetUsageHistory(c *gin.Context) {
 	}
 
 	type DailyUsage struct {
-		Date          string `json:"date"`
-		TotalTokens   int64  `json:"total_tokens"`
-		RequestCount  int64  `json:"request_count"`
+		Date         string `json:"date"`
+		TotalTokens  int64  `json:"total_tokens"`
+		RequestCount int64  `json:"request_count"`
 	}
 
 	var results []DailyUsage
@@ -126,6 +128,7 @@ func (h *SmartKnoraTokenHandler) GetUsageHistory(c *gin.Context) {
 
 // GetUsageByModel returns token usage broken down by model.
 func (h *SmartKnoraTokenHandler) GetUsageByModel(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
@@ -136,7 +139,7 @@ func (h *SmartKnoraTokenHandler) GetUsageByModel(c *gin.Context) {
 	}
 
 	var results []ModelUsage
-	h.db.Model(&types.SmartKnoraTokenUsage{}).
+	tenantDB.Model(&types.SmartKnoraTokenUsage{}).
 		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
 		Select("model_id, SUM(total_tokens) as total_tokens, COUNT(*) as request_count").
 		Group("model_id").

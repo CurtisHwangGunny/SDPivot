@@ -7,9 +7,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// SmartKnoraTenantContext creates a middleware that sets the PostgreSQL
-// tenant context for RLS policies. Must run AFTER SmartKnoraAuth.
-func SmartKnoraTenantContext(db *gorm.DB) gin.HandlerFunc {
+const smartKnoraTenantDBKey = "smartknora_tenant_db"
+
+// SmartKnoraTenantContext creates a middleware that binds a request-scoped
+// database transaction to the current request and sets PostgreSQL tenant
+// context for RLS policies. Must run AFTER SmartKnoraAuth.
+func SmartKnoraTenantContext(baseDB *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tenantID := GetTenantID(c)
 		if tenantID == 0 {
@@ -17,10 +20,54 @@ func SmartKnoraTenantContext(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Set PostgreSQL session variable for RLS policy
-		// Convert tenantID to string to avoid encode type mismatch
-		db.Exec("SELECT set_config('app.current_tenant_id', ?, false)", fmt.Sprintf("%d", tenantID))
+		isOpsAdmin := GetRole(c) == "ops_admin"
+		tx := baseDB.WithContext(c.Request.Context()).Begin()
+		if tx.Error != nil {
+			c.JSON(500, gin.H{"error": "failed to start tenant database transaction"})
+			c.Abort()
+			return
+		}
+
+		if err := tx.Exec("SELECT set_tenant_context(?, ?)", tenantID, isOpsAdmin).Error; err != nil {
+			if fallbackErr := tx.Exec(
+				"SELECT set_config('app.current_tenant_id', ?, false), set_config('app.is_ops_admin', ?, false)",
+				fmt.Sprintf("%d", tenantID),
+				fmt.Sprintf("%t", isOpsAdmin),
+			).Error; fallbackErr != nil {
+				_ = tx.Rollback().Error
+				c.JSON(500, gin.H{"error": "failed to set tenant database context", "detail": fallbackErr.Error()})
+				c.Abort()
+				return
+			}
+		}
+
+		c.Set(smartKnoraTenantDBKey, tx)
+		defer func() {
+			if r := recover(); r != nil {
+				_ = tx.Rollback().Error
+				panic(r)
+			}
+		}()
 
 		c.Next()
+
+		if len(c.Errors) > 0 || c.Writer.Status() >= 400 {
+			_ = tx.Rollback().Error
+			return
+		}
+		_ = tx.Commit().Error
 	}
+}
+
+// TenantDB returns the request-scoped tenant transaction when available.
+func TenantDB(c *gin.Context, fallback *gorm.DB) *gorm.DB {
+	if c != nil {
+		if tx, ok := c.Get(smartKnoraTenantDBKey); ok {
+			if tenantDB, ok := tx.(*gorm.DB); ok && tenantDB != nil {
+				return tenantDB
+			}
+		}
+		return fallback.WithContext(c.Request.Context())
+	}
+	return fallback
 }
