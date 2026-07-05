@@ -157,15 +157,15 @@ func (h *SmartKnoraOpsAdminHandler) ListEnterprises(c *gin.Context) {
 	q.Count(&total)
 
 	type EnterpriseRow struct {
-		ID           string     `json:"id"`
-		Name         string     `json:"name"`
-		Description  string     `json:"description"`
-		OwnerID      string     `json:"owner_id"`
-		InviteCode   string     `json:"invite_code"`
-		MemberCount  int64      `json:"member_count"`
-		AuthStatus   string     `json:"auth_status"`
-		ExpiresAt    *time.Time `json:"expires_at"`
-		CreatedAt    time.Time  `json:"created_at"`
+		ID          string     `json:"id"`
+		Name        string     `json:"name"`
+		Description string     `json:"description"`
+		OwnerID     string     `json:"owner_id"`
+		InviteCode  string     `json:"invite_code"`
+		MemberCount int64      `json:"member_count"`
+		AuthStatus  string     `json:"auth_status"`
+		ExpiresAt   *time.Time `json:"expires_at"`
+		CreatedAt   time.Time  `json:"created_at"`
 	}
 
 	var rows []EnterpriseRow
@@ -220,11 +220,11 @@ func (h *SmartKnoraOpsAdminHandler) GetEnterprise(c *gin.Context) {
 	h.db.Where("org_id = ?", id).Find(&members)
 
 	c.JSON(http.StatusOK, gin.H{
-		"enterprise":  org,
-		"auth_status": ext.AuthStatus,
-		"expires_at":  ext.AuthExpiresAt,
+		"enterprise":   org,
+		"auth_status":  ext.AuthStatus,
+		"expires_at":   ext.AuthExpiresAt,
 		"member_count": memberCount,
-		"members":     members,
+		"members":      members,
 	})
 }
 
@@ -264,15 +264,15 @@ func (h *SmartKnoraOpsAdminHandler) ListUsers(c *gin.Context) {
 	activeFilter := c.Query("is_active")
 
 	type UserRow struct {
-		ID        string    `json:"id"`
-		Username  string    `json:"username"`
-		Email     string    `json:"email"`
-		Phone     string    `json:"phone"`
-		Nickname  string    `json:"nickname"`
-		IsActive  bool      `json:"is_active"`
-		IsOps     bool      `json:"is_ops_admin"`
-		TenantID  uint64    `json:"tenant_id"`
-		CreatedAt time.Time `json:"created_at"`
+		ID         string    `json:"id"`
+		Username   string    `json:"username"`
+		Email      string    `json:"email"`
+		Phone      string    `json:"phone"`
+		Nickname   string    `json:"nickname"`
+		IsActive   bool      `json:"is_active"`
+		IsOpsAdmin bool      `json:"is_ops_admin" gorm:"column:is_ops_admin"`
+		TenantID   uint64    `json:"tenant_id"`
+		CreatedAt  time.Time `json:"created_at"`
 	}
 
 	q := h.db.Table("users").Select("users.id, users.username, users.email, users.is_active, users.is_ops_admin, users.tenant_id, users.created_at, COALESCE(p.phone, '') AS phone, COALESCE(p.nickname, '') AS nickname").
@@ -355,16 +355,16 @@ func (h *SmartKnoraOpsAdminHandler) GetAuditLogs(c *gin.Context) {
 	q.Count(&total)
 
 	type AuditRow struct {
-		ID        int64     `json:"id"`
-		TenantID  uint64    `json:"tenant_id"`
-		UserID    string    `json:"user_id"`
-		Username  string    `json:"username"`
-		Action    string    `json:"action"`
-		Resource  string    `json:"resource"`
-		ResourceID string   `json:"resource_id"`
-		Detail    string    `json:"detail"`
-		IP        string    `json:"ip"`
-		CreatedAt time.Time `json:"created_at"`
+		ID         int64     `json:"id"`
+		TenantID   uint64    `json:"tenant_id"`
+		UserID     string    `json:"user_id"`
+		Username   string    `json:"username"`
+		Action     string    `json:"action"`
+		Resource   string    `json:"resource"`
+		ResourceID string    `json:"resource_id"`
+		Detail     string    `json:"detail"`
+		IP         string    `json:"ip"`
+		CreatedAt  time.Time `json:"created_at"`
 	}
 
 	rows := make([]AuditRow, 0)
@@ -391,15 +391,15 @@ func (h *SmartKnoraOpsAdminHandler) ExportAuditLogs(c *gin.Context) {
 	writer.Write([]string{"ID", "Time", "User ID", "Username", "Action", "Resource", "Resource ID", "Detail", "IP"})
 
 	type AuditRow struct {
-		ID        int64
-		UserID    string
-		Username  string
-		Action    string
-		Resource  string
+		ID         int64
+		UserID     string
+		Username   string
+		Action     string
+		Resource   string
 		ResourceID string
-		Detail    string
-		IP        string
-		CreatedAt time.Time
+		Detail     string
+		IP         string
+		CreatedAt  time.Time
 	}
 
 	rows := make([]AuditRow, 0)

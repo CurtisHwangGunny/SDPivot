@@ -30,7 +30,7 @@ func main() {
 	dbPort := getEnv("SMART_DB_PORT", "5432")
 	dbUser := getEnv("SMART_DB_USER", "postgres")
 	dbPass := getEnv("SMART_DB_PASSWORD", "postgres")
-	dbName := getEnv("SMART_DB_NAME", "smartknora")
+	dbName := getEnv("SMART_DB_NAME", "WeKnora")
 	redisAddr := getEnv("REDIS_ADDR", "")
 	redisPassword := getEnv("REDIS_PASSWORD", "")
 	jwtSecret := getEnv("SMARTKNORA_JWT_SECRET", "")

@@ -10,13 +10,13 @@ import (
 // SmartKnoraUserProfile extends WeKnora's User with smartKnora-specific fields.
 // Stored as a separate table joined on user_id, avoiding modifications to WeKnora core types.
 type SmartKnoraUserProfile struct {
-	ID       string  `json:"id" gorm:"type:varchar(36);primaryKey"`
-	UserID   string  `json:"user_id" gorm:"type:varchar(36);uniqueIndex;not null"`
-	Phone    *string `json:"phone" gorm:"type:varchar(20);uniqueIndex"`
-	Nickname string  `json:"nickname" gorm:"type:varchar(100)"`
-	Status   string  `json:"status" gorm:"type:varchar(20);not null;default:active;index"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string         `json:"id" gorm:"type:varchar(36);primaryKey"`
+	UserID    string         `json:"user_id" gorm:"type:varchar(36);uniqueIndex;not null"`
+	Phone     *string        `json:"phone" gorm:"type:varchar(20);uniqueIndex"`
+	Nickname  string         `json:"nickname" gorm:"type:varchar(100)"`
+	Status    string         `json:"status" gorm:"type:varchar(20);not null;default:active;index"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
@@ -213,6 +213,8 @@ type SmartKnoraRegisterRequest struct {
 }
 
 type SmartKnoraAuthResponse struct {
+	Success      bool   `json:"success"`
+	Token        string `json:"token"`
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int64  `json:"expires_in"`
@@ -279,19 +281,44 @@ type SmartKnoraTokenUsageQuery struct {
 
 // WritingDraft represents an AI writing draft.
 type WritingDraft struct {
-	ID        string    `json:"id" gorm:"type:varchar(36);primaryKey"`
-	UserID    string    `json:"user_id" gorm:"type:varchar(36);not null;index"`
-	TenantID  uint64    `json:"tenant_id" gorm:"not null;index"`
-	Title     string    `json:"title" gorm:"type:varchar(500)"`
-	Category  string    `json:"category" gorm:"type:varchar(50)"`
-	Content   string    `json:"content" gorm:"type:text"`
-	SpaceID   string    `json:"space_id" gorm:"type:varchar(36)"`
-	Status    string    `json:"status" gorm:"type:varchar(20);default:draft"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID               string    `json:"id" gorm:"type:varchar(36);primaryKey"`
+	UserID           string    `json:"user_id" gorm:"type:varchar(36);not null;index"`
+	TenantID         uint64    `json:"tenant_id" gorm:"not null;index"`
+	Title            string    `json:"title" gorm:"type:varchar(500)"`
+	Category         string    `json:"category" gorm:"type:varchar(50)"`
+	Content          string    `json:"content" gorm:"type:text"`
+	SpaceID          string    `json:"space_id" gorm:"type:varchar(36)"`
+	SourceType       string    `json:"source_type" gorm:"type:varchar(30);not null;default:knowledge_base"`
+	WebSearchEnabled bool      `json:"web_search_enabled" gorm:"not null;default:false"`
+	Status           string    `json:"status" gorm:"type:varchar(20);default:draft"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 func (WritingDraft) TableName() string { return "writing_drafts" }
+
+// WriteCategoryConfig maps enterprise writing categories to default spaces.
+// It supports PRD v4.2's category -> knowledge-base configuration without
+// adding online editing or publishing workflows.
+type WriteCategoryConfig struct {
+	ID               string    `json:"id" gorm:"type:varchar(36);primaryKey"`
+	TenantID         uint64    `json:"tenant_id" gorm:"not null;index"`
+	Category         string    `json:"category" gorm:"type:varchar(50);not null;index"`
+	DefaultSpaceID   string    `json:"default_space_id" gorm:"type:varchar(36)"`
+	SourceType       string    `json:"source_type" gorm:"type:varchar(30);not null;default:knowledge_base"`
+	WebSearchEnabled bool      `json:"web_search_enabled" gorm:"not null;default:false"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+func (WriteCategoryConfig) TableName() string { return "write_category_config" }
+
+func (cfg *WriteCategoryConfig) BeforeCreate(tx *gorm.DB) error {
+	if cfg.ID == "" {
+		cfg.ID = uuid.New().String()
+	}
+	return nil
+}
 
 // Announcement represents a system announcement.
 type Announcement struct {

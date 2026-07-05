@@ -1,9 +1,9 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"time"
-	"log"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -92,13 +92,15 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	// Create WeKnora User
 	now := time.Now()
 	user := types.User{
-		ID:           "",
-		Username:     req.Phone,
-		Email:        req.Email,
-		PasswordHash: string(hash),
-		IsActive:     true,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:             "",
+		Username:       req.Phone,
+		Email:          req.Email,
+		PasswordHash:   string(hash),
+		IsActive:       true,
+		TrialStartedAt: &now,
+		TrialPhase:     "30day",
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if user.Username == "" {
 		user.Username = req.Email
@@ -122,23 +124,25 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	// Create default organization for the user so tenant_id is not 0
 	nowOrg := time.Now()
 	org := types.Organization{
-		ID:        uuid.New().String(),
-		Name:      "默认组织",
-		OwnerID:   user.ID,
+		ID:            uuid.New().String(),
+		Name:          "默认组织",
+		OwnerID:       user.ID,
 		InviteCode:    generateInviteCode(),
 		OwnerTenantID: user.TenantID,
-		CreatedAt: nowOrg,
-		UpdatedAt: nowOrg,
+		CreatedAt:     nowOrg,
+		UpdatedAt:     nowOrg,
 	}
 	if err := h.db.Create(&org).Error; err != nil {
 		log.Printf("WARNING: failed to create default org for user %s: %v", user.ID, err)
 	} else {
+		trialExpiresAt := nowOrg.Add(30 * 24 * time.Hour)
 		orgExt := types.OrgExt{
-			OrgID:     org.ID,
-			TenantID:  user.TenantID,
-			AuthStatus: "trial",
-			CreatedAt: nowOrg,
-			UpdatedAt: nowOrg,
+			OrgID:         org.ID,
+			TenantID:      user.TenantID,
+			AuthStatus:    "trial",
+			AuthExpiresAt: &trialExpiresAt,
+			CreatedAt:     nowOrg,
+			UpdatedAt:     nowOrg,
 		}
 		if err := h.db.Create(&orgExt).Error; err != nil {
 			log.Printf("WARNING: failed to create org_ext for org %s: %v", org.ID, err)
@@ -209,6 +213,8 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	h.db.Model(&user).Update("updated_at", now)
 
 	c.JSON(http.StatusCreated, types.SmartKnoraAuthResponse{
+		Success:      true,
+		Token:        accessToken,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresIn:    h.jwtManager.AccessExpirySeconds(),
@@ -291,6 +297,8 @@ func (h *SmartKnoraAuthHandler) Login(c *gin.Context) {
 	h.db.Model(&user).Update("updated_at", now)
 
 	c.JSON(http.StatusOK, types.SmartKnoraAuthResponse{
+		Success:      true,
+		Token:        accessToken,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresIn:    h.jwtManager.AccessExpirySeconds(),

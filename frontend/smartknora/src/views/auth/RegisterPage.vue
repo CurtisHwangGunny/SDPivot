@@ -9,7 +9,7 @@
         <t-input v-model="form.nickname" placeholder="昵称（选填）">
           <template #prefix-icon><t-icon name="user-circle" /></template>
         </t-input>
-        <t-input v-model="form.password" type="password" placeholder="密码（至少6位）">
+        <t-input v-model="form.password" type="password" placeholder="密码（至少8位）">
           <template #prefix-icon><t-icon name="lock-on" /></template>
         </t-input>
         <t-input v-model="form.confirmPassword" type="password" placeholder="确认密码">
@@ -47,7 +47,7 @@ const form = ref({ phone: '', nickname: '', password: '', confirmPassword: '' })
 
 async function handleRegister() {
   if (form.value.password !== form.value.confirmPassword) { errorMsg.value = '两次密码不一致'; return }
-  if (form.value.password.length < 6) { errorMsg.value = '密码至少6位'; return }
+  if (form.value.password.length < 8) { errorMsg.value = '密码至少8位'; return }
   loading.value = true; errorMsg.value = ''; successMsg.value = ''
   try {
     const res = await register({ phone: form.value.phone, password: form.value.password, nickname: form.value.nickname })

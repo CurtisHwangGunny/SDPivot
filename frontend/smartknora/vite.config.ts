@@ -19,10 +19,22 @@ export default defineConfig({
   },
   // Multi-page entry: user app + ops admin app
   build: {
+    chunkSizeWarningLimit: 1200,
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
         ops: resolve(__dirname, 'ops.html'),
+      },
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('tdesign-vue-next')) return 'tdesign-vendor'
+          if (id.includes('vue-router')) return 'router-vendor'
+          if (id.includes('pinia')) return 'pinia-vendor'
+          if (id.includes('axios')) return 'axios-vendor'
+          if (id.includes('/vue/')) return 'vue-core'
+          return 'app-vendor'
+        },
       },
     },
   },

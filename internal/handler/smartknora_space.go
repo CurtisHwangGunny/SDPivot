@@ -47,6 +47,7 @@ func (h *SmartKnoraSpaceHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 // CreateSpace creates a new knowledge space.
 func (h *SmartKnoraSpaceHandler) CreateSpace(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	var req types.CreateSpaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -76,7 +77,7 @@ func (h *SmartKnoraSpaceHandler) CreateSpace(c *gin.Context) {
 		space.OrgID = &req.OrgID
 	}
 
-	if err := h.db.Create(&space).Error; err != nil {
+	if err := tenantDB.Create(&space).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create space"})
 		return
 	}
@@ -89,25 +90,26 @@ func (h *SmartKnoraSpaceHandler) CreateSpace(c *gin.Context) {
 		Role:      "owner",
 		CreatedAt: now,
 	}
-	h.db.Create(&member)
+	tenantDB.Create(&member)
 
 	c.JSON(http.StatusCreated, gin.H{"space": space})
 }
 
 // ListSpaces lists knowledge spaces the user has access to.
 func (h *SmartKnoraSpaceHandler) ListSpaces(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
 	// Get spaces where user is a member
 	var memberSpaceIDs []string
-	h.db.Model(&types.SpaceMember{}).
+	tenantDB.Model(&types.SpaceMember{}).
 		Where("user_id = ?", userID).
 		Pluck("space_id", &memberSpaceIDs)
 
 	// Get all team/org visibility spaces in tenant + member-only spaces
 	var spaces []types.KnowledgeSpace
-	query := h.db.Where("tenant_id = ?", tenantID)
+	query := tenantDB.Where("tenant_id = ?", tenantID)
 	if len(memberSpaceIDs) > 0 {
 		query = query.Where("visibility IN ('team', 'org') OR id IN ?", memberSpaceIDs)
 	} else {
@@ -120,10 +122,11 @@ func (h *SmartKnoraSpaceHandler) ListSpaces(c *gin.Context) {
 
 // GetSpace gets a specific knowledge space.
 func (h *SmartKnoraSpaceHandler) GetSpace(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 
 	var space types.KnowledgeSpace
-	if err := h.db.Where("id = ?", spaceID).First(&space).Error; err != nil {
+	if err := tenantDB.Where("id = ?", spaceID).First(&space).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "space not found"})
 		return
 	}
@@ -133,12 +136,13 @@ func (h *SmartKnoraSpaceHandler) GetSpace(c *gin.Context) {
 
 // UpdateSpace updates a knowledge space.
 func (h *SmartKnoraSpaceHandler) UpdateSpace(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller has owner/editor role on the space
 	var callerMember types.SpaceMember
-	if err := h.db.Where("space_id = ? AND user_id = ? AND role IN ('owner','editor')", spaceID, callerID).First(&callerMember).Error; err != nil {
+	if err := tenantDB.Where("space_id = ? AND user_id = ? AND role IN ('owner','editor')", spaceID, callerID).First(&callerMember).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to update this space"})
 		return
 	}
@@ -163,40 +167,43 @@ func (h *SmartKnoraSpaceHandler) UpdateSpace(c *gin.Context) {
 		updates["icon"] = *req.Icon
 	}
 
-	h.db.Model(&types.KnowledgeSpace{}).Where("id = ?", spaceID).Updates(updates)
+	tenantDB.Model(&types.KnowledgeSpace{}).Where("id = ?", spaceID).Updates(updates)
 	c.JSON(http.StatusOK, gin.H{"message": "space updated"})
 }
 
 // DeleteSpace soft-deletes a knowledge space.
 func (h *SmartKnoraSpaceHandler) DeleteSpace(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller has owner role on the space
 	var callerMember types.SpaceMember
-	if err := h.db.Where("space_id = ? AND user_id = ? AND role = 'owner'", spaceID, callerID).First(&callerMember).Error; err != nil {
+	if err := tenantDB.Where("space_id = ? AND user_id = ? AND role = 'owner'", spaceID, callerID).First(&callerMember).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to delete this space"})
 		return
 	}
 
-	h.db.Where("id = ?", spaceID).Delete(&types.KnowledgeSpace{})
-	h.db.Where("space_id = ?", spaceID).Delete(&types.SpaceMember{})
+	tenantDB.Where("id = ?", spaceID).Delete(&types.KnowledgeSpace{})
+	tenantDB.Where("space_id = ?", spaceID).Delete(&types.SpaceMember{})
 
 	c.JSON(http.StatusOK, gin.H{"message": "space deleted"})
 }
 
 // ListSpaceMembers lists members of a knowledge space.
 func (h *SmartKnoraSpaceHandler) ListSpaceMembers(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 
 	var members []types.SpaceMember
-	h.db.Where("space_id = ?", spaceID).Find(&members)
+	tenantDB.Where("space_id = ?", spaceID).Find(&members)
 
 	c.JSON(http.StatusOK, gin.H{"members": members})
 }
 
 // AddSpaceMember adds a member to a knowledge space.
 func (h *SmartKnoraSpaceHandler) AddSpaceMember(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 
 	var req types.AddSpaceMemberRequest
@@ -217,7 +224,7 @@ func (h *SmartKnoraSpaceHandler) AddSpaceMember(c *gin.Context) {
 		CreatedAt: time.Now(),
 	}
 
-	if err := h.db.Create(&member).Error; err != nil {
+	if err := tenantDB.Create(&member).Error; err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "already a member or invalid"})
 		return
 	}
@@ -227,30 +234,32 @@ func (h *SmartKnoraSpaceHandler) AddSpaceMember(c *gin.Context) {
 
 // RemoveSpaceMember removes a member from a knowledge space.
 func (h *SmartKnoraSpaceHandler) RemoveSpaceMember(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	targetUserID := c.Param("userId")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller has owner/editor role on the space
 	var callerMember types.SpaceMember
-	if err := h.db.Where("space_id = ? AND user_id = ? AND role IN ('owner','editor')", spaceID, callerID).First(&callerMember).Error; err != nil {
+	if err := tenantDB.Where("space_id = ? AND user_id = ? AND role IN ('owner','editor')", spaceID, callerID).First(&callerMember).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to manage space members"})
 		return
 	}
 
-	h.db.Where("space_id = ? AND user_id = ?", spaceID, targetUserID).Delete(&types.SpaceMember{})
+	tenantDB.Where("space_id = ? AND user_id = ?", spaceID, targetUserID).Delete(&types.SpaceMember{})
 	c.JSON(http.StatusOK, gin.H{"message": "member removed"})
 }
 
 // UpdateSpaceMemberRole updates a space member's role.
 func (h *SmartKnoraSpaceHandler) UpdateSpaceMemberRole(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	targetUserID := c.Param("userId")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller has owner role on the space
 	var callerMember types.SpaceMember
-	if err := h.db.Where("space_id = ? AND user_id = ? AND role = 'owner'", spaceID, callerID).First(&callerMember).Error; err != nil {
+	if err := tenantDB.Where("space_id = ? AND user_id = ? AND role = 'owner'", spaceID, callerID).First(&callerMember).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to update space member roles"})
 		return
 	}
@@ -263,7 +272,7 @@ func (h *SmartKnoraSpaceHandler) UpdateSpaceMemberRole(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&types.SpaceMember{}).
+	tenantDB.Model(&types.SpaceMember{}).
 		Where("space_id = ? AND user_id = ?", spaceID, targetUserID).
 		Update("role", req.Role)
 
@@ -272,6 +281,7 @@ func (h *SmartKnoraSpaceHandler) UpdateSpaceMemberRole(c *gin.Context) {
 
 // CreateCategory creates a new space category.
 func (h *SmartKnoraSpaceHandler) CreateCategory(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	var req types.CreateCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -287,24 +297,26 @@ func (h *SmartKnoraSpaceHandler) CreateCategory(c *gin.Context) {
 		Color:     req.Color,
 		CreatedAt: time.Now(),
 	}
-	h.db.Create(&category)
+	tenantDB.Create(&category)
 
 	c.JSON(http.StatusCreated, gin.H{"category": category})
 }
 
 // ListCategories lists space categories for the current tenant.
 func (h *SmartKnoraSpaceHandler) ListCategories(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
 	var categories []types.SpaceCategory
-	h.db.Where("tenant_id = ?", tenantID).Order("name").Find(&categories)
+	tenantDB.Where("tenant_id = ?", tenantID).Order("name").Find(&categories)
 
 	c.JSON(http.StatusOK, gin.H{"categories": categories})
 }
 
 // DeleteCategory deletes a space category.
 func (h *SmartKnoraSpaceHandler) DeleteCategory(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
 	categoryID := c.Param("id")
-	h.db.Where("id = ?", categoryID).Delete(&types.SpaceCategory{})
+	tenantDB.Where("id = ?", categoryID).Delete(&types.SpaceCategory{})
 	c.JSON(http.StatusOK, gin.H{"message": "category deleted"})
 }

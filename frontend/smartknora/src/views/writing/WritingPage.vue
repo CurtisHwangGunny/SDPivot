@@ -61,7 +61,13 @@
           <t-form-item label="主题/提示词" name="prompt">
             <t-input v-model="newForm.prompt" placeholder="例如：2026年Q2技术团队工作总结" size="large" />
           </t-form-item>
-          <t-form-item label="知识来源（选填）" name="space_id">
+          <t-form-item label="知识来源" name="source_type">
+            <t-radio-group v-model="newForm.source_type">
+              <t-radio value="knowledge_base">仅知识库</t-radio>
+              <t-radio value="knowledge_plus_web">知识库 + 互联网搜索</t-radio>
+            </t-radio-group>
+          </t-form-item>
+          <t-form-item label="知识空间（选填）" name="space_id">
             <t-select v-model="newForm.space_id" placeholder="选择知识空间（留空则搜索全部）" clearable size="large">
               <t-option v-for="s in spaces" :key="s.id" :value="s.id" :label="s.name" />
             </t-select>
@@ -88,7 +94,7 @@ const currentId = ref('')
 const currentDraft = ref<WritingDraft | null>(null)
 const showNew = ref(false)
 const generating = ref(false)
-const newForm = ref({ category: 'work_summary', prompt: '', space_id: '' })
+const newForm = ref({ category: 'notice', prompt: '', space_id: '', source_type: 'knowledge_base', web_search_enabled: false })
 const exportFormat = ref('markdown')
 
 function categoryLabel(v: string) { return CATEGORIES.find(c => c.value === v)?.label || v }
@@ -108,11 +114,12 @@ async function loadDraft(id: string) {
 async function handleGenerate() {
   generating.value = true
   try {
+    newForm.value.web_search_enabled = newForm.value.source_type === 'knowledge_plus_web'
     const genRes = await generateContent(newForm.value)
     const content = (genRes.data as any).content
     const sourcesCount = (genRes.data as any).sources_count || 0
 
-    const draftRes = await createDraft({ title: newForm.value.prompt, category: newForm.value.category, space_id: newForm.value.space_id })
+    const draftRes = await createDraft({ title: newForm.value.prompt, category: newForm.value.category, space_id: newForm.value.space_id, source_type: newForm.value.source_type, web_search_enabled: newForm.value.web_search_enabled })
     const draft = (draftRes.data as any).draft
     await updateDraft(draft.id, { title: newForm.value.prompt, content, status: 'draft' })
     draft.content = content
@@ -120,7 +127,7 @@ async function handleGenerate() {
     currentId.value = draft.id
     currentDraft.value = draft
     showNew.value = false
-    newForm.value = { category: 'work_summary', prompt: '', space_id: '' }
+    newForm.value = { category: 'notice', prompt: '', space_id: '', source_type: 'knowledge_base', web_search_enabled: false }
     MessagePlugin.success(`生成完成${sourcesCount > 0 ? `（引用 ${sourcesCount} 条知识）` : ''}`)
     loadDrafts()
   } catch (e: any) { MessagePlugin.error(e.response?.data?.error || '生成失败') }
@@ -138,7 +145,12 @@ async function handleExport() {
   if (!currentDraft.value) return
   try {
     const res = await exportDraft(currentDraft.value.id, exportFormat.value)
-    const blob = new Blob([res.data], { type: exportFormat.value === 'markdown' ? 'text/markdown;charset=utf-8' : 'application/octet-stream' })
+    const mimeType = exportFormat.value === 'markdown'
+      ? 'text/markdown;charset=utf-8'
+      : exportFormat.value === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    const blob = new Blob([res.data], { type: mimeType })
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     const safeTitle = (currentDraft.value.title || 'smartknora-draft').replace(/[\/:*?"<>|]/g, '-')

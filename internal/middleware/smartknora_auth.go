@@ -42,6 +42,14 @@ func SmartKnoraAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 			return
 		}
 
+		// Ops-admin tokens are scoped to /ops APIs only. Normal SaaS APIs must not
+		// accept them, otherwise the operations plane and tenant plane are mixed.
+		if claims.Role == "ops_admin" && !strings.HasPrefix(c.Request.URL.Path, "/api/v1/smartknora/ops") {
+			c.JSON(http.StatusForbidden, gin.H{"error": "ops admin token is not allowed on tenant APIs"})
+			c.Abort()
+			return
+		}
+
 		// Set context values for downstream handlers
 		c.Set("user_id", claims.UserID)
 		c.Set("tenant_id", claims.TenantID)
