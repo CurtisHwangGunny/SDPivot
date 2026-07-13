@@ -171,9 +171,14 @@ func getAllowedOrigins() []string {
 	value := os.Getenv("SMARTKNORA_ALLOWED_ORIGINS")
 	if value == "" {
 		return []string{
+			// Dev server (43.133.61.77)
 			"http://localhost:5173",
 			"http://127.0.0.1:5173",
 			"http://43.133.61.77:3099",
+			// Test server (47.110.51.90)
+			"http://47.110.51.90:3099",
+			"http://localhost:3099",
+			"http://127.0.0.1:3099",
 		}
 	}
 
