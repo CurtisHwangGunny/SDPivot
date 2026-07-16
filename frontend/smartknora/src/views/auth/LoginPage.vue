@@ -1,23 +1,32 @@
 <template>
   <div class="login-container">
-    <div class="login-left">
-      <div class="brand">
-        <div class="logo-hex">
-          <svg viewBox="0 0 40 40" width="56" height="56" fill="none">
-            <path d="M20 4L34 12V28L20 36L6 28V12L20 4Z" fill="#014DB2"/>
-            <path d="M20 12L28 16V24L20 28L12 24V16L20 12Z" fill="#F59E0B"/>
+    <section class="login-hero">
+      <div class="hero-panel">
+        <div class="hero-badge">企业知识智能平台</div>
+        <div class="hero-logo">
+          <svg viewBox="0 0 40 40" width="64" height="64" fill="none">
+            <path d="M20 4L34 12V28L20 36L6 28V12L20 4Z" fill="#00B96B"/>
+            <path d="M20 12L28 16V24L20 28L12 24V16L20 12Z" fill="#EAFBF2"/>
           </svg>
         </div>
         <h1 class="brand-name">随越·智枢</h1>
-        <p class="brand-en">smartKnora</p>
-        <p class="tagline">企业知识智能平台</p>
-        <p class="desc">让知识成为企业核心竞争力</p>
+        <p class="brand-en">SmartKnora</p>
+        <p class="tagline">让知识、问答与写作协同成为同一条工作流。</p>
+        <ul class="hero-points">
+          <li>知识空间集中管理企业资料</li>
+          <li>AI 问答与 AI 写作共享统一知识底座</li>
+          <li>延续 WeKnora 设计语言并升级品牌体验</li>
+        </ul>
       </div>
-    </div>
+    </section>
 
-    <div class="login-right">
+    <section class="login-side">
       <div class="login-card">
-        <h2 class="login-title">登录</h2>
+        <div class="login-card-head">
+          <span class="login-eyebrow">欢迎回来</span>
+          <h2 class="login-title">登录你的工作台</h2>
+          <p class="login-subtitle">默认推荐手机号登录，邮箱登录作为备用入口保留。</p>
+        </div>
 
         <t-tabs v-model="activeTab" class="login-tabs">
           <t-tab-panel value="phone" label="手机号登录">
@@ -51,10 +60,7 @@
 
           <t-tab-panel value="email" label="邮箱登录">
             <div class="form-area">
-              <t-input
-                v-model="emailForm.email"
-                placeholder="请输入邮箱"
-              >
+              <t-input v-model="emailForm.email" placeholder="请输入邮箱">
                 <template #prefix-icon>
                   <t-icon name="mail" />
                 </template>
@@ -77,7 +83,7 @@
 
           <t-tab-panel value="wechat" label="微信扫码" :disabled="true">
             <div class="wechat-placeholder">
-              <t-icon name="qr-code" size="64px" style="color:#d0d0d0" />
+              <t-icon name="qr-code" size="56px" />
               <p>微信扫码登录将在 Phase 2 上线</p>
             </div>
           </t-tab-panel>
@@ -95,7 +101,7 @@
 
         <t-message v-if="errorMsg" theme="error" style="margin-top:12px">{{ errorMsg }}</t-message>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
@@ -149,30 +155,191 @@ async function handleEmailLogin() {
 </script>
 
 <style scoped>
-.login-container { display: flex; min-height: 100vh; }
-.login-left {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #014DB2 0%, #0A7AFF 100%);
-  color: #fff; padding: 40px;
+.login-container {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(440px, 0.8fr);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--brand-primary) 10%, transparent), transparent 34%),
+    linear-gradient(135deg, var(--sk-bg) 0%, color-mix(in srgb, var(--sk-surface-soft) 88%, var(--sk-bg)) 100%);
 }
-.brand { text-align: center; }
-.logo-hex { margin-bottom: 24px; display: flex; justify-content: center; }
-.brand-name { font-size: 32px; font-weight: 700; letter-spacing: 1px; }
-.brand-en { font-size: 16px; opacity: 0.7; margin-top: 4px; }
-.tagline { font-size: 20px; margin-top: 20px; opacity: 0.9; }
-.desc { font-size: 14px; opacity: 0.7; margin-top: 8px; }
-.login-right {
-  flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px;
+
+.login-hero {
+  padding: 40px;
+  display: flex;
+  align-items: stretch;
 }
+
+.hero-panel {
+  flex: 1;
+  border-radius: 32px;
+  padding: 48px;
+  color: var(--sk-sidebar-text);
+  background:
+    radial-gradient(circle at top right, rgba(126, 240, 182, 0.24), transparent 28%),
+    linear-gradient(150deg, #163024 0%, #102219 35%, #00b96b 140%);
+  box-shadow: 0 24px 80px rgba(13, 42, 26, 0.2);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.hero-badge {
+  width: fit-content;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, white 12%, transparent);
+  border: 1px solid color-mix(in srgb, white 14%, transparent);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.hero-logo {
+  margin-top: 24px;
+}
+
+.brand-name {
+  margin: 22px 0 0;
+  font-size: 42px;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+}
+
+.brand-en {
+  margin-top: 10px;
+  color: var(--sk-sidebar-muted);
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tagline {
+  max-width: 420px;
+  margin-top: 24px;
+  font-size: 20px;
+  line-height: 1.6;
+}
+
+.hero-points {
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.hero-points li {
+  padding-left: 18px;
+  position: relative;
+  color: color-mix(in srgb, var(--sk-sidebar-text) 90%, transparent);
+}
+
+.hero-points li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #7ef0b6;
+}
+
+.login-side {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
 .login-card {
-  width: 100%; max-width: 420px; background: #fff; border-radius: 12px;
-  padding: 40px 36px; box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+  width: 100%;
+  max-width: 440px;
+  background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
+  border: 1px solid rgba(219, 229, 219, 0.9);
+  border-radius: 28px;
+  padding: 36px;
+  box-shadow: 0 20px 60px rgba(24, 43, 28, 0.08);
+  backdrop-filter: blur(20px);
 }
-.login-title { font-size: 24px; font-weight: 600; color: #0a1628; margin-bottom: 24px; }
-.login-tabs { margin-bottom: 16px; }
-.form-area { display: flex; flex-direction: column; gap: 16px; padding: 20px 0; }
-.wechat-placeholder { text-align: center; padding: 60px 0; color: #999; }
-.wechat-placeholder p { margin-top: 12px; font-size: 14px; }
-.login-footer { margin-top: 16px; }
-.register-link { margin-top: 16px; text-align: center; font-size: 14px; color: #666; }
+
+.login-card-head {
+  margin-bottom: 16px;
+}
+
+.login-eyebrow {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand-primary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.login-title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+  color: var(--text-primary);
+  letter-spacing: -0.04em;
+}
+
+.login-subtitle {
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.login-tabs {
+  margin-bottom: 18px;
+}
+
+.form-area {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 0 8px;
+}
+
+.wechat-placeholder {
+  text-align: center;
+  padding: 48px 0;
+  color: var(--text-muted);
+}
+
+.wechat-placeholder p {
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+.login-footer {
+  margin-top: 14px;
+}
+
+.register-link {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 1080px) {
+  .login-container {
+    grid-template-columns: 1fr;
+  }
+
+  .login-hero {
+    padding: 24px 24px 0;
+  }
+
+  .hero-panel {
+    padding: 32px;
+  }
+
+  .login-side {
+    padding: 24px;
+  }
+}
 </style>

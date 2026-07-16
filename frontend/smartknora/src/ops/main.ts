@@ -1,12 +1,11 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import TDesign from 'tdesign-vue-next'
-import 'tdesign-vue-next/es/style/index.css'
 import router from '@/router/ops'
 import App from './App.vue'
+import { registerTDesign } from '../tdesign'
 
 const app = createApp(App)
 app.use(createPinia())
-app.use(TDesign)
+registerTDesign(app)
 app.use(router)
 app.mount('#app')

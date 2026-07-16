@@ -169,7 +169,7 @@ func (h *SmartKnoraOpsAdminHandler) ListEnterprises(c *gin.Context) {
 	}
 
 	var rows []EnterpriseRow
-	h.db.Raw(`
+	rawSQL := `
 		SELECT o.id, o.name, o.description, o.owner_id, o.invite_code,
 		       COALESCE(cnt.mc, 0) AS member_count,
 		       COALESCE(e.auth_status, 'trial') AS auth_status,
@@ -179,15 +179,18 @@ func (h *SmartKnoraOpsAdminHandler) ListEnterprises(c *gin.Context) {
 		LEFT JOIN (SELECT org_id, COUNT(*) AS mc FROM org_members WHERE status = 'active' GROUP BY org_id) cnt ON cnt.org_id = o.id
 		LEFT JOIN org_ext e ON e.org_id = o.id
 		WHERE o.deleted_at IS NULL
-	`+func() string {
-		if search != "" {
-			return " AND o.name ILIKE '%" + search + "%'"
-		}
-		return ""
-	}()+`
+	`
+	args := []interface{}{}
+	if search != "" {
+		rawSQL += " AND o.name ILIKE ?"
+		args = append(args, "%"+search+"%")
+	}
+	rawSQL += `
 		ORDER BY o.created_at DESC
 		LIMIT ? OFFSET ?
-	`, pageSize, (page-1)*pageSize).Scan(&rows)
+	`
+	args = append(args, pageSize, (page-1)*pageSize)
+	h.db.Raw(rawSQL, args...).Scan(&rows)
 
 	c.JSON(http.StatusOK, gin.H{
 		"enterprises": rows,
@@ -485,6 +488,7 @@ func (h *SmartKnoraOpsAdminHandler) GetActiveAnnouncements(c *gin.Context) {
 func (h *SmartKnoraOpsAdminHandler) writeAuditLog(c *gin.Context, action, resource, resourceID, detail string) {
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
+	role := middleware.GetRole(c)
 	username := ""
 	if u, exists := c.Get("username"); exists {
 		if s, ok := u.(string); ok {
@@ -492,6 +496,13 @@ func (h *SmartKnoraOpsAdminHandler) writeAuditLog(c *gin.Context, action, resour
 		}
 	}
 
-	h.db.Exec("INSERT INTO audit_logs (tenant_id, user_id, username, action, resource, resource_id, detail, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		tenantID, userID, username, action, resource, resourceID, detail, c.ClientIP(), time.Now())
+	detailsJSON := fmt.Sprintf(`{"detail":%q}`, detail)
+	h.db.Exec(`INSERT INTO audit_logs (
+		tenant_id, actor_user_id, actor_role, action, target_type, target_id,
+		target_user_id, request_path, request_method, outcome, details,
+		created_at, username, resource, resource_id, detail, ip
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?, ?, ?)`,
+		tenantID, userID, role, action, resource, resourceID,
+		"", c.Request.URL.Path, c.Request.Method, "success", detailsJSON,
+		time.Now(), username, resource, resourceID, detail, c.ClientIP())
 }

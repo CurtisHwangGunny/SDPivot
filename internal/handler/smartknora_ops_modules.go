@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -108,12 +109,12 @@ func (h *SmartKnoraOpsAdminHandler) ListFilterHits(c *gin.Context) {
 
 	// 查找 org_ext 中 auth_status=suspended 或标记待处理的企业
 	type HitRow struct {
-		OrgID       string     `json:"org_id"`
-		OrgName     string     `json:"org_name"`
-		AuthStatus  string     `json:"auth_status"`
-		SubStatus   string     `json:"subscription_status"`
-		CreatedAt   time.Time  `json:"created_at"`
-		OwnerID     string     `json:"owner_id"`
+		OrgID      string    `json:"org_id"`
+		OrgName    string    `json:"org_name"`
+		AuthStatus string    `json:"auth_status"`
+		SubStatus  string    `json:"subscription_status"`
+		CreatedAt  time.Time `json:"created_at"`
+		OwnerID    string    `json:"owner_id"`
 	}
 
 	var total int64
@@ -190,14 +191,14 @@ type OpsEnterpriseSubscription struct {
 func (OpsEnterpriseSubscription) TableName() string { return "enterprise_subscriptions" }
 
 type OpsInvoice struct {
-	ID           string    `json:"id" gorm:"type:varchar(36);primaryKey"`
-	OrgID        string    `json:"org_id" gorm:"type:varchar(36);not null;index"`
-	PlanID       string    `json:"plan_id" gorm:"type:varchar(36)"`
-	Amount       float64   `json:"amount" gorm:"type:decimal(10,2);not null;default:0"`
-	PeriodStart  time.Time `json:"period_start"`
-	PeriodEnd    time.Time `json:"period_end"`
-	Status       string    `json:"status" gorm:"type:varchar(20);not null;default:pending"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID          string    `json:"id" gorm:"type:varchar(36);primaryKey"`
+	OrgID       string    `json:"org_id" gorm:"type:varchar(36);not null;index"`
+	PlanID      string    `json:"plan_id" gorm:"type:varchar(36)"`
+	Amount      float64   `json:"amount" gorm:"type:decimal(10,2);not null;default:0"`
+	PeriodStart time.Time `json:"period_start"`
+	PeriodEnd   time.Time `json:"period_end"`
+	Status      string    `json:"status" gorm:"type:varchar(20);not null;default:pending"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 func (OpsInvoice) TableName() string { return "invoices" }
@@ -257,11 +258,21 @@ func (h *SmartKnoraOpsAdminHandler) UpdateBillingPlan(c *gin.Context) {
 		return
 	}
 	updates := map[string]interface{}{"updated_at": time.Now()}
-	if req.Name != nil { updates["name"] = *req.Name }
-	if req.Price != nil { updates["price"] = *req.Price }
-	if req.TokenQuota != nil { updates["token_quota"] = *req.TokenQuota }
-	if req.StorageQuota != nil { updates["storage_quota"] = *req.StorageQuota }
-	if req.Status != nil { updates["status"] = *req.Status }
+	if req.Name != nil {
+		updates["name"] = *req.Name
+	}
+	if req.Price != nil {
+		updates["price"] = *req.Price
+	}
+	if req.TokenQuota != nil {
+		updates["token_quota"] = *req.TokenQuota
+	}
+	if req.StorageQuota != nil {
+		updates["storage_quota"] = *req.StorageQuota
+	}
+	if req.Status != nil {
+		updates["status"] = *req.Status
+	}
 	h.db.Model(&OpsBillingPlan{}).Where("id = ?", id).Updates(updates)
 	h.writeAuditLog(c, "update_billing_plan", "billing_plan", id, "")
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
@@ -430,23 +441,13 @@ func (h *SmartKnoraOpsAdminHandler) GetTrialConfig(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
-	var cfg OpsSystemConfig
-	trialDays := "30"
-	if h.db.Where("key = ?", "trial_days").First(&cfg).Error == nil {
-		trialDays = cfg.Value
-	}
-	extendedDays := "90"
-	if h.db.Where("key = ?", "extended_trial_days").First(&cfg).Error == nil {
-		extendedDays = cfg.Value
-	}
-	downgradeSpaceLimit := "1"
-	if h.db.Where("key = ?", "downgrade_space_limit").First(&cfg).Error == nil {
-		downgradeSpaceLimit = cfg.Value
-	}
+	trialDays := h.getOrCreateConfigValue("trial_days", "30", "试用期天数")
+	extendedDays := h.getOrCreateConfigValue("extended_trial_days", "90", "认证后延长天数")
+	downgradeSpaceLimit := h.getOrCreateConfigValue("downgrade_space_limit", "1", "降级后空间数量限制")
 	c.JSON(http.StatusOK, gin.H{
-		"trial_days":             trialDays,
-		"extended_trial_days":    extendedDays,
-		"downgrade_space_limit":  downgradeSpaceLimit,
+		"trial_days":            trialDays,
+		"extended_trial_days":   extendedDays,
+		"downgrade_space_limit": downgradeSpaceLimit,
 	})
 }
 
@@ -474,11 +475,35 @@ func (h *SmartKnoraOpsAdminHandler) UpdateTrialConfig(c *gin.Context) {
 
 func (h *SmartKnoraOpsAdminHandler) upsertConfig(key, value, description string) {
 	var existing OpsSystemConfig
-	if h.db.Where("key = ?", key).First(&existing).Error == nil {
+	if err := h.db.Where("key = ?", key).First(&existing).Error; err == nil {
 		h.db.Model(&existing).Updates(map[string]interface{}{"value": value, "updated_at": time.Now()})
-	} else {
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
 		h.db.Create(&OpsSystemConfig{Key: key, Value: value, Description: description, CreatedAt: time.Now(), UpdatedAt: time.Now()})
 	}
+}
+
+func (h *SmartKnoraOpsAdminHandler) getOrCreateConfigValue(key, defaultValue, description string) string {
+	var cfg OpsSystemConfig
+	if err := h.db.Where("key = ?", key).First(&cfg).Error; err == nil {
+		if cfg.Value != "" {
+			return cfg.Value
+		}
+		cfg.Value = defaultValue
+		if cfg.Description == "" {
+			cfg.Description = description
+		}
+		h.db.Model(&cfg).Updates(map[string]interface{}{
+			"value":       cfg.Value,
+			"description": cfg.Description,
+			"updated_at":  time.Now(),
+		})
+		return cfg.Value
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		cfg = OpsSystemConfig{Key: key, Value: defaultValue, Description: description, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+		h.db.Create(&cfg)
+		return cfg.Value
+	}
+	return defaultValue
 }
 
 // ============================================================
@@ -576,10 +601,18 @@ func (h *SmartKnoraOpsAdminHandler) UpdateModel(c *gin.Context) {
 		return
 	}
 	updates := map[string]interface{}{"updated_at": time.Now()}
-	if req.DisplayName != nil { updates["display_name"] = *req.DisplayName }
-	if req.Source != nil { updates["source"] = *req.Source }
-	if req.Description != nil { updates["description"] = *req.Description }
-	if req.Status != nil { updates["status"] = *req.Status }
+	if req.DisplayName != nil {
+		updates["display_name"] = *req.DisplayName
+	}
+	if req.Source != nil {
+		updates["source"] = *req.Source
+	}
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+	if req.Status != nil {
+		updates["status"] = *req.Status
+	}
 	h.db.Table("models").Where("id = ?", id).Updates(updates)
 	h.writeAuditLog(c, "update_model", "model", id, "")
 	c.JSON(http.StatusOK, gin.H{"message": "model updated"})

@@ -1,46 +1,63 @@
 <template>
-  <div class="ops-login-container">
-    <div class="ops-login-card">
-      <div class="ops-login-header">
-        <h1>随越·智枢</h1>
-        <p class="ops-subtitle">运营管理端</p>
+  <div class="ops-shell">
+    <section class="ops-brand-panel">
+      <div class="brand-badge">Operations access</div>
+      <h1>运营管理端登录</h1>
+      <p>面向运营管理员的专用入口。保留首次登录改密流程，同时将视觉语言对齐到新版品牌体系。</p>
+      <div class="ops-brand-points">
+        <div class="brand-point">
+          <strong>权限隔离</strong>
+          <span>与普通用户登录态分离管理</span>
+        </div>
+        <div class="brand-point">
+          <strong>首次改密</strong>
+          <span>保留 must_change_password 流程</span>
+        </div>
+        <div class="brand-point">
+          <strong>统一品牌</strong>
+          <span>绿色体系与工作台骨架一致</span>
+        </div>
       </div>
+    </section>
 
-      <div v-if="mustChangePassword" class="ops-change-password">
-        <h3>首次登录 · 修改密码</h3>
-        <p class="hint">密码需满足：≥8位，包含大小写字母+数字+特殊字符</p>
-        <t-form ref="pwdForm" :data="pwdFormData" :rules="pwdRules" @submit="handleChangePassword">
-          <t-form-item name="oldPassword">
-            <t-input v-model="pwdFormData.oldPassword" type="password" placeholder="当前密码" />
-          </t-form-item>
-          <t-form-item name="newPassword">
-            <t-input v-model="pwdFormData.newPassword" type="password" placeholder="新密码" />
-          </t-form-item>
-          <t-form-item name="confirmPassword">
-            <t-input v-model="pwdFormData.confirmPassword" type="password" placeholder="确认新密码" />
-          </t-form-item>
-          <t-button theme="primary" type="submit" :loading="changing" class="ops-login-btn">
-            确认修改
-          </t-button>
-        </t-form>
-        <p v-if="error" class="error-msg">{{ error }}</p>
-      </div>
+    <section class="ops-form-panel">
+      <div class="ops-form-card">
+        <div class="ops-form-head">
+          <p class="ops-eyebrow">Secure sign in</p>
+          <h2>{{ mustChangePassword ? '首次登录，先修改密码' : '登录运营管理端' }}</h2>
+          <p>{{ mustChangePassword ? '密码需满足 8 位以上，并包含大小写字母、数字与特殊字符。' : '请输入运营管理员账号与密码。' }}</p>
+        </div>
 
-      <div v-else class="ops-login-form">
-        <t-form ref="loginForm" :data="loginData" :rules="loginRules" @submit="handleLogin">
-          <t-form-item name="email">
-            <t-input v-model="loginData.email" placeholder="运营管理员账号" clearable />
-          </t-form-item>
-          <t-form-item name="password">
-            <t-input v-model="loginData.password" type="password" placeholder="密码" />
-          </t-form-item>
-          <t-button theme="primary" type="submit" :loading="logging" class="ops-login-btn">
-            登录运营管理端
-          </t-button>
-        </t-form>
-        <p v-if="error" class="error-msg">{{ error }}</p>
+        <div v-if="mustChangePassword" class="ops-change-password">
+          <t-form ref="pwdForm" :data="pwdFormData" :rules="pwdRules" @submit="handleChangePassword">
+            <t-form-item name="oldPassword" label="当前密码">
+              <t-input v-model="pwdFormData.oldPassword" type="password" placeholder="请输入当前密码" />
+            </t-form-item>
+            <t-form-item name="newPassword" label="新密码">
+              <t-input v-model="pwdFormData.newPassword" type="password" placeholder="请输入新密码" />
+            </t-form-item>
+            <t-form-item name="confirmPassword" label="确认新密码">
+              <t-input v-model="pwdFormData.confirmPassword" type="password" placeholder="请再次输入新密码" />
+            </t-form-item>
+            <t-button theme="primary" type="submit" :loading="changing" class="ops-login-btn">确认修改并继续</t-button>
+          </t-form>
+          <p v-if="error" class="error-msg">{{ error }}</p>
+        </div>
+
+        <div v-else class="ops-login-form">
+          <t-form ref="loginForm" :data="loginData" :rules="loginRules" @submit="handleLogin">
+            <t-form-item name="email" label="运营管理员账号">
+              <t-input v-model="loginData.email" placeholder="请输入运营管理员账号" clearable />
+            </t-form-item>
+            <t-form-item name="password" label="密码">
+              <t-input v-model="loginData.password" type="password" placeholder="请输入密码" />
+            </t-form-item>
+            <t-button theme="primary" type="submit" :loading="logging" class="ops-login-btn">登录运营管理端</t-button>
+          </t-form>
+          <p v-if="error" class="error-msg">{{ error }}</p>
+        </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
@@ -73,7 +90,7 @@ const loginRules = {
   password: [{ required: true, message: '请输入密码' }],
 }
 
-const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/
+const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\|,.<>/?]).{8,}$/
 
 const pwdRules = {
   oldPassword: [{ required: true, message: '请输入当前密码' }],
@@ -151,63 +168,111 @@ async function handleChangePassword() {
 </script>
 
 <style scoped>
-.ops-login-container {
+.ops-shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(420px, 0.85fr);
+  background:
+    radial-gradient(circle at top left, rgba(0, 185, 107, 0.2), transparent 34%),
+    linear-gradient(135deg, #f4fbf7 0%, #eef3f8 48%, #f9fbfd 100%);
+}
+.ops-brand-panel {
+  padding: 72px clamp(28px, 5vw, 72px);
   display: flex;
+  flex-direction: column;
   justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #014db2 0%, #003d8f 100%);
+  gap: 24px;
+  background: linear-gradient(160deg, #112018 0%, #1f2937 100%);
+  color: var(--sk-sidebar-text);
 }
-.ops-login-card {
-  width: 420px;
-  max-width: 90vw;
-  padding: 40px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  box-sizing: border-box;
-}
-.ops-login-header {
-  text-align: center;
-  margin-bottom: 32px;
-}
-.ops-login-header h1 {
-  font-size: 24px;
-  color: #014db2;
-  margin: 0;
-}
-.ops-subtitle {
-  font-size: 14px;
-  color: #666;
-  margin-top: 8px;
-}
-.ops-change-password h3 {
-  font-size: 16px;
-  margin-bottom: 16px;
-  text-align: center;
-}
-.hint {
+.brand-badge,
+.ops-eyebrow {
   font-size: 12px;
-  color: #999;
-  text-align: center;
-  margin-bottom: 16px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sk-sidebar-muted);
 }
-.ops-login-form {
-  margin-top: 16px;
+.ops-brand-panel h1,
+.ops-form-head h2 {
+  margin: 0;
+  font-size: clamp(32px, 4vw, 48px);
+  line-height: 1.08;
 }
-.ops-login-form .t-form-item {
-  margin-bottom: 20px;
+.ops-brand-panel p,
+.ops-form-head p {
+  margin: 0;
+  max-width: 560px;
+  color: var(--sk-sidebar-muted);
+  line-height: 1.8;
+}
+.ops-brand-points {
+  display: grid;
+  gap: 14px;
+}
+.brand-point {
+  border-radius: 20px;
+  border: 1px solid var(--sidebar-border);
+  background: color-mix(in srgb, white 6%, transparent);
+  padding: 18px 20px;
+  backdrop-filter: blur(10px);
+}
+.brand-point strong {
+  display: block;
+  margin-bottom: 6px;
+}
+.brand-point span {
+  color: color-mix(in srgb, var(--sk-sidebar-text) 70%, transparent);
+  font-size: 14px;
+}
+.ops-form-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+.ops-form-card {
+  width: min(460px, 100%);
+  border-radius: 28px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
+  padding: 32px;
+}
+.ops-form-head {
+  margin-bottom: 24px;
+}
+.ops-form-head .ops-eyebrow {
+  color: var(--brand-primary);
+}
+.ops-form-head h2 {
+  font-size: 28px;
+  color: var(--text-primary);
+}
+.ops-form-head p {
+  margin-top: 12px;
+  color: var(--text-secondary);
 }
 .ops-login-btn {
   width: 100% !important;
-  height: 40px;
-  font-size: 14px;
+  height: 44px;
   margin-top: 8px;
 }
 .error-msg {
-  color: #e34d59;
-  font-size: 13px;
+  margin-top: 14px;
   text-align: center;
-  margin-top: 12px;
+  color: var(--td-error-color, #e34d59);
+  font-size: 13px;
+}
+@media (max-width: 980px) {
+  .ops-shell {
+    grid-template-columns: 1fr;
+  }
+  .ops-brand-panel {
+    padding: 48px 24px 28px;
+  }
+  .ops-form-panel {
+    padding-top: 0;
+  }
 }
 </style>

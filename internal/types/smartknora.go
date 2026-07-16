@@ -69,7 +69,7 @@ type SmartKnoraOrgMember struct {
 	Status    string    `json:"status" gorm:"type:varchar(20);not null;default:active"`
 	JoinedAt  time.Time `json:"joined_at"`
 	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"->;-:migration"`
 }
 
 func (SmartKnoraOrgMember) TableName() string { return "org_members" }
@@ -104,15 +104,15 @@ func (rt *RefreshToken) BeforeCreate(tx *gorm.DB) error {
 // SmartKnoraTokenUsage records per-request token consumption for smartKnora metering.
 type SmartKnoraTokenUsage struct {
 	ID               string    `json:"id" gorm:"type:varchar(36);primaryKey"`
-	UserID           *string   `json:"user_id" gorm:"type:varchar(36);index"`
-	OrgID            *string   `json:"org_id" gorm:"type:varchar(36);index"`
-	TenantID         uint64    `json:"tenant_id" gorm:"not null;index"`
-	ModelID          string    `json:"model_id" gorm:"type:varchar(64)"`
-	PromptTokens     int       `json:"prompt_tokens" gorm:"not null;default:0"`
-	CompletionTokens int       `json:"completion_tokens" gorm:"not null;default:0"`
-	TotalTokens      int       `json:"total_tokens" gorm:"not null;default:0"`
-	APIPath          string    `json:"api_path" gorm:"type:varchar(255)"`
-	CreatedAt        time.Time `json:"created_at" gorm:"index"`
+	UserID           *string   `json:"user_id" gorm:"column:user_id;type:varchar(36);index"`
+	OrgID            *string   `json:"org_id,omitempty" gorm:"-"`
+	TenantID         uint64    `json:"tenant_id" gorm:"column:tenant_id;not null;index"`
+	ModelID          string    `json:"model_id" gorm:"column:model;type:varchar(100)"`
+	PromptTokens     int       `json:"prompt_tokens" gorm:"column:input_tokens;not null;default:0"`
+	CompletionTokens int       `json:"completion_tokens" gorm:"column:output_tokens;not null;default:0"`
+	TotalTokens      int       `json:"total_tokens" gorm:"-:all"`
+	APIPath          string    `json:"api_path,omitempty" gorm:"column:action;type:varchar(50)"`
+	CreatedAt        time.Time `json:"created_at" gorm:"column:created_at;index"`
 }
 
 func (SmartKnoraTokenUsage) TableName() string { return "token_usage" }
@@ -327,9 +327,9 @@ type Announcement struct {
 	Title     string    `json:"title" gorm:"type:varchar(500);not null"`
 	Content   string    `json:"content" gorm:"type:text"`
 	Status    string    `json:"status" gorm:"type:varchar(20);default:draft"`
-	CreatedBy string    `json:"created_by" gorm:"type:varchar(36)"`
+	CreatedBy string    `json:"created_by" gorm:"->;-:migration"`
 	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"->;-:migration"`
 }
 
 func (Announcement) TableName() string { return "announcements" }
@@ -339,8 +339,8 @@ type QASession struct {
 	ID        string    `json:"id" gorm:"type:varchar(36);primaryKey"`
 	UserID    string    `json:"user_id" gorm:"type:varchar(36);not null;index"`
 	TenantID  uint64    `json:"tenant_id" gorm:"not null;index"`
-	SpaceID   string    `json:"space_id" gorm:"type:varchar(36)"`
-	Title     string    `json:"title" gorm:"type:varchar(500)"`
+	SpaceID   string    `json:"space_id,omitempty" gorm:"-"`
+	Title     string    `json:"title" gorm:"type:varchar(200)"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
