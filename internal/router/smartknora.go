@@ -57,6 +57,7 @@ func (sr *SmartKnoraRouter) RegisterRoutes(r *gin.Engine) {
 	orgHandler := handler.NewSmartKnoraOrgHandler(sr.db)
 	spaceHandler := handler.NewSmartKnoraSpaceHandler(sr.db)
 	tokenHandler := handler.NewSmartKnoraTokenHandler(sr.db)
+	opsHandler := handler.NewSmartKnoraOpsHandler(sr.db, sr.jwtManager)
 
 	// Main smartKnora API group
 	sk := r.Group("/api/v1/smartknora")
@@ -71,6 +72,9 @@ func (sr *SmartKnoraRouter) RegisterRoutes(r *gin.Engine) {
 
 	// Auth routes (public)
 	authHandler.RegisterRoutes(sk)
+
+	// Ops admin auth routes (public)
+	opsHandler.RegisterPublicRoutes(sk)
 
 	// Protected routes (require JWT)
 	protected := sk.Group("")
@@ -109,5 +113,8 @@ func (sr *SmartKnoraRouter) RegisterRoutes(r *gin.Engine) {
 		// AI Writing + Operations
 		writingHandler := handler.NewSmartKnoraWritingHandler(sr.db)
 		writingHandler.RegisterRoutes(protected)
+
+		// Ops admin protected routes
+		opsHandler.RegisterProtectedRoutes(protected)
 	}
 }
