@@ -216,16 +216,16 @@ func main() {
 			fmt.Printf("CREATED ops account: email=%s username=%s tenant_id=%d ops=%v system=%v\n", acc.Email, acc.Username, acc.TenantID, acc.IsOpsAdmin, acc.IsSystemAdmin)
 		} else {
 			updates := map[string]interface{}{
-				"username":               acc.Username,
-				"password_hash":          string(hash),
-				"tenant_id":              acc.TenantID,
-				"is_active":              acc.IsActive,
-				"is_system_admin":        acc.IsSystemAdmin,
-				"is_ops_admin":           acc.IsOpsAdmin,
-				"must_change_password":   acc.MustChangePassword,
-				"password_changed_at":    now,
-				"password_expires_at":    expires,
-				"updated_at":             now,
+				"username":             acc.Username,
+				"password_hash":        string(hash),
+				"tenant_id":            acc.TenantID,
+				"is_active":            acc.IsActive,
+				"is_system_admin":      acc.IsSystemAdmin,
+				"is_ops_admin":         acc.IsOpsAdmin,
+				"must_change_password": acc.MustChangePassword,
+				"password_changed_at":  now,
+				"password_expires_at":  expires,
+				"updated_at":           now,
 			}
 			if err := db.Model(&existing).Updates(updates).Error; err != nil {
 				log.Fatalf("update user %s: %v", acc.Email, err)

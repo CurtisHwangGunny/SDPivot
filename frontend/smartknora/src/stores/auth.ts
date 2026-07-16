@@ -22,7 +22,13 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('refresh_token')
   }
 
+  function clearOpsAuth() {
+    localStorage.removeItem('ops_access_token')
+    localStorage.removeItem('ops_refresh_token')
+    localStorage.removeItem('ops_user')
+  }
+
   const isLoggedIn = () => !!token.value
 
-  return { token, refreshToken, user, setAuth, clearAuth, isLoggedIn }
+  return { token, refreshToken, user, setAuth, clearAuth, clearOpsAuth, isLoggedIn }
 })

@@ -69,9 +69,9 @@ func (h *SmartKnoraTokenHandler) GetUsageSummary(c *gin.Context) {
 
 	var summary types.SmartKnoraTokenUsageSummary
 	db.Select(
-		"COALESCE(SUM(prompt_tokens), 0) as total_prompt_tokens",
-		"COALESCE(SUM(completion_tokens), 0) as total_completion_tokens",
-		"COALESCE(SUM(total_tokens), 0) as total_tokens",
+		"COALESCE(SUM(input_tokens), 0) as total_prompt_tokens",
+		"COALESCE(SUM(output_tokens), 0) as total_completion_tokens",
+		"COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens",
 		"COUNT(*) as request_count",
 	).Scan(&summary)
 
@@ -119,7 +119,7 @@ func (h *SmartKnoraTokenHandler) GetUsageHistory(c *gin.Context) {
 
 	var results []DailyUsage
 	db.Select(
-		"TO_CHAR(created_at, ?) as date, SUM(total_tokens) as total_tokens, COUNT(*) as request_count",
+		"TO_CHAR(created_at, ?) as date, SUM(input_tokens + output_tokens) as total_tokens, COUNT(*) as request_count",
 		dateFormat,
 	).Group("date").Order("date").Scan(&results)
 
@@ -141,8 +141,8 @@ func (h *SmartKnoraTokenHandler) GetUsageByModel(c *gin.Context) {
 	var results []ModelUsage
 	tenantDB.Model(&types.SmartKnoraTokenUsage{}).
 		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
-		Select("model_id, SUM(total_tokens) as total_tokens, COUNT(*) as request_count").
-		Group("model_id").
+		Select("model as model_id, SUM(input_tokens + output_tokens) as total_tokens, COUNT(*) as request_count").
+		Group("model").
 		Order("total_tokens DESC").
 		Scan(&results)
 

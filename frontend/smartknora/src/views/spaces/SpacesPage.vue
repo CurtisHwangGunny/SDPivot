@@ -1,63 +1,105 @@
 <template>
-  <div class="spaces-page">
-    <div class="page-header">
-      <h1>知识空间</h1>
-      <t-button theme="primary" @click="showCreate = true">
-        <template #icon><t-icon name="add" /></template>
-        新建空间
-      </t-button>
-    </div>
+  <div class="spaces-page page-shell">
+    <section class="spaces-hero page-section-card">
+      <div>
+        <div class="hero-badge">Knowledge Spaces</div>
+        <h1 class="sk-page-title">把企业知识整理成可持续复用的空间。</h1>
+        <p class="sk-page-subtitle">
+          每个知识空间都可以承载文档、导入任务、问答上下文与写作来源，先建结构，再让 AI 真正接得住。
+        </p>
+      </div>
+      <div class="hero-actions">
+        <t-button theme="primary" size="large" @click="showCreate = true">
+          <template #icon><t-icon name="add" /></template>
+          新建空间
+        </t-button>
+        <t-button variant="outline" size="large" @click="load">
+          <template #icon><t-icon name="refresh" /></template>
+          刷新列表
+        </t-button>
+      </div>
+    </section>
 
-    <t-loading v-if="loading" />
-    <div v-else-if="spaces.length === 0" class="empty">
-      <t-icon name="folder-open" size="64px" style="color:#d0d0d0" />
-      <p class="empty-title">还没有知识空间</p>
-      <p class="empty-desc">创建您的第一个知识空间，开始管理企业知识</p>
-      <t-button theme="primary" @click="showCreate = true">创建知识空间</t-button>
-    </div>
-    <div v-else class="space-grid">
-      <t-card
+    <section class="spaces-summary">
+      <div class="summary-card page-section-card">
+        <span class="summary-label">空间总数</span>
+        <strong>{{ loading ? '--' : spaces.length }}</strong>
+        <p>当前租户已建立的知识空间数量</p>
+      </div>
+      <div class="summary-card page-section-card">
+        <span class="summary-label">默认推荐</span>
+        <strong>先建结构</strong>
+        <p>建议先按部门、业务场景或项目维度拆分空间</p>
+      </div>
+      <div class="summary-card page-section-card">
+        <span class="summary-label">下一步动作</span>
+        <strong>导入文档</strong>
+        <p>空间创建后即可继续进入文档导入与问答配置</p>
+      </div>
+    </section>
+
+    <section v-if="loading" class="space-list-skeleton page-section-card">
+      <div v-for="item in 3" :key="item" class="skeleton-row"></div>
+    </section>
+
+    <section v-else-if="spaces.length === 0" class="empty-card page-section-card">
+      <div class="empty-icon">
+        <t-icon name="folder-open" size="48px" />
+      </div>
+      <h2>还没有知识空间</h2>
+      <p>从一个清晰的空间开始，把问答、写作和文档协作都挂到同一条知识链路上。</p>
+      <t-button theme="primary" size="large" @click="showCreate = true">创建第一个知识空间</t-button>
+    </section>
+
+    <section v-else class="space-list page-section-card">
+      <div
         v-for="space in spaces"
         :key="space.id"
-        class="space-card"
-        :title="space.name"
-        :description="space.description || '暂无描述'"
-        hover-shadow
+        class="space-row"
         @click="goDetail(space.id)"
       >
-        <template #actions>
+        <div class="space-row-main">
+          <div class="space-icon">
+            <t-icon name="folder" size="20px" />
+          </div>
+          <div class="space-copy">
+            <div class="space-title-row">
+              <h3>{{ space.name }}</h3>
+              <t-tag size="small" theme="success" variant="light">{{ visibilityLabel(space.visibility) }}</t-tag>
+            </div>
+            <p>{{ space.description || '这个知识空间还没有补充描述，可进入详情页继续完善。' }}</p>
+          </div>
+        </div>
+        <div class="space-row-side">
+          <span class="space-id">ID · {{ space.id }}</span>
           <t-button variant="text" theme="primary" @click.stop="goDetail(space.id)">
-            <t-icon name="chevron-right" />
+            进入
+            <template #suffix-icon><t-icon name="chevron-right" /></template>
           </t-button>
-        </template>
-      </t-card>
-    </div>
+        </div>
+      </div>
+    </section>
 
-    <t-dialog v-model:visible="showCreate" header="创建知识空间" @confirm="handleCreate" :confirm-btn="{ loading: creating }">
-      <t-form>
-        <t-form-item label="空间名称" name="name">
-          <t-input v-model="form.name" placeholder="请输入空间名称" :maxlength="30" />
-        </t-form-item>
-        <t-form-item label="空间描述" name="description">
-          <t-textarea v-model="form.description" placeholder="选填" :autosize="{ minRows: 2 }" />
-        </t-form-item>
-        <t-form-item label="可见性" name="visibility">
-          <t-select v-model="form.visibility">
-            <t-option value="private" label="私密" />
-            <t-option value="team" label="团队可见" />
-            <t-option value="enterprise" label="企业可见" />
-          </t-select>
-        </t-form-item>
-      </t-form>
-    </t-dialog>
+    <Suspense>
+      <SpaceCreateDialog
+        v-if="showCreate"
+        v-model:visible="showCreate"
+        :loading="creating"
+        :form="form"
+        @update:form="form = $event"
+        @confirm="handleCreate"
+      />
+    </Suspense>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { listSpaces, createSpace, type Space } from '@/api/spaces'
 import { MessagePlugin } from 'tdesign-vue-next'
+
+const SpaceCreateDialog = defineAsyncComponent(() => import('@/components/spaces/SpaceCreateDialog.vue'))
 
 const router = useRouter()
 const spaces = ref<Space[]>([])
@@ -71,12 +113,18 @@ async function load() {
   try {
     const res = await listSpaces()
     spaces.value = (res.data as any).spaces || []
-  } catch { spaces.value = [] }
-  finally { loading.value = false }
+  } catch {
+    spaces.value = []
+  } finally {
+    loading.value = false
+  }
 }
 
 async function handleCreate() {
-  if (!form.value.name) { MessagePlugin.warning('请输入空间名称'); return }
+  if (!form.value.name) {
+    MessagePlugin.warning('请输入空间名称')
+    return
+  }
   creating.value = true
   try {
     await createSpace(form.value)
@@ -86,23 +134,220 @@ async function handleCreate() {
     load()
   } catch (e: any) {
     MessagePlugin.error(e.response?.data?.error || '创建失败')
-  } finally { creating.value = false }
+  } finally {
+    creating.value = false
+  }
 }
 
 function goDetail(id: string) {
   router.push(`/spaces/${id}`)
 }
 
+function visibilityLabel(value?: string) {
+  if (value === 'team') return '团队可见'
+  if (value === 'enterprise') return '企业可见'
+  return '私密'
+}
+
 onMounted(load)
 </script>
 
 <style scoped>
-.spaces-page { max-width: 1200px; margin: 0 auto; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-.page-header h1 { font-size: 24px; font-weight: 600; }
-.empty { text-align: center; padding: 80px 20px; }
-.empty-title { font-size: 18px; font-weight: 500; margin: 16px 0 8px; }
-.empty-desc { color: #999; margin-bottom: 24px; }
-.space-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-.space-card { cursor: pointer; }
+.spaces-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.spaces-hero {
+  padding: 28px 32px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--sk-brand-soft);
+  color: var(--sk-brand-deep);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.spaces-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.summary-card {
+  padding: 22px 24px;
+}
+
+.summary-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sk-text-soft);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.summary-card strong {
+  display: block;
+  margin-top: 16px;
+  font-size: 28px;
+  line-height: 1.1;
+  color: var(--sk-text);
+}
+
+.summary-card p {
+  margin: 10px 0 0;
+  color: var(--sk-text-soft);
+  font-size: 14px;
+}
+
+.space-list-skeleton,
+.space-list {
+  padding: 14px;
+}
+
+.skeleton-row {
+  height: 92px;
+  border-radius: 18px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sk-border) 32%, transparent), color-mix(in srgb, var(--sk-border-strong) 55%, transparent), color-mix(in srgb, var(--sk-border) 32%, transparent));
+  margin-bottom: 12px;
+}
+
+.empty-card {
+  padding: 64px 28px;
+  text-align: center;
+}
+
+.empty-icon {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 18px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  background: var(--sk-brand-soft);
+  color: var(--sk-brand);
+}
+
+.empty-card h2 {
+  margin: 0;
+  font-size: 24px;
+  color: var(--sk-text);
+}
+
+.empty-card p {
+  max-width: 520px;
+  margin: 12px auto 24px;
+  color: var(--sk-text-soft);
+}
+
+.space-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+  border-radius: 20px;
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), background 0.24s ease;
+  cursor: pointer;
+}
+
+.space-row:hover {
+  background: var(--sk-surface-soft);
+  transform: translateY(-1px);
+}
+
+.space-row + .space-row {
+  margin-top: 8px;
+}
+
+.space-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.space-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  background: var(--sk-brand-soft);
+  color: var(--sk-brand-deep);
+  flex-shrink: 0;
+}
+
+.space-copy {
+  min-width: 0;
+}
+
+.space-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.space-title-row h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--sk-text);
+}
+
+.space-copy p {
+  margin: 10px 0 0;
+  color: var(--sk-text-soft);
+  font-size: 14px;
+}
+
+.space-row-side {
+  min-width: 110px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.space-id {
+  color: var(--sk-text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 1024px) {
+  .spaces-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .spaces-hero,
+  .space-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .space-row-side {
+    align-items: flex-start;
+  }
+}
 </style>
