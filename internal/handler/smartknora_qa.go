@@ -76,7 +76,10 @@ func (h *SmartKnoraQAHandler) CreateSession(c *gin.Context) {
 		UpdatedAt: time.Now(),
 	}
 
-	tenantDB.Create(&session)
+	if err := tenantDB.Create(&session).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create session", "detail": err.Error()})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{"session": session})
 }
 
@@ -129,8 +132,11 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 		return
 	}
 	now := time.Now()
-	userMsg := types.QAMessage{ID: uuid.New().String(), SessionID: sessionID, Role: "user", Content: req.Content, CreatedAt: now}
-	tenantDB.Create(&userMsg)
+	userMsg := types.QAMessage{ID: uuid.New().String(), SessionID: sessionID, TenantID: tenantID, Role: "user", Content: req.Content, Sources: "[]", CreatedAt: now}
+	if err := tenantDB.Create(&userMsg).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user message", "detail": err.Error()})
+		return
+	}
 
 	chunks, err := h.searchRelevantChunks(tenantDB, tenantID, session.SpaceID, req.Content, 5)
 	if err != nil {
@@ -171,8 +177,11 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 	}
 	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/smartknora/qa/sessions/:id/messages", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
 
-	aiMsg := types.QAMessage{ID: uuid.New().String(), SessionID: sessionID, Role: "assistant", Content: aiContent, Sources: sources, CreatedAt: now}
-	tenantDB.Create(&aiMsg)
+	aiMsg := types.QAMessage{ID: uuid.New().String(), SessionID: sessionID, TenantID: tenantID, Role: "assistant", Content: aiContent, Sources: sources, CreatedAt: now}
+	if err := tenantDB.Create(&aiMsg).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create assistant message", "detail": err.Error()})
+		return
+	}
 	tenantDB.Model(&types.QASession{}).Where("id = ? AND tenant_id = ?", sessionID, tenantID).Update("updated_at", now)
 	c.JSON(http.StatusOK, gin.H{"user_message": userMsg, "assistant_message": aiMsg})
 }

@@ -443,19 +443,20 @@ func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
 		req.TopK = 10
 	}
 
-	// Simple keyword search for now (vector search requires embedding service)
 	search := strings.ReplaceAll(strings.ReplaceAll(req.Query, "%", "\\%"), "_", "\\_")
 	db := tenantDB.Model(&types.SmartKnoraDocumentChunk{}).
-		Where("tenant_id = ? AND content ILIKE ?", tenantID, "%"+search+"%")
+		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
+		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
 
 	if req.SpaceID != "" {
-		// Join with documents to filter by space
-		db = db.Joins("JOIN documents ON documents.id = document_chunks.document_id").
-			Where("documents.space_id = ?", req.SpaceID)
+		db = db.Where("documents.space_id = ?", req.SpaceID)
 	}
 
 	var chunks []types.SmartKnoraDocumentChunk
-	db.Limit(req.TopK).Find(&chunks)
+	if err := db.Order("document_chunks.created_at DESC").Limit(req.TopK).Find(&chunks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search documents", "detail": err.Error()})
+		return
+	}
 
 	results := make([]types.SmartKnoraSearchResult, len(chunks))
 	for i, chunk := range chunks {

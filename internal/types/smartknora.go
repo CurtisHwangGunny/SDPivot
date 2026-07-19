@@ -339,7 +339,7 @@ type QASession struct {
 	ID        string    `json:"id" gorm:"type:varchar(36);primaryKey"`
 	UserID    string    `json:"user_id" gorm:"type:varchar(36);not null;index"`
 	TenantID  uint64    `json:"tenant_id" gorm:"not null;index"`
-	SpaceID   string    `json:"space_id,omitempty" gorm:"-"`
+	SpaceID   string    `json:"space_id,omitempty" gorm:"type:varchar(36);index"`
 	Title     string    `json:"title" gorm:"type:varchar(200)"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -351,9 +351,10 @@ func (QASession) TableName() string { return "qa_sessions" }
 type QAMessage struct {
 	ID        string    `json:"id" gorm:"type:varchar(36);primaryKey"`
 	SessionID string    `json:"session_id" gorm:"type:varchar(36);not null;index"`
+	TenantID  uint64    `json:"tenant_id" gorm:"not null;index"`
 	Role      string    `json:"role" gorm:"type:varchar(20);not null"`
 	Content   string    `json:"content" gorm:"type:text;not null"`
-	Sources   string    `json:"sources" gorm:"type:text"`
+	Sources   string    `json:"sources" gorm:"type:jsonb;default:'[]'"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
