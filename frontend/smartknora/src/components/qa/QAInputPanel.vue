@@ -31,23 +31,23 @@ const emit = defineEmits<{
 
 <style scoped>
 .input-shell {
-  padding: 20px 28px 28px;
+  padding: 18px 24px 24px;
 }
 
 .input-panel {
-  padding: 18px;
-  border-radius: 22px;
+  padding: 16px;
+  border-radius: 16px;
   background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
   border: 1px solid var(--border-soft);
   box-shadow: var(--shadow-soft);
 }
 
 .input-footer {
-  margin-top: 14px;
+  margin-top: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 }
 
 .input-tip {

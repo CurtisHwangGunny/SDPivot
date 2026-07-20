@@ -160,7 +160,7 @@ onMounted(load)
 }
 
 .spaces-hero {
-  padding: 28px 32px;
+  padding: 24px 28px;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -193,7 +193,7 @@ onMounted(load)
 }
 
 .summary-card {
-  padding: 22px 24px;
+  padding: 20px 22px;
 }
 
 .summary-label {
@@ -226,13 +226,13 @@ onMounted(load)
 
 .skeleton-row {
   height: 92px;
-  border-radius: 18px;
+  border-radius: 12px;
   background: linear-gradient(90deg, color-mix(in srgb, var(--sk-border) 32%, transparent), color-mix(in srgb, var(--sk-border-strong) 55%, transparent), color-mix(in srgb, var(--sk-border) 32%, transparent));
   margin-bottom: 12px;
 }
 
 .empty-card {
-  padding: 64px 28px;
+  padding: 56px 24px;
   text-align: center;
 }
 
@@ -240,7 +240,7 @@ onMounted(load)
   width: 84px;
   height: 84px;
   margin: 0 auto 18px;
-  border-radius: 24px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   background: var(--sk-brand-soft);
@@ -265,7 +265,7 @@ onMounted(load)
   justify-content: space-between;
   gap: 20px;
   padding: 18px;
-  border-radius: 20px;
+  border-radius: 16px;
   transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), background 0.24s ease;
   cursor: pointer;
 }

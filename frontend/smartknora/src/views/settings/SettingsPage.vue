@@ -79,7 +79,7 @@ const activePanelComponent = computed(() => {
 <style scoped>
 .settings-shell {
   display: grid;
-  gap: 24px;
+  gap: 18px;
 }
 .settings-hero {
   display: grid;
@@ -99,7 +99,7 @@ const activePanelComponent = computed(() => {
 .settings-hero h1,
 .panel-head h2 {
   margin: 0;
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1.1;
   color: var(--text-primary);
 }
@@ -114,7 +114,7 @@ const activePanelComponent = computed(() => {
 .settings-sidebar {
   background: var(--surface-elevated);
   border: 1px solid var(--border-soft);
-  border-radius: 24px;
+  border-radius: 16px;
   box-shadow: var(--shadow-soft);
 }
 .settings-hero-card {
@@ -122,7 +122,7 @@ const activePanelComponent = computed(() => {
   flex-direction: column;
   justify-content: center;
   gap: 8px;
-  padding: 24px;
+  padding: 22px;
   background: linear-gradient(135deg, rgba(0, 185, 107, 0.12), rgba(31, 41, 55, 0.04));
 }
 .settings-hero-card span {
@@ -141,14 +141,14 @@ const activePanelComponent = computed(() => {
 }
 .settings-workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
 .settings-sidebar {
-  padding: 14px;
+  padding: 12px;
   position: sticky;
-  top: 24px;
+  top: 20px;
 }
 .settings-nav-item {
   width: 100%;
@@ -156,8 +156,8 @@ const activePanelComponent = computed(() => {
   text-align: left;
   border: 0;
   background: transparent;
-  border-radius: 18px;
-  padding: 16px 18px;
+  border-radius: 12px;
+  padding: 14px 16px;
   margin-bottom: 8px;
   cursor: pointer;
   transition: transform 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;

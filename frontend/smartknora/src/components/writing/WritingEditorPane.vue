@@ -47,8 +47,8 @@ const emit = defineEmits<{
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 20px;
-  padding: 28px 28px 0;
+  gap: 16px;
+  padding: 22px 24px 0;
 }
 
 .editor-title-wrap {
@@ -58,7 +58,7 @@ const emit = defineEmits<{
 
 .editor-tag {
   display: inline-flex;
-  padding: 6px 10px;
+  padding: 5px 9px;
   border-radius: 999px;
   font-size: 12px;
   color: var(--brand-primary);
@@ -67,12 +67,12 @@ const emit = defineEmits<{
 
 .editor-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .editor-stage {
-  padding: 20px 28px 28px;
+  padding: 18px 24px 24px;
   flex: 1;
   min-height: 520px;
 }
@@ -83,8 +83,8 @@ const emit = defineEmits<{
 
 :deep(.editor-textarea .t-textarea__inner) {
   min-height: 520px;
-  padding: 20px;
-  border-radius: 20px;
+  padding: 16px;
+  border-radius: 16px;
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
   border-color: var(--border-soft);
   color: var(--text-primary);

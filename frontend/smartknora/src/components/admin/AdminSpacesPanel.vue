@@ -27,8 +27,8 @@ defineProps<{
 
 <style scoped>
 .admin-panel {
-  padding: 24px;
-  border-radius: 24px;
+  padding: 20px;
+  border-radius: 16px;
   border: 1px solid var(--border-soft);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-soft);
@@ -38,7 +38,7 @@ defineProps<{
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 .panel-kicker {
   margin: 0 0 8px;
@@ -50,12 +50,14 @@ defineProps<{
 }
 .panel-head h2 {
   margin: 0;
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1.1;
   color: var(--text-primary);
 }
 .empty-state {
-  padding: 32px 16px;
+  padding: 28px 16px;
+  border-radius: 12px;
+  background: var(--td-bg-color-container-hover);
   text-align: center;
   color: var(--text-secondary);
 }

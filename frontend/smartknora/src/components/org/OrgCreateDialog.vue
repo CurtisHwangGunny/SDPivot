@@ -2,18 +2,22 @@
   <t-dialog
     :visible="visible"
     header="创建企业"
+    width="560px"
     @update:visible="emit('update:visible', $event)"
     @confirm="emit('confirm')"
     :confirm-btn="{ loading: loading }"
   >
-    <t-form>
+    <div class="org-dialog">
+      <div class="dialog-tip">创建企业后即可统一管理成员、空间和后续企业级配置。</div>
+      <t-form label-align="top">
       <t-form-item label="企业名称" name="name">
         <t-input :model-value="form.name" placeholder="请输入企业名称" @update:model-value="updateField('name', String($event || ''))" />
       </t-form-item>
       <t-form-item label="企业描述" name="description">
         <t-textarea :model-value="form.description" placeholder="选填" :autosize="{ minRows: 2 }" @update:model-value="updateField('description', String($event || ''))" />
       </t-form-item>
-    </t-form>
+      </t-form>
+    </div>
   </t-dialog>
 </template>
 
@@ -40,3 +44,19 @@ function updateField(field: 'name' | 'description', value: string) {
   })
 }
 </script>
+
+<style scoped>
+.org-dialog {
+  padding-top: 6px;
+}
+
+.dialog-tip {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--sk-brand-soft);
+  color: var(--sk-brand-deep);
+  font-size: 12px;
+  line-height: 1.6;
+}
+</style>

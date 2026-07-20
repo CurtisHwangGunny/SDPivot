@@ -55,10 +55,10 @@ defineProps<{
 
 <style scoped>
 .settings-panel {
-  padding: 24px;
+  padding: 22px;
   background: var(--surface-elevated);
   border: 1px solid var(--border-soft);
-  border-radius: 24px;
+  border-radius: 12px;
   box-shadow: var(--shadow-soft);
 }
 .muted-panel {
@@ -68,8 +68,8 @@ defineProps<{
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 14px;
+  margin-bottom: 18px;
 }
 .panel-kicker {
   margin: 0 0 8px;
@@ -81,7 +81,7 @@ defineProps<{
 }
 .panel-head h2 {
   margin: 0;
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1.1;
   color: var(--text-primary);
 }
@@ -94,8 +94,8 @@ defineProps<{
 }
 .theme-option,
 .placeholder-card {
-  border-radius: 20px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 16px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: color-mix(in srgb, var(--surface-elevated) 84%, transparent);
 }
@@ -123,7 +123,7 @@ defineProps<{
   line-height: 1.6;
 }
 .theme-preview {
-  height: 110px;
+  height: 96px;
   border-radius: 16px;
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
@@ -145,7 +145,7 @@ defineProps<{
   background: linear-gradient(180deg, #1f2937 0%, #0f172a 100%);
 }
 .extra-top {
-  margin-top: 18px;
+  margin-top: 16px;
 }
 .emphasis-card {
   background: linear-gradient(135deg, color-mix(in srgb, var(--brand-primary) 12%, transparent), color-mix(in srgb, var(--surface-elevated) 96%, transparent));

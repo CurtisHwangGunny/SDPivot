@@ -1,16 +1,17 @@
 <template>
-  <t-dialog :visible="visible" header="成员管理" :footer="false" width="600px" @update:visible="emit('update:visible', $event)">
+  <t-dialog :visible="visible" header="成员管理" :footer="false" width="560px" @update:visible="emit('update:visible', $event)">
     <div class="member-dialog">
+      <div class="dialog-tip">快速添加可访问当前知识空间的协作者，并统一控制成员角色权限。</div>
       <div class="add-member-row">
-        <t-input v-model="memberForm.user_id" placeholder="用户ID" style="flex:1" />
-        <t-select v-model="memberForm.role" style="width:120px">
+        <t-input v-model="memberForm.user_id" placeholder="请输入用户ID" size="large" style="flex:1" />
+        <t-select v-model="memberForm.role" size="large" style="width:110px">
           <t-option value="viewer" label="查阅者" />
           <t-option value="editor" label="编辑者" />
           <t-option value="admin" label="管理员" />
         </t-select>
-        <t-button theme="primary" @click="handleAddMember">添加</t-button>
+        <t-button theme="primary" size="large" @click="handleAddMember">添加成员</t-button>
       </div>
-      <t-table v-if="members.length > 0" :data="members" :columns="memberColumns" row-key="id" hover stripe style="margin-top:12px">
+      <t-table v-if="members.length > 0" :data="members" :columns="memberColumns" row-key="id" hover stripe style="margin-top:14px">
         <template #role="{ row }"><t-tag :theme="roleTheme(row.role)" variant="light">{{ roleLabel(row.role) }}</t-tag></template>
         <template #operation="{ row }"><t-button variant="text" theme="danger" size="small" @click="handleRemoveMember(row)">移除</t-button></template>
       </t-table>
@@ -90,7 +91,8 @@ watch(() => props.visible, (visible) => {
 </script>
 
 <style scoped>
-.member-dialog { padding: 8px 0; }
-.add-member-row { display: flex; gap: 8px; }
-.empty-members { text-align: center; padding: 24px; color: var(--text-secondary); }
+.member-dialog { padding-top: 8px; }
+.dialog-tip { margin-bottom: 16px; padding: 12px 14px; border-radius: 12px; background: var(--sk-brand-soft); color: var(--sk-brand-deep); font-size: 12px; line-height: 1.6; }
+.add-member-row { display: flex; gap: 10px; align-items: stretch; }
+.empty-members { text-align: center; padding: 28px 16px; border-radius: 12px; background: var(--td-bg-color-container-hover); color: var(--text-secondary); }
 </style>
