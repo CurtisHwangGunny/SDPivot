@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -88,6 +89,9 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "space_id is required"})
 		return
 	}
+	if _, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessEdit); !ok {
+		return
+	}
 
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -117,16 +121,24 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 	docID := uuid.New().String()
 	ext := filepath.Ext(header.Filename)
 	savePath := filepath.Join(h.uploadDir, tenantIDStr(tenantID), docID+ext)
-	os.MkdirAll(filepath.Dir(savePath), 0755)
+	if err := os.MkdirAll(filepath.Dir(savePath), 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare upload directory"})
+		return
+	}
 
 	dst, err := os.Create(savePath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save file"})
 		return
 	}
-	defer dst.Close()
+	fileSaved := true
+	defer func() {
+		_ = dst.Close()
+		if fileSaved {
+			_ = os.Remove(savePath)
+		}
+	}()
 
-	// Reset file reader
 	if _, err := file.Seek(0, 0); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset file reader"})
 		return
@@ -135,8 +147,11 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save file"})
 		return
 	}
+	if err := dst.Close(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save file"})
+		return
+	}
 
-	// Create document record
 	now := time.Now()
 	doc := types.SmartKnoraDocument{
 		ID:              docID,
@@ -156,27 +171,22 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-
-	if err := tenantDB.Create(&doc).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document record"})
-		return
-	}
-
-	// Create initial version
 	version := types.SmartKnoraDocumentVersion{
 		ID:         uuid.New().String(),
 		DocumentID: docID,
+		TenantID:   tenantID,
 		Version:    1,
 		FilePath:   savePath,
 		FileSize:   header.Size,
 		CreatedAt:  now,
 		CreatedBy:  userID,
 	}
-	if err := tenantDB.Create(&version).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document version"})
+	if err := createSmartKnoraDocumentWithVersion(tenantDB, &doc, &version); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document record and version"})
 		return
 	}
 
+	fileSaved = false
 	parseMessage := "document uploaded and parsed"
 	if err := h.parseAndStoreDocument(tenantDB, &doc, content); err != nil {
 		parseMessage = "document uploaded, parsing failed: " + err.Error()
@@ -194,12 +204,20 @@ func (h *SmartKnoraDocumentHandler) ListDocuments(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
 	var query types.DocumentListQuery
-	c.ShouldBindQuery(&query)
+	if err := c.ShouldBindQuery(&query); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	db := tenantDB.Model(&types.SmartKnoraDocument{}).Where("tenant_id = ?", tenantID)
 
 	if query.SpaceID != "" {
+		if _, ok := authorizeSpace(c, tenantDB, query.SpaceID, spaceAccessView); !ok {
+			return
+		}
 		db = db.Where("space_id = ?", query.SpaceID)
+	} else {
+		db = db.Where("space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, middleware.GetUserID(c)))
 	}
 	if query.ParseStatus != "" {
 		db = db.Where("parse_status = ?", query.ParseStatus)
@@ -244,6 +262,10 @@ func (h *SmartKnoraDocumentHandler) GetDocument(c *gin.Context) {
 		return
 	}
 
+	if _, ok := authorizeSpace(c, tenantDB, doc.SpaceID, spaceAccessView); !ok {
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"document": doc})
 }
 
@@ -253,8 +275,16 @@ func (h *SmartKnoraDocumentHandler) GetDocumentChunks(c *gin.Context) {
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
+	doc, ok := h.authorizeDocument(c, tenantDB, docID, spaceAccessView)
+	if !ok {
+		return
+	}
+
 	var chunks []types.SmartKnoraDocumentChunk
-	tenantDB.Where("document_id = ? AND tenant_id = ?", docID, tenantID).Order("chunk_index").Find(&chunks)
+	if err := tenantDB.Where("document_id = ? AND tenant_id = ?", doc.ID, tenantID).Order("chunk_index").Find(&chunks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list document chunks"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"chunks": chunks, "total": len(chunks)})
 }
@@ -265,8 +295,16 @@ func (h *SmartKnoraDocumentHandler) GetDocumentVersions(c *gin.Context) {
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
+	doc, ok := h.authorizeDocument(c, tenantDB, docID, spaceAccessView)
+	if !ok {
+		return
+	}
+
 	var versions []types.SmartKnoraDocumentVersion
-	tenantDB.Where("document_id = ? AND tenant_id = ?", docID, tenantID).Order("version DESC").Find(&versions)
+	if err := tenantDB.Where("document_id = ? AND tenant_id = ?", doc.ID, tenantID).Order("version DESC").Find(&versions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list document versions"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"versions": versions})
 }
@@ -277,8 +315,18 @@ func (h *SmartKnoraDocumentHandler) DeleteDocument(c *gin.Context) {
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
-	tenantDB.Where("id = ? AND tenant_id = ?", docID, tenantID).Delete(&types.SmartKnoraDocument{})
-	tenantDB.Where("document_id = ? AND tenant_id = ?", docID, tenantID).Delete(&types.SmartKnoraDocumentChunk{})
+	doc, ok := h.authorizeDocument(c, tenantDB, docID, spaceAccessEdit)
+	if !ok {
+		return
+	}
+	if err := tenantDB.Where("id = ? AND tenant_id = ?", doc.ID, tenantID).Delete(&types.SmartKnoraDocument{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete document"})
+		return
+	}
+	if err := tenantDB.Where("document_id = ? AND tenant_id = ?", doc.ID, tenantID).Delete(&types.SmartKnoraDocumentChunk{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete document chunks"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "document deleted"})
 }
@@ -287,17 +335,15 @@ func (h *SmartKnoraDocumentHandler) DeleteDocument(c *gin.Context) {
 func (h *SmartKnoraDocumentHandler) ReparseDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
-	tenantID := middleware.GetTenantID(c)
 
-	var doc types.SmartKnoraDocument
-	if err := tenantDB.Where("id = ? AND tenant_id = ?", docID, tenantID).First(&doc).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+	doc, ok := h.authorizeDocument(c, tenantDB, docID, spaceAccessEdit)
+	if !ok {
 		return
 	}
 
-	content, err := h.loadDocumentContent(&doc)
+	content, err := h.loadDocumentContent(c.Request.Context(), doc)
 	if err != nil {
-		tenantDB.Model(&doc).Updates(map[string]interface{}{
+		tenantDB.Model(doc).Updates(map[string]interface{}{
 			"parse_status": "failed",
 			"updated_at":   time.Now(),
 		})
@@ -305,7 +351,7 @@ func (h *SmartKnoraDocumentHandler) ReparseDocument(c *gin.Context) {
 		return
 	}
 
-	if err := h.parseAndStoreDocument(tenantDB, &doc, content); err != nil {
+	if err := h.parseAndStoreDocument(tenantDB, doc, content); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -317,11 +363,9 @@ func (h *SmartKnoraDocumentHandler) ReparseDocument(c *gin.Context) {
 func (h *SmartKnoraDocumentHandler) GetChunk(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	chunkID := c.Param("id")
-	tenantID := middleware.GetTenantID(c)
 
-	var chunk types.SmartKnoraDocumentChunk
-	if err := tenantDB.Where("id = ? AND tenant_id = ?", chunkID, tenantID).First(&chunk).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "chunk not found"})
+	chunk, ok := h.authorizeChunk(c, tenantDB, chunkID, spaceAccessView)
+	if !ok {
 		return
 	}
 
@@ -342,7 +386,14 @@ func (h *SmartKnoraDocumentHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	tenantDB.Model(&types.SmartKnoraDocumentChunk{}).Where("id = ? AND tenant_id = ?", chunkID, tenantID).Update("content", req.Content)
+	chunk, ok := h.authorizeChunk(c, tenantDB, chunkID, spaceAccessEdit)
+	if !ok {
+		return
+	}
+	if err := tenantDB.Model(&types.SmartKnoraDocumentChunk{}).Where("id = ? AND tenant_id = ?", chunk.ID, tenantID).Update("content", req.Content).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update chunk"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "chunk updated"})
 }
@@ -449,7 +500,12 @@ func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
 		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
 
 	if req.SpaceID != "" {
+		if _, ok := authorizeSpace(c, tenantDB, req.SpaceID, spaceAccessView); !ok {
+			return
+		}
 		db = db.Where("documents.space_id = ?", req.SpaceID)
+	} else {
+		db = db.Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, middleware.GetUserID(c)))
 	}
 
 	var chunks []types.SmartKnoraDocumentChunk
@@ -474,17 +530,13 @@ func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
 var htmlBlockRE = regexp.MustCompile(`(?is)<(script|style)[^>]*>.*?</(script|style)>`)
 var htmlTagRE = regexp.MustCompile(`(?s)<[^>]+>`)
 
-func (h *SmartKnoraDocumentHandler) loadDocumentContent(doc *types.SmartKnoraDocument) ([]byte, error) {
+func (h *SmartKnoraDocumentHandler) loadDocumentContent(ctx context.Context, doc *types.SmartKnoraDocument) ([]byte, error) {
 	if strings.HasPrefix(doc.FilePath, "http://") || strings.HasPrefix(doc.FilePath, "https://") {
-		resp, err := http.Get(doc.FilePath)
+		content, _, _, err := fetchSmartKnoraURLDocument(ctx, doc.FilePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch document URL")
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("document URL returned non-200 status")
-		}
-		return io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+		return content, nil
 	}
 	if doc.FilePath == "" {
 		return nil, fmt.Errorf("document has no file path")
@@ -596,6 +648,18 @@ func tenantIDStr(tenantID uint64) string {
 	return strconv.FormatUint(tenantID, 10)
 }
 
+func createSmartKnoraDocumentWithVersion(tenantDB *gorm.DB, doc *types.SmartKnoraDocument, version *types.SmartKnoraDocumentVersion) error {
+	return tenantDB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(doc).Error; err != nil {
+			return fmt.Errorf("create document: %w", err)
+		}
+		if err := tx.Create(version).Error; err != nil {
+			return fmt.Errorf("create document version: %w", err)
+		}
+		return nil
+	})
+}
+
 // UploadManualDocument handles manual text/markdown input.
 func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
@@ -610,6 +674,9 @@ func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if _, ok := authorizeSpace(c, tenantDB, req.SpaceID, spaceAccessEdit); !ok {
 		return
 	}
 
@@ -640,8 +707,17 @@ func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 		UpdatedAt:       now,
 	}
 
-	if err := tenantDB.Create(&doc).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document"})
+	version := types.SmartKnoraDocumentVersion{
+		ID:         uuid.New().String(),
+		DocumentID: docID,
+		TenantID:   tenantID,
+		Version:    1,
+		FileSize:   int64(len(req.Content)),
+		CreatedAt:  now,
+		CreatedBy:  userID,
+	}
+	if err := createSmartKnoraDocumentWithVersion(tenantDB, &doc, &version); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document and version"})
 		return
 	}
 
@@ -671,23 +747,21 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Fetch URL content
-	resp, err := http.Get(req.URL)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to fetch URL"})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "URL returned non-200 status"})
+	if _, ok := authorizeSpace(c, tenantDB, req.SpaceID, spaceAccessEdit); !ok {
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20)) // 10MB limit
+	// Fetch URL content with SSRF protection, bounded time, and bounded size.
+	body, finalURL, status, err := fetchSmartKnoraURLDocument(c.Request.Context(), req.URL)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read URL content"})
+		switch status {
+		case http.StatusRequestEntityTooLarge:
+			c.JSON(status, gin.H{"error": "URL content exceeds maximum document size"})
+		case http.StatusUnsupportedMediaType:
+			c.JSON(status, gin.H{"error": "unsupported URL content type"})
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "failed to fetch URL"})
+		}
 		return
 	}
 
@@ -700,13 +774,10 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 	hasher.Write(body)
 	contentHash := hex.EncodeToString(hasher.Sum(nil))
 
-	// Extract domain for title
-	domain := req.URL
-	if idx := strings.Index(domain, "://"); idx >= 0 {
-		domain = domain[idx+3:]
-	}
-	if idx := strings.Index(domain, "/"); idx >= 0 {
-		domain = domain[:idx]
+	// Extract the final response domain for title.
+	domain := finalURL.Hostname()
+	if finalURL.Port() != "" {
+		domain = finalURL.Host
 	}
 
 	doc := types.SmartKnoraDocument{
@@ -718,7 +789,7 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		FileName:        domain + ".html",
 		FileType:        ".html",
 		FileSize:        int64(len(body)),
-		FilePath:        req.URL,
+		FilePath:        finalURL.String(),
 		ContentHash:     contentHash,
 		ParseStatus:     "parsing",
 		EmbeddingStatus: "pending",
@@ -728,8 +799,18 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		UpdatedAt:       now,
 	}
 
-	if err := tenantDB.Create(&doc).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document"})
+	version := types.SmartKnoraDocumentVersion{
+		ID:         uuid.New().String(),
+		DocumentID: docID,
+		TenantID:   tenantID,
+		Version:    1,
+		FilePath:   finalURL.String(),
+		FileSize:   int64(len(body)),
+		CreatedAt:  now,
+		CreatedBy:  userID,
+	}
+	if err := createSmartKnoraDocumentWithVersion(tenantDB, &doc, &version); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document and version"})
 		return
 	}
 
@@ -742,4 +823,28 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		"document": doc,
 		"message":  "URL imported and parsed",
 	})
+}
+
+func (h *SmartKnoraDocumentHandler) authorizeDocument(c *gin.Context, db *gorm.DB, docID string, level spaceAccessLevel) (*types.SmartKnoraDocument, bool) {
+	var doc types.SmartKnoraDocument
+	if err := db.Where("id = ? AND tenant_id = ?", docID, middleware.GetTenantID(c)).First(&doc).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return nil, false
+	}
+	if _, ok := authorizeSpace(c, db, doc.SpaceID, level); !ok {
+		return nil, false
+	}
+	return &doc, true
+}
+
+func (h *SmartKnoraDocumentHandler) authorizeChunk(c *gin.Context, db *gorm.DB, chunkID string, level spaceAccessLevel) (*types.SmartKnoraDocumentChunk, bool) {
+	var chunk types.SmartKnoraDocumentChunk
+	if err := db.Where("id = ? AND tenant_id = ?", chunkID, middleware.GetTenantID(c)).First(&chunk).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "chunk not found"})
+		return nil, false
+	}
+	if _, ok := h.authorizeDocument(c, db, chunk.DocumentID, level); !ok {
+		return nil, false
+	}
+	return &chunk, true
 }

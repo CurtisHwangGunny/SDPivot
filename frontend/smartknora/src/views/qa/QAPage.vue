@@ -40,7 +40,7 @@
           <h3>{{ activeSessionTitle || '当前会话' }}</h3>
         </div>
         <t-space>
-          <t-tag theme="success" variant="light">知识问答</t-tag>
+          <t-tag theme="success" variant="light">{{ selectedModelName || '知识问答' }}</t-tag>
           <t-button variant="outline" @click="createNewSession">新会话</t-button>
         </t-space>
       </header>
@@ -48,7 +48,7 @@
       <div v-if="!activeSessionId" class="qa-welcome">
         <div class="welcome-mark"><t-icon name="chat-bubble-smile" size="30px" /></div>
         <h3>开始一场高质量问答</h3>
-        <p>从知识空间中抽取上下文，让回答更贴近业务语境。你也可以在后续继续扩展引用抽屉与模型切换能力。</p>
+        <p>从知识空间中抽取上下文，让回答更贴近业务语境，并可按需选择当前租户已配置的回答模型。</p>
         <t-button theme="primary" size="large" @click="createNewSession">立即开始</t-button>
       </div>
 
@@ -65,6 +65,8 @@
         <Suspense>
           <QAInputPanel
             v-model="inputText"
+            v-model:model-id="selectedModelId"
+            :models="availableModels"
             :sending="sending"
             @submit="submitMessage"
           />
@@ -81,7 +83,16 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
-import { listSessions, createSession, getMessages, sendMessage, type QAMessage, type QASession } from '@/api/qa'
+import {
+  listSessions,
+  createSession,
+  getMessages,
+  sendMessage,
+  listQAModels,
+  type QAAvailableModel,
+  type QAMessage,
+  type QASession,
+} from '@/api/qa'
 import { MessagePlugin } from 'tdesign-vue-next'
 
 const QAMessagesPanel = defineAsyncComponent(() => import('@/components/qa/QAMessagesPanel.vue'))
@@ -92,11 +103,32 @@ const messages = ref<QAMessage[]>([])
 const activeSessionId = ref('')
 const inputText = ref('')
 const sending = ref(false)
+const availableModels = ref<QAAvailableModel[]>([])
+const selectedModelId = ref('')
+
+const selectedModelName = computed(() => {
+  const model = availableModels.value.find(item => item.id === selectedModelId.value)
+  return model?.display_name || model?.name || ''
+})
 
 const activeSessionTitle = computed(() => sessions.value.find(item => String(item.id) === String(activeSessionId.value))?.title || '')
 
 function formatDate(value: string) {
   return value ? new Date(value).toLocaleDateString('zh-CN') : ''
+}
+
+async function loadModels() {
+  try {
+    const res = await listQAModels()
+    availableModels.value = res.data.models || []
+    const preferred = availableModels.value.find(item => item.is_default) || availableModels.value[0]
+    if (!availableModels.value.some(item => item.id === selectedModelId.value)) {
+      selectedModelId.value = preferred?.id || ''
+    }
+  } catch {
+    availableModels.value = []
+    selectedModelId.value = ''
+  }
 }
 
 async function loadSessions() {
@@ -149,7 +181,8 @@ async function submitMessage() {
   inputText.value = ''
   sending.value = true
   try {
-    await sendMessage(activeSessionId.value, content)
+    const res = await sendMessage(activeSessionId.value, content, selectedModelId.value)
+    if (res.data.model_id) selectedModelId.value = res.data.model_id
     await loadMessages(activeSessionId.value)
     await loadSessions()
   } catch {
@@ -160,7 +193,9 @@ async function submitMessage() {
   }
 }
 
-onMounted(loadSessions)
+onMounted(async () => {
+  await Promise.all([loadModels(), loadSessions()])
+})
 </script>
 
 <style scoped>
@@ -174,7 +209,7 @@ onMounted(loadSessions)
 
 .qa-sidebar {
   padding: 20px;
-  border-radius: 16px;
+  border-radius: 12px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, transparent) 0%, color-mix(in srgb, var(--sk-surface-soft) 86%, transparent) 100%);
   border: 1px solid var(--border-soft);
 }
@@ -308,7 +343,7 @@ onMounted(loadSessions)
 .welcome-mark {
   width: 72px;
   height: 72px;
-  border-radius: 16px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   background: var(--sk-brand-soft);

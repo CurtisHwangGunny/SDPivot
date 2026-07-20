@@ -12,6 +12,23 @@
       </div>
     </header>
 
+    <div class="source-toolbar">
+      <div>
+        <strong>生成知识来源</strong>
+        <p>互联网搜索会补充公开信息，知识库内容仍作为内部事实的优先来源。</p>
+      </div>
+      <t-radio-group :value="sourceType" variant="default-filled" @change="onSourceTypeChange">
+        <t-radio-button value="knowledge_base">仅知识库</t-radio-button>
+        <t-radio-button value="knowledge_plus_web">知识库 + 互联网</t-radio-button>
+      </t-radio-group>
+    </div>
+
+    <div v-if="generationMeta" class="generation-meta">
+      <span>知识库来源 {{ generationMeta.knowledge }}</span>
+      <span>互联网来源 {{ generationMeta.web }}</span>
+      <span>模型 {{ generationMeta.model || '未知' }}</span>
+    </div>
+
     <div class="editor-stage">
       <t-textarea
         :model-value="draft.content"
@@ -25,21 +42,28 @@
 </template>
 
 <script setup lang="ts">
-import type { WritingDraft } from '@/api/writing'
+import type { WritingDraft, WritingSourceType } from '@/api/writing'
 
 defineProps<{
   draft: WritingDraft
   saving: boolean
   generating: boolean
+  sourceType: WritingSourceType
+  generationMeta: { knowledge: number; web: number; model: string } | null
 }>()
 
 const emit = defineEmits<{
   'update-title': [value: string]
   'update-content': [value: string]
+  'update:source-type': [value: WritingSourceType]
   save: []
   generate: []
   export: []
 }>()
+
+function onSourceTypeChange(value: unknown) {
+  emit('update:source-type', value === 'knowledge_plus_web' ? 'knowledge_plus_web' : 'knowledge_base')
+}
 </script>
 
 <style scoped>
@@ -59,7 +83,7 @@ const emit = defineEmits<{
 .editor-tag {
   display: inline-flex;
   padding: 5px 9px;
-  border-radius: 999px;
+  border-radius: var(--sk-radius-md);
   font-size: 12px;
   color: var(--brand-primary);
   background: var(--sk-brand-soft);
@@ -69,6 +93,44 @@ const emit = defineEmits<{
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.source-toolbar {
+  margin: 16px 24px 0;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--sk-radius-md);
+  background: var(--sk-surface-soft);
+}
+
+.source-toolbar strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.source-toolbar p {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.generation-meta {
+  margin: 10px 24px 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.generation-meta span {
+  padding: 4px 8px;
+  border-radius: var(--sk-radius-sm);
+  color: var(--sk-brand-deep);
+  background: var(--sk-brand-soft);
+  font-size: 12px;
 }
 
 .editor-stage {
@@ -84,7 +146,7 @@ const emit = defineEmits<{
 :deep(.editor-textarea .t-textarea__inner) {
   min-height: 520px;
   padding: 16px;
-  border-radius: 16px;
+  border-radius: var(--sk-radius-md);
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
   border-color: var(--border-soft);
   color: var(--text-primary);
@@ -92,7 +154,8 @@ const emit = defineEmits<{
 }
 
 @media (max-width: 900px) {
-  .editor-header {
+  .editor-header,
+  .source-toolbar {
     flex-direction: column;
   }
 

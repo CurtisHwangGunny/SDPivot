@@ -36,7 +36,7 @@ const emit = defineEmits<{
 .chunks-summary { margin-bottom: 14px; padding: 12px 14px; border-radius: 12px; background: var(--sk-brand-soft); color: var(--sk-brand-deep); font-size: 12px; line-height: 1.6; }
 .empty-chunks { text-align: center; padding: 32px 16px; border-radius: 12px; background: var(--td-bg-color-container-hover); color: var(--text-secondary); }
 .chunk-list { display: flex; flex-direction: column; gap: 10px; }
-.chunk-card { border-radius: 16px; background: var(--td-bg-color-container); box-shadow: var(--sk-shadow-sm); }
+.chunk-card { border-radius: 12px; background: var(--td-bg-color-container); box-shadow: var(--sk-shadow-sm); }
 .chunk-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .chunk-tokens { font-size: 12px; color: var(--text-secondary); }
 .chunk-content { font-size: 14px; line-height: 1.7; color: var(--text-primary); white-space: pre-wrap; max-height: 188px; overflow-y: auto; }

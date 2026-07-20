@@ -67,7 +67,7 @@ defineProps<{
 .msg-bubble {
   max-width: min(760px, 100%);
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
   border: 1px solid var(--border-soft);
 }

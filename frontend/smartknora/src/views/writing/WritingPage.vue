@@ -46,9 +46,12 @@
           :draft="currentDraft"
           :saving="saving"
           :generating="generating"
+          :source-type="sourceType"
+          :generation-meta="generationMeta"
           @update-title="updateDraftTitle"
           @update-content="updateDraftContent"
           @save="saveDraft"
+          @update:source-type="sourceType = $event"
           @generate="generateFromPrompt"
           @export="exportCurrent"
         />
@@ -80,7 +83,7 @@
 
 <script setup lang="ts">
 import { defineAsyncComponent, onMounted, ref } from 'vue'
-import { createDraft, listDrafts, getDraft, updateDraft, exportDraft, generateContent, type WritingDraft } from '@/api/writing'
+import { createDraft, listDrafts, getDraft, updateDraft, exportDraft, generateContent, type WritingDraft, type WritingSourceType } from '@/api/writing'
 import { MessagePlugin } from 'tdesign-vue-next'
 
 const WritingEditorPane = defineAsyncComponent(() => import('@/components/writing/WritingEditorPane.vue'))
@@ -93,6 +96,8 @@ const newDraft = ref({ title: '' })
 const creating = ref(false)
 const saving = ref(false)
 const generating = ref(false)
+const sourceType = ref<WritingSourceType>('knowledge_base')
+const generationMeta = ref<{ knowledge: number; web: number; model: string } | null>(null)
 
 function formatDate(value: string) {
   return value ? new Date(value).toLocaleDateString('zh-CN') : ''
@@ -114,6 +119,8 @@ async function selectDraft(id: string) {
   try {
     const res = await getDraft(id)
     currentDraft.value = res.data.draft
+    sourceType.value = res.data.draft.source_type === 'knowledge_plus_web' ? 'knowledge_plus_web' : 'knowledge_base'
+    generationMeta.value = null
   } catch {
     MessagePlugin.error('读取草稿失败')
   }
@@ -138,7 +145,12 @@ async function createDraftItem() {
   }
   creating.value = true
   try {
-    const res = await createDraft({ title: newDraft.value.title, category: 'report' })
+    const res = await createDraft({
+      title: newDraft.value.title,
+      category: 'report',
+      source_type: sourceType.value,
+      web_search_enabled: sourceType.value === 'knowledge_plus_web',
+    })
     const draft = res.data.draft
     showCreateDialog.value = false
     newDraft.value.title = ''
@@ -176,7 +188,17 @@ async function generateFromPrompt() {
     const res = await generateContent({
       category: currentDraft.value.category || 'report',
       prompt: currentDraft.value.content || currentDraft.value.title,
+      space_id: currentDraft.value.space_id || undefined,
+      source_type: sourceType.value,
+      web_search_enabled: sourceType.value === 'knowledge_plus_web',
     })
+    currentDraft.value.source_type = res.data.source_type
+    currentDraft.value.web_search_enabled = res.data.web_search_enabled
+    generationMeta.value = {
+      knowledge: res.data.knowledge_sources_count,
+      web: res.data.web_sources_count,
+      model: res.data.model,
+    }
     currentDraft.value.content = res.data.content || currentDraft.value.content
     await saveDraft()
   } catch {
@@ -215,7 +237,7 @@ onMounted(loadDrafts)
 
 .writing-sidebar {
   padding: 20px;
-  border-radius: 16px;
+  border-radius: 12px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, transparent) 0%, color-mix(in srgb, var(--sk-surface-soft) 86%, transparent) 100%);
   border: 1px solid var(--border-soft);
 }
@@ -329,7 +351,7 @@ onMounted(loadDrafts)
 .welcome-mark {
   width: 72px;
   height: 72px;
-  border-radius: 16px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   background: var(--sk-brand-soft);

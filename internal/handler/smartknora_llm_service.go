@@ -15,6 +15,7 @@ import (
 )
 
 var ErrSmartKnoraLLMNotConfigured = errors.New("smartknora llm model is not configured")
+var ErrSmartKnoraLLMModelNotAvailable = errors.New("smartknora llm model is not available")
 
 type SmartKnoraLLMService struct {
 	db            *gorm.DB
@@ -37,7 +38,11 @@ func NewSmartKnoraLLMService(db *gorm.DB) *SmartKnoraLLMService {
 }
 
 func (s *SmartKnoraLLMService) Generate(ctx context.Context, tenantID uint64, systemPrompt string, userPrompt string, maxTokens int) (*SmartKnoraLLMResult, error) {
-	model, err := s.findDefaultChatModel(ctx, tenantID)
+	return s.GenerateWithModel(ctx, tenantID, "", systemPrompt, userPrompt, maxTokens)
+}
+
+func (s *SmartKnoraLLMService) GenerateWithModel(ctx context.Context, tenantID uint64, modelID string, systemPrompt string, userPrompt string, maxTokens int) (*SmartKnoraLLMResult, error) {
+	model, err := s.findChatModel(ctx, tenantID, modelID)
 	if err != nil {
 		return nil, err
 	}
@@ -72,19 +77,40 @@ func (s *SmartKnoraLLMService) Generate(ctx context.Context, tenantID uint64, sy
 }
 
 func (s *SmartKnoraLLMService) findDefaultChatModel(ctx context.Context, tenantID uint64) (*types.Model, error) {
-	var model types.Model
-	query := s.db.WithContext(ctx).Where("(tenant_id = ? OR is_builtin = true) AND deleted_at IS NULL AND status = ?", tenantID, types.ModelStatusActive)
-	query = query.Where("type IN ?", []types.ModelType{types.ModelTypeKnowledgeQA, types.ModelTypeVLLM, types.ModelType("llm")})
-	if err := query.Where("is_default = true").Order("tenant_id DESC, updated_at DESC").First(&model).Error; err == nil {
-		return normalizeSmartKnoraModel(&model), nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
+	return s.findChatModel(ctx, tenantID, "")
+}
 
-	if err := query.Order("tenant_id DESC, updated_at DESC").First(&model).Error; err == nil {
-		return normalizeSmartKnoraModel(&model), nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+func (s *SmartKnoraLLMService) findChatModel(ctx context.Context, tenantID uint64, modelID string) (*types.Model, error) {
+	baseQuery := func() *gorm.DB {
+		return s.db.WithContext(ctx).
+			Where("(tenant_id = ? OR is_builtin = true) AND deleted_at IS NULL AND status = ?", tenantID, types.ModelStatusActive).
+			Where("type IN ?", []types.ModelType{types.ModelTypeKnowledgeQA, types.ModelTypeVLLM, types.ModelType("llm")})
+	}
+	if strings.TrimSpace(modelID) != "" {
+		var model types.Model
+		if err := baseQuery().Where("id = ?", strings.TrimSpace(modelID)).First(&model).Error; err == nil {
+			return normalizeSmartKnoraModel(&model), nil
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrSmartKnoraLLMModelNotAvailable
+		} else {
+			return nil, err
+		}
+	}
+	queries := []func(*gorm.DB) *gorm.DB{
+		func(db *gorm.DB) *gorm.DB { return db.Where("tenant_id = ? AND is_default = true", tenantID) },
+		func(db *gorm.DB) *gorm.DB { return db.Where("is_builtin = true AND is_default = true") },
+		func(db *gorm.DB) *gorm.DB { return db.Where("tenant_id = ?", tenantID) },
+		func(db *gorm.DB) *gorm.DB { return db.Where("is_builtin = true") },
+	}
+	for _, buildQuery := range queries {
+		var model types.Model
+		err := buildQuery(baseQuery()).Order("updated_at DESC").First(&model).Error
+		if err == nil {
+			return normalizeSmartKnoraModel(&model), nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
 	}
 
 	return nil, ErrSmartKnoraLLMNotConfigured

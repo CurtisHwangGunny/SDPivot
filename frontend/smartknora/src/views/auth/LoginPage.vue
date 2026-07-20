@@ -258,7 +258,7 @@ async function handleEmailLogin() {
   max-width: 440px;
   background: color-mix(in srgb, var(--surface-elevated) 96%, transparent);
   border: 1px solid rgba(219, 229, 219, 0.9);
-  border-radius: 28px;
+  border-radius: 12px;
   padding: 36px;
   box-shadow: 0 20px 60px rgba(24, 43, 28, 0.08);
   backdrop-filter: blur(20px);

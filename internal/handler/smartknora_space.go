@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -90,7 +91,10 @@ func (h *SmartKnoraSpaceHandler) CreateSpace(c *gin.Context) {
 		Role:      "owner",
 		CreatedAt: now,
 	}
-	tenantDB.Create(&member)
+	if err := tenantDB.Create(&member).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create space owner"})
+		return
+	}
 
 	c.JSON(http.StatusCreated, gin.H{"space": space})
 }
@@ -101,21 +105,12 @@ func (h *SmartKnoraSpaceHandler) ListSpaces(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
-	// Get spaces where user is a member
-	var memberSpaceIDs []string
-	tenantDB.Model(&types.SpaceMember{}).
-		Where("user_id = ?", userID).
-		Pluck("space_id", &memberSpaceIDs)
-
-	// Get all team/org visibility spaces in tenant + member-only spaces
 	var spaces []types.KnowledgeSpace
-	query := tenantDB.Where("tenant_id = ?", tenantID)
-	if len(memberSpaceIDs) > 0 {
-		query = query.Where("visibility IN ('team', 'org') OR id IN ?", memberSpaceIDs)
-	} else {
-		query = query.Where("visibility IN ('team', 'org')")
+	if err := tenantDB.Where("id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, userID)).
+		Order("created_at DESC").Find(&spaces).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list spaces"})
+		return
 	}
-	query.Order("created_at DESC").Find(&spaces)
 
 	c.JSON(http.StatusOK, gin.H{"spaces": spaces})
 }
@@ -125,9 +120,8 @@ func (h *SmartKnoraSpaceHandler) GetSpace(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 
-	var space types.KnowledgeSpace
-	if err := tenantDB.Where("id = ?", spaceID).First(&space).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "space not found"})
+	space, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessView)
+	if !ok {
 		return
 	}
 
@@ -138,12 +132,7 @@ func (h *SmartKnoraSpaceHandler) GetSpace(c *gin.Context) {
 func (h *SmartKnoraSpaceHandler) UpdateSpace(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
-	callerID := middleware.GetUserID(c)
-
-	// Verify caller has owner/editor role on the space
-	var callerMember types.SpaceMember
-	if err := tenantDB.Where("space_id = ? AND user_id = ? AND role IN ('owner','editor')", spaceID, callerID).First(&callerMember).Error; err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to update this space"})
+	if _, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessEdit); !ok {
 		return
 	}
 
@@ -167,7 +156,10 @@ func (h *SmartKnoraSpaceHandler) UpdateSpace(c *gin.Context) {
 		updates["icon"] = *req.Icon
 	}
 
-	tenantDB.Model(&types.KnowledgeSpace{}).Where("id = ?", spaceID).Updates(updates)
+	if err := tenantDB.Model(&types.KnowledgeSpace{}).Where("id = ? AND tenant_id = ?", spaceID, middleware.GetTenantID(c)).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update space"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "space updated"})
 }
 
@@ -175,17 +167,18 @@ func (h *SmartKnoraSpaceHandler) UpdateSpace(c *gin.Context) {
 func (h *SmartKnoraSpaceHandler) DeleteSpace(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
-	callerID := middleware.GetUserID(c)
-
-	// Verify caller has owner role on the space
-	var callerMember types.SpaceMember
-	if err := tenantDB.Where("space_id = ? AND user_id = ? AND role = 'owner'", spaceID, callerID).First(&callerMember).Error; err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to delete this space"})
+	if _, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessOwner); !ok {
 		return
 	}
 
-	tenantDB.Where("id = ?", spaceID).Delete(&types.KnowledgeSpace{})
-	tenantDB.Where("space_id = ?", spaceID).Delete(&types.SpaceMember{})
+	if err := tenantDB.Where("id = ? AND tenant_id = ?", spaceID, middleware.GetTenantID(c)).Delete(&types.KnowledgeSpace{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete space"})
+		return
+	}
+	if err := tenantDB.Where("space_id = ?", spaceID).Delete(&types.SpaceMember{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete space members"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "space deleted"})
 }
@@ -195,8 +188,15 @@ func (h *SmartKnoraSpaceHandler) ListSpaceMembers(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 
+	if _, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessView); !ok {
+		return
+	}
+
 	var members []types.SpaceMember
-	tenantDB.Where("space_id = ?", spaceID).Find(&members)
+	if err := tenantDB.Where("space_id = ?", spaceID).Find(&members).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list space members"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"members": members})
 }
@@ -206,6 +206,16 @@ func (h *SmartKnoraSpaceHandler) AddSpaceMember(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 
+	if _, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessEdit); !ok {
+		return
+	}
+
+	var callerMember types.SpaceMember
+	if err := tenantDB.Where("space_id = ? AND user_id = ?", spaceID, middleware.GetUserID(c)).First(&callerMember).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load caller space membership"})
+		return
+	}
+
 	var req types.AddSpaceMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -214,6 +224,34 @@ func (h *SmartKnoraSpaceHandler) AddSpaceMember(c *gin.Context) {
 
 	if req.Role == "" {
 		req.Role = "viewer"
+	}
+	if req.Role != "owner" && req.Role != "editor" && req.Role != "viewer" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid space member role"})
+		return
+	}
+	if callerMember.Role == "editor" && req.Role != "viewer" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "editors may only add viewers"})
+		return
+	}
+
+	var targetUser types.User
+	if err := tenantDB.Where("id = ? AND tenant_id = ? AND is_active = ?", req.UserID, middleware.GetTenantID(c), true).First(&targetUser).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusForbidden, gin.H{"error": "target user is not an active tenant member"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate target user"})
+		}
+		return
+	}
+
+	var existing int64
+	if err := tenantDB.Model(&types.SpaceMember{}).Where("space_id = ? AND user_id = ?", spaceID, req.UserID).Count(&existing).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check space membership"})
+		return
+	}
+	if existing > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "already a member"})
+		return
 	}
 
 	member := types.SpaceMember{
@@ -237,16 +275,44 @@ func (h *SmartKnoraSpaceHandler) RemoveSpaceMember(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	targetUserID := c.Param("userId")
-	callerID := middleware.GetUserID(c)
-
-	// Verify caller has owner/editor role on the space
-	var callerMember types.SpaceMember
-	if err := tenantDB.Where("space_id = ? AND user_id = ? AND role IN ('owner','editor')", spaceID, callerID).First(&callerMember).Error; err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to manage space members"})
+	if _, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessEdit); !ok {
 		return
 	}
 
-	tenantDB.Where("space_id = ? AND user_id = ?", spaceID, targetUserID).Delete(&types.SpaceMember{})
+	var callerMember types.SpaceMember
+	if err := tenantDB.Where("space_id = ? AND user_id = ?", spaceID, middleware.GetUserID(c)).First(&callerMember).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load caller space membership"})
+		return
+	}
+
+	var targetMember types.SpaceMember
+	if err := tenantDB.Where("space_id = ? AND user_id = ?", spaceID, targetUserID).First(&targetMember).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "space member not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load space member"})
+		}
+		return
+	}
+	if callerMember.Role == "editor" && targetMember.Role != "viewer" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "editors may only remove viewers"})
+		return
+	}
+	if targetMember.Role == "owner" {
+		var ownerCount int64
+		if err := tenantDB.Model(&types.SpaceMember{}).Where("space_id = ? AND role = ?", spaceID, "owner").Count(&ownerCount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate space owners"})
+			return
+		}
+		if ownerCount <= 1 {
+			c.JSON(http.StatusConflict, gin.H{"error": "cannot remove the last space owner"})
+			return
+		}
+	}
+	if err := tenantDB.Delete(&targetMember).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove space member"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "member removed"})
 }
 
@@ -255,12 +321,7 @@ func (h *SmartKnoraSpaceHandler) UpdateSpaceMemberRole(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	targetUserID := c.Param("userId")
-	callerID := middleware.GetUserID(c)
-
-	// Verify caller has owner role on the space
-	var callerMember types.SpaceMember
-	if err := tenantDB.Where("space_id = ? AND user_id = ? AND role = 'owner'", spaceID, callerID).First(&callerMember).Error; err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to update space member roles"})
+	if _, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessOwner); !ok {
 		return
 	}
 
@@ -272,9 +333,30 @@ func (h *SmartKnoraSpaceHandler) UpdateSpaceMemberRole(c *gin.Context) {
 		return
 	}
 
-	tenantDB.Model(&types.SpaceMember{}).
-		Where("space_id = ? AND user_id = ?", spaceID, targetUserID).
-		Update("role", req.Role)
+	var targetMember types.SpaceMember
+	if err := tenantDB.Where("space_id = ? AND user_id = ?", spaceID, targetUserID).First(&targetMember).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "space member not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load space member"})
+		}
+		return
+	}
+	if targetMember.Role == "owner" && req.Role != "owner" {
+		var ownerCount int64
+		if err := tenantDB.Model(&types.SpaceMember{}).Where("space_id = ? AND role = ?", spaceID, "owner").Count(&ownerCount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate space owners"})
+			return
+		}
+		if ownerCount <= 1 {
+			c.JSON(http.StatusConflict, gin.H{"error": "cannot demote the last space owner"})
+			return
+		}
+	}
+	if err := tenantDB.Model(&targetMember).Update("role", req.Role).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update space member role"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "role updated"})
 }
@@ -317,6 +399,6 @@ func (h *SmartKnoraSpaceHandler) ListCategories(c *gin.Context) {
 func (h *SmartKnoraSpaceHandler) DeleteCategory(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	categoryID := c.Param("id")
-	tenantDB.Where("id = ?", categoryID).Delete(&types.SpaceCategory{})
+	tenantDB.Where("id = ? AND tenant_id = ?", categoryID, middleware.GetTenantID(c)).Delete(&types.SpaceCategory{})
 	c.JSON(http.StatusOK, gin.H{"message": "category deleted"})
 }

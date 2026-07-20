@@ -112,57 +112,37 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	// Generate ID
 	user.ID = uuid.New().String()
 
-	// Generate a tenant_id for tenant isolation
-	// TODO: Replace with proper tenant_id generation (e.g., auto-increment or org-based)
-	user.TenantID = 1 // Placeholder: all users get tenant_id=1 until multi-tenant provisioning is implemented
-
-	if err := h.db.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
-		return
+	// Provision a dedicated tenant for every self-service registration. The
+	// database sequence is the source of truth, so concurrent registrations
+	// cannot accidentally share a tenant ID.
+	tenant := types.Tenant{
+		Name:        user.Username + " 的工作区",
+		Description: "SmartKnora 默认工作区",
+		APIKey:      uuid.New().String(),
+		Status:      "active",
+		Business:    "smartknora",
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
-	// Create default organization for the user so tenant_id is not 0
 	nowOrg := time.Now()
+	trialExpiresAt := nowOrg.Add(30 * 24 * time.Hour)
 	org := types.Organization{
-		ID:            uuid.New().String(),
-		Name:          "默认组织",
-		OwnerID:       user.ID,
-		InviteCode:    generateInviteCode(),
-		OwnerTenantID: user.TenantID,
-		CreatedAt:     nowOrg,
-		UpdatedAt:     nowOrg,
-	}
-	if err := h.db.Create(&org).Error; err != nil {
-		log.Printf("WARNING: failed to create default org for user %s: %v", user.ID, err)
-	} else {
-		trialExpiresAt := nowOrg.Add(30 * 24 * time.Hour)
-		orgExt := types.OrgExt{
-			OrgID:         org.ID,
-			TenantID:      user.TenantID,
-			AuthStatus:    "trial",
-			AuthExpiresAt: &trialExpiresAt,
-			CreatedAt:     nowOrg,
-			UpdatedAt:     nowOrg,
-		}
-		if err := h.db.Create(&orgExt).Error; err != nil {
-			log.Printf("WARNING: failed to create org_ext for org %s: %v", org.ID, err)
-		}
-		orgMember := types.SmartKnoraOrgMember{
-			OrgID:    org.ID,
-			UserID:   user.ID,
-			Role:     "owner",
-			Status:   "active",
-			JoinedAt: nowOrg,
-		}
-		if err := h.db.Create(&orgMember).Error; err != nil {
-			log.Printf("WARNING: failed to create org_member for user %s: %v", user.ID, err)
-		}
+		ID:         uuid.New().String(),
+		Name:       "默认组织",
+		OwnerID:    user.ID,
+		InviteCode: generateInviteCode(),
+		CreatedAt:  nowOrg,
+		UpdatedAt:  nowOrg,
 	}
 
-	// Create smartKnora profile with phone
+	var phone *string
+	if req.Phone != "" {
+		phone = &req.Phone
+	}
 	profile := types.SmartKnoraUserProfile{
 		UserID:    user.ID,
-		Phone:     &req.Phone,
+		Phone:     phone,
 		Nickname:  req.Nickname,
 		Status:    "active",
 		CreatedAt: now,
@@ -179,8 +159,55 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 			profile.Nickname = "用户"
 		}
 	}
-	if err := h.db.Create(&profile).Error; err != nil {
-		log.Printf("WARNING: failed to create user profile for %s: %v", user.ID, err)
+
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&tenant).Error; err != nil {
+			return err
+		}
+		user.TenantID = tenant.ID
+		org.OwnerTenantID = tenant.ID
+
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&types.TenantMember{
+			UserID:    user.ID,
+			TenantID:  tenant.ID,
+			Role:      types.TenantRoleOwner,
+			Status:    types.TenantMemberStatusActive,
+			JoinedAt:  now,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&org).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&types.OrgExt{
+			OrgID:         org.ID,
+			TenantID:      tenant.ID,
+			AuthStatus:    "trial",
+			AuthExpiresAt: &trialExpiresAt,
+			CreatedAt:     nowOrg,
+			UpdatedAt:     nowOrg,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&types.SmartKnoraOrgMember{
+			OrgID:    org.ID,
+			UserID:   user.ID,
+			Role:     "owner",
+			Status:   "active",
+			JoinedAt: nowOrg,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&profile).Error
+	}); err != nil {
+		log.Printf("ERROR: failed to provision tenant for user %s: %v", user.ID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create account workspace"})
+		return
 	}
 
 	// Generate tokens

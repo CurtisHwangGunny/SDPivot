@@ -151,7 +151,7 @@ onMounted(load)
 .usage-hero-note,
 .usage-card,
 .insight-panel {
-  border-radius: 24px;
+  border-radius: 12px;
   border: 1px solid var(--border-soft);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-soft);
@@ -213,7 +213,7 @@ onMounted(load)
 }
 .ratio-item {
   padding: 18px;
-  border-radius: 18px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--sk-surface-soft) 88%, transparent);
   border: 1px solid var(--border-soft);
 }

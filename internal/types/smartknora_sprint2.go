@@ -64,6 +64,7 @@ func (c *SmartKnoraDocumentChunk) BeforeCreate(tx *gorm.DB) error {
 type SmartKnoraDocumentVersion struct {
 	ID         string    `json:"id" gorm:"type:varchar(36);primaryKey"`
 	DocumentID string    `json:"document_id" gorm:"type:varchar(36);not null;index"`
+	TenantID   uint64    `json:"tenant_id" gorm:"not null;index"`
 	Version    int       `json:"version" gorm:"not null"`
 	FilePath   string    `json:"file_path" gorm:"type:text"`
 	FileSize   int64     `json:"file_size"`
@@ -113,11 +114,11 @@ type UploadDocumentRequest struct {
 }
 
 type DocumentListQuery struct {
-	SpaceID      string `form:"space_id"`
-	ParseStatus  string `form:"parse_status"`
-	Search       string `form:"search"`
-	Page         int    `form:"page,default=1"`
-	PageSize     int    `form:"page_size,default=20"`
+	SpaceID     string `form:"space_id"`
+	ParseStatus string `form:"parse_status"`
+	Search      string `form:"search"`
+	Page        int    `form:"page,default=1"`
+	PageSize    int    `form:"page_size,default=20"`
 }
 
 type ChunkStrategyRequest struct {
@@ -136,9 +137,9 @@ type SearchRequest struct {
 }
 
 type SmartKnoraSearchResult struct {
-	DocumentID  string  `json:"document_id"`
-	ChunkID     string  `json:"chunk_id"`
-	Content     string  `json:"content"`
-	Score       float64 `json:"score"`
-	Title       string  `json:"title"`
+	DocumentID string  `json:"document_id"`
+	ChunkID    string  `json:"chunk_id"`
+	Content    string  `json:"content"`
+	Score      float64 `json:"score"`
+	Title      string  `json:"title"`
 }

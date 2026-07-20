@@ -265,7 +265,7 @@ onMounted(load)
   justify-content: space-between;
   gap: 20px;
   padding: 18px;
-  border-radius: 16px;
+  border-radius: 12px;
   transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), background 0.24s ease;
   cursor: pointer;
 }
@@ -289,7 +289,7 @@ onMounted(load)
 .space-icon {
   width: 48px;
   height: 48px;
-  border-radius: 16px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   background: var(--sk-brand-soft);

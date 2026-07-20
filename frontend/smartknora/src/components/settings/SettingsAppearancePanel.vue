@@ -124,7 +124,7 @@ defineProps<{
 }
 .theme-preview {
   height: 96px;
-  border-radius: 16px;
+  border-radius: 12px;
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
 .light-preview {
