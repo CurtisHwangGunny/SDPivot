@@ -25,7 +25,7 @@
   padding: 22px;
   background: var(--surface-elevated);
   border: 1px solid var(--border-soft);
-  border-radius: 16px;
+  border-radius: 12px;
   box-shadow: var(--shadow-soft);
 }
 .muted-panel {

@@ -28,7 +28,7 @@ defineProps<{
 <style scoped>
 .admin-panel {
   padding: 20px;
-  border-radius: 16px;
+  border-radius: 12px;
   border: 1px solid var(--border-soft);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-soft);

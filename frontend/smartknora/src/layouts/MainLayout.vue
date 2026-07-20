@@ -266,7 +266,7 @@ async function onUserMenuClick(val: string) {
 
 .main-menu :deep(.t-menu__item) {
   margin-bottom: 6px;
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .main-menu :deep(.t-menu__item.t-is-active) {

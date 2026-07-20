@@ -138,7 +138,7 @@ onMounted(load)
 .admin-hero-card,
 .admin-metric,
 .admin-panel {
-  border-radius: 24px;
+  border-radius: 12px;
   border: 1px solid var(--border-soft);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-soft);

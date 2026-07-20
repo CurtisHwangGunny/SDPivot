@@ -25,7 +25,7 @@
   --sk-radius-xs: 6px;
   --sk-radius-sm: 8px;
   --sk-radius-md: 12px;
-  --sk-radius-lg: 16px;
+  --sk-radius-lg: 12px;
   --sk-content-width: 1440px;
   --brand-primary: var(--sk-brand);
   --brand-hover: var(--sk-brand-hover);
@@ -61,7 +61,7 @@
   --td-component-stroke: var(--sk-border);
   --td-radius-default: 8px;
   --td-radius-medium: 12px;
-  --td-radius-large: 16px;
+  --td-radius-large: 12px;
   color-scheme: light;
 }
 

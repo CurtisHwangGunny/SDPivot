@@ -17,6 +17,17 @@ export interface QAMessage {
   created_at: string
 }
 
+export interface QAAvailableModel {
+  id: string
+  name: string
+  display_name: string
+  is_default: boolean
+}
+
+export function listQAModels() {
+  return client.get<{ models: QAAvailableModel[] }>('/qa/models')
+}
+
 export function createSession(data: { title?: string; space_id?: string }) {
   return client.post<{ session: QASession }>('/qa/sessions', data)
 }
@@ -29,8 +40,13 @@ export function getMessages(sessionId: string) {
   return client.get<{ messages: QAMessage[] }>(`/qa/sessions/${sessionId}/messages`)
 }
 
-export function sendMessage(sessionId: string, content: string) {
-  return client.post<{ user_message: QAMessage; assistant_message: QAMessage }>(`/qa/sessions/${sessionId}/messages`, { content })
+export function sendMessage(sessionId: string, content: string, modelId?: string) {
+  return client.post<{
+    user_message: QAMessage
+    assistant_message: QAMessage
+    model_id: string
+    model: string
+  }>(`/qa/sessions/${sessionId}/messages`, { content, model_id: modelId })
 }
 
 export function deleteSession(sessionId: string) {

@@ -31,6 +31,7 @@ func NewSmartKnoraQAHandler(db *gorm.DB) *SmartKnoraQAHandler {
 func (h *SmartKnoraQAHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	q := rg.Group("/qa")
 	{
+		q.GET("/models", h.ListModels)
 		q.POST("/sessions", h.CreateSession)
 		q.GET("/sessions", h.ListSessions)
 		q.GET("/sessions/:id", h.GetSession)
@@ -45,6 +46,65 @@ func (h *SmartKnoraQAHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		admin.GET("/stats", h.GetAdminStats)
 		admin.GET("/spaces", h.ListAllSpaces)
 	}
+}
+
+// ListModels returns the active chat models visible to the current tenant.
+func (h *SmartKnoraQAHandler) ListModels(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
+	tenantID := middleware.GetTenantID(c)
+	models := make([]types.Model, 0)
+	seen := make(map[string]struct{})
+	appendModels := func(scope string, args ...interface{}) error {
+		var batch []types.Model
+		err := tenantDB.Model(&types.Model{}).
+			Where("(tenant_id = ? OR is_builtin = true) AND deleted_at IS NULL AND status = ?", tenantID, types.ModelStatusActive).
+			Where("type IN ?", []types.ModelType{types.ModelTypeKnowledgeQA, types.ModelTypeVLLM, types.ModelType("llm")}).
+			Where(scope, args...).
+			Order("updated_at DESC").
+			Find(&batch).Error
+		if err != nil {
+			return err
+		}
+		for _, model := range batch {
+			if _, exists := seen[model.ID]; exists {
+				continue
+			}
+			seen[model.ID] = struct{}{}
+			models = append(models, model)
+		}
+		return nil
+	}
+	modelScopes := []struct {
+		query string
+		args  []interface{}
+	}{
+		{query: "tenant_id = ? AND is_default = true", args: []interface{}{tenantID}},
+		{query: "is_builtin = true AND is_default = true"},
+		{query: "tenant_id = ?", args: []interface{}{tenantID}},
+		{query: "is_builtin = true"},
+	}
+	for _, scope := range modelScopes {
+		if err := appendModels(scope.query, scope.args...); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list qa models"})
+			return
+		}
+	}
+	type availableModel struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		DisplayName string `json:"display_name"`
+		IsDefault   bool   `json:"is_default"`
+	}
+	result := make([]availableModel, 0, len(models))
+	for _, model := range models {
+		result = append(result, availableModel{
+			ID:          model.ID,
+			Name:        model.Name,
+			DisplayName: model.DisplayName,
+			IsDefault:   model.IsDefault,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"models": result})
 }
 
 // CreateSession creates a new Q&A session.
@@ -64,6 +124,11 @@ func (h *SmartKnoraQAHandler) CreateSession(c *gin.Context) {
 
 	if req.Title == "" {
 		req.Title = "新对话"
+	}
+	if req.SpaceID != "" {
+		if _, ok := authorizeSpace(c, tenantDB, req.SpaceID, spaceAccessView); !ok {
+			return
+		}
 	}
 
 	session := types.QASession{
@@ -124,8 +189,15 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
+	if session.SpaceID != "" {
+		if _, ok := authorizeSpace(c, tenantDB, session.SpaceID, spaceAccessView); !ok {
+			return
+		}
+	}
+
 	var req struct {
 		Content string `json:"content" binding:"required"`
+		ModelID string `json:"model_id" binding:"omitempty,max=64"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -138,7 +210,7 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	chunks, err := h.searchRelevantChunks(tenantDB, tenantID, session.SpaceID, req.Content, 5)
+	chunks, err := h.searchRelevantChunks(tenantDB, tenantID, userID, session.SpaceID, req.Content, 5)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search knowledge base"})
 		return
@@ -160,13 +232,16 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 
 	systemPrompt := "你是 SmartKnora 的企业知识库问答助手。请严格基于给定参考资料回答；如果参考资料不足，请说明缺少哪些信息。回答要准确、简洁，并优先使用中文。"
 	userPrompt := buildSmartKnoraQAPrompt(req.Content, chunks)
-	llmResult, err := h.llm.Generate(c.Request.Context(), tenantID, systemPrompt, userPrompt, 1400)
+	llmResult, err := h.llm.GenerateWithModel(c.Request.Context(), tenantID, req.ModelID, systemPrompt, userPrompt, 1400)
 	if err != nil {
 		status := http.StatusBadGateway
 		message := "failed to call configured llm"
 		if errors.Is(err, ErrSmartKnoraLLMNotConfigured) {
 			status = http.StatusPreconditionFailed
 			message = "llm model is not configured. Please configure a KnowledgeQA model in WeKnora model settings first"
+		} else if errors.Is(err, ErrSmartKnoraLLMModelNotAvailable) {
+			status = http.StatusBadRequest
+			message = "selected llm model is not available"
 		}
 		c.JSON(status, gin.H{"error": message, "detail": err.Error()})
 		return
@@ -183,10 +258,15 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 		return
 	}
 	tenantDB.Model(&types.QASession{}).Where("id = ? AND tenant_id = ?", sessionID, tenantID).Update("updated_at", now)
-	c.JSON(http.StatusOK, gin.H{"user_message": userMsg, "assistant_message": aiMsg})
+	c.JSON(http.StatusOK, gin.H{
+		"user_message":      userMsg,
+		"assistant_message": aiMsg,
+		"model_id":          llmResult.ModelID,
+		"model":             llmResult.ModelName,
+	})
 }
 
-func (h *SmartKnoraQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint64, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
+func (h *SmartKnoraQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint64, userID string, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
 	if topK <= 0 || topK > 20 {
 		topK = 5
 	}
@@ -196,6 +276,8 @@ func (h *SmartKnoraQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID u
 		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
 	if spaceID != "" {
 		db = db.Where("documents.space_id = ?", spaceID)
+	} else {
+		db = db.Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, userID))
 	}
 	var chunks []types.SmartKnoraDocumentChunk
 	err := db.Order("document_chunks.created_at DESC").Limit(topK).Find(&chunks).Error

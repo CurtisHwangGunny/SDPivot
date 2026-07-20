@@ -126,7 +126,7 @@ async function handleRegister() {
   gap: 14px;
 }
 .brand-point {
-  border-radius: 20px;
+  border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.06);
   padding: 18px 20px;
@@ -149,7 +149,7 @@ async function handleRegister() {
 .register-card {
   width: min(460px, 100%);
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
-  border-radius: 28px;
+  border-radius: 12px;
   padding: 32px;
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
   border: 1px solid var(--border-soft);

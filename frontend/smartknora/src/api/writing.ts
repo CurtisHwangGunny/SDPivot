@@ -24,8 +24,28 @@ export const CATEGORIES = [
   { value: 'research_report', label: '研究报告' },
 ]
 
-export function generateContent(data: { category: string; prompt: string; space_id?: string; source_type?: string; web_search_enabled?: boolean }) {
-  return client.post<{ content: string; category: string; sources_count: number }>('/writing/generate', data)
+export type WritingSourceType = 'knowledge_base' | 'knowledge_plus_web'
+
+export interface GenerateContentResponse {
+  content: string
+  category: string
+  source_type: WritingSourceType
+  web_search_enabled: boolean
+  sources_count: number
+  knowledge_sources_count: number
+  web_sources_count: number
+  model_id: string
+  model: string
+}
+
+export function generateContent(data: {
+  category: string
+  prompt: string
+  space_id?: string
+  source_type?: WritingSourceType
+  web_search_enabled?: boolean
+}) {
+  return client.post<GenerateContentResponse>('/writing/generate', data)
 }
 
 export function createDraft(data: { title: string; category: string; space_id?: string; source_type?: string; web_search_enabled?: boolean }) {

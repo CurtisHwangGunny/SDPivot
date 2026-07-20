@@ -209,7 +209,7 @@ onMounted(load)
 .summary-card,
 .org-card,
 .org-empty {
-  border-radius: 24px;
+  border-radius: 12px;
   border: 1px solid var(--border-soft);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-soft);
@@ -246,7 +246,7 @@ onMounted(load)
   width: 88px;
   height: 88px;
   margin: 0 auto 20px;
-  border-radius: 28px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -301,7 +301,7 @@ onMounted(load)
   gap: 14px;
 }
 .meta-item {
-  border-radius: 18px;
+  border-radius: 12px;
   padding: 16px 18px;
   background: color-mix(in srgb, var(--sk-surface-soft) 88%, transparent);
   border: 1px solid var(--border-soft);

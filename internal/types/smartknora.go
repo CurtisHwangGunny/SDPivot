@@ -263,7 +263,7 @@ type UpdateSpaceRequest struct {
 
 type AddSpaceMemberRequest struct {
 	UserID string `json:"user_id" binding:"required"`
-	Role   string `json:"role" binding:"omitempty,oneof=editor viewer"`
+	Role   string `json:"role" binding:"omitempty,oneof=owner editor viewer"`
 }
 
 type CreateCategoryRequest struct {

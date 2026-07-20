@@ -37,7 +37,10 @@ func NewSmartKnoraWritingHandler(db *gorm.DB) *SmartKnoraWritingHandler {
 	registry := infra_web_search.NewRegistry()
 	registerSmartKnoraWebSearchProviders(registry)
 	providerRepo := repository.NewWebSearchProviderRepository(db)
-	webSearchService, _ := service.NewWebSearchService(&config.Config{}, registry, providerRepo)
+	webSearchService, err := service.NewWebSearchService(&config.Config{}, registry, providerRepo)
+	if err != nil {
+		webSearchService = nil
+	}
 	return &SmartKnoraWritingHandler{
 		db:                    db,
 		llm:                   NewSmartKnoraLLMService(db),
@@ -80,6 +83,11 @@ func (h *SmartKnoraWritingHandler) CreateDraft(c *gin.Context) {
 		return
 	}
 	req.SourceType, req.WebSearchEnabled = normalizeWritingSource(req.SourceType, req.WebSearchEnabled)
+	if req.SpaceID != "" {
+		if _, ok := authorizeSpace(c, tenantDB, req.SpaceID, spaceAccessView); !ok {
+			return
+		}
+	}
 
 	draft := types.WritingDraft{
 		ID:               uuid.New().String(),
@@ -189,7 +197,12 @@ func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
 	if req.SpaceID == "" {
 		req.SpaceID = h.defaultWritingSpaceID(tenantDB, tenantID, req.Category)
 	}
-	chunks, err := h.searchRelevantWritingChunks(tenantDB, tenantID, req.SpaceID, req.Prompt, 5)
+	if req.SpaceID != "" {
+		if _, ok := authorizeSpace(c, tenantDB, req.SpaceID, spaceAccessView); !ok {
+			return
+		}
+	}
+	chunks, err := h.searchRelevantWritingChunks(tenantDB, tenantID, middleware.GetUserID(c), req.SpaceID, req.Prompt, 5)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search knowledge base"})
 		return
@@ -269,7 +282,7 @@ func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, sourceTyp
 	b.WriteString(prompt)
 	b.WriteString("\n\n知识来源:")
 	if webSearchEnabled || sourceType == "knowledge_plus_web" {
-		b.WriteString("知识库 + 互联网搜索（当前版本先使用知识库内容，互联网搜索结果接入后补充）\n")
+		b.WriteString("知识库 + 互联网搜索\n")
 	} else {
 		b.WriteString("仅知识库\n")
 	}
@@ -315,12 +328,20 @@ func (h *SmartKnoraWritingHandler) searchWritingWebResults(ctx context.Context, 
 	cfg.IncludeDate = true
 	providerID := ""
 	if h.webSearchProviderRepo != nil {
-		if provider, err := h.webSearchProviderRepo.GetDefault(searchCtx, tenantID); err == nil && provider != nil {
+		provider, err := h.webSearchProviderRepo.GetDefault(searchCtx, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load default web search provider: %w", err)
+		}
+		if provider != nil {
 			providerID = provider.ID
 		}
 	}
 	if providerID == "" {
-		cfg.Provider = string(types.WebSearchProviderTypeDuckDuckGo)
+		provider, err := infra_web_search.NewDuckDuckGoProvider(types.WebSearchProviderParameters{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize DuckDuckGo fallback: %w", err)
+		}
+		return provider.Search(searchCtx, query, cfg.MaxResults, cfg.IncludeDate)
 	}
 	return h.webSearchService.Search(searchCtx, providerID, cfg, query)
 }
@@ -343,7 +364,7 @@ func resultSnippet(result *types.WebSearchResult) string {
 	return ""
 }
 
-func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantDB *gorm.DB, tenantID uint64, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
+func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantDB *gorm.DB, tenantID uint64, userID string, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
 	if topK <= 0 || topK > 20 {
 		topK = 5
 	}
@@ -353,6 +374,8 @@ func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantDB *gorm.DB
 		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
 	if spaceID != "" {
 		db = db.Where("documents.space_id = ?", spaceID)
+	} else {
+		db = db.Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, userID))
 	}
 	var chunks []types.SmartKnoraDocumentChunk
 	err := db.Order("document_chunks.created_at DESC").Limit(topK).Find(&chunks).Error
