@@ -211,7 +211,7 @@ async function handleChangePassword() {
   gap: 14px;
 }
 .brand-point {
-  border-radius: 20px;
+  border-radius: 12px;
   border: 1px solid var(--sidebar-border);
   background: color-mix(in srgb, white 6%, transparent);
   padding: 18px 20px;
@@ -233,7 +233,7 @@ async function handleChangePassword() {
 }
 .ops-form-card {
   width: min(460px, 100%);
-  border-radius: 28px;
+  border-radius: 12px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
@@ -264,6 +264,88 @@ async function handleChangePassword() {
   color: var(--td-error-color, #e34d59);
   font-size: 13px;
 }
+.ops-shell {
+  --ops-brand-text: #f8fafc;
+  --ops-brand-muted: rgba(248, 250, 252, 0.72);
+  --ops-brand-border: rgba(255, 255, 255, 0.12);
+  --ops-form-surface: var(--sk-surface, #ffffff);
+  --ops-form-text: var(--sk-text, #1f2a1f);
+  --ops-form-muted: var(--sk-text-soft, #5f6f5f);
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.ops-shell .ops-brand-panel {
+  color: var(--ops-brand-text);
+}
+
+.ops-shell .ops-brand-panel h1,
+.ops-shell .brand-point strong {
+  color: var(--ops-brand-text);
+}
+
+.ops-shell .brand-badge,
+.ops-shell .ops-brand-panel > p,
+.ops-shell .brand-point span {
+  color: var(--ops-brand-muted);
+}
+
+.ops-shell .brand-point {
+  border-color: var(--ops-brand-border);
+}
+
+.ops-shell .ops-form-card {
+  color: var(--ops-form-text);
+  background: var(--ops-form-surface);
+}
+
+.ops-shell .ops-form-head h2 {
+  color: var(--ops-form-text);
+}
+
+.ops-shell .ops-form-head > p:last-child {
+  color: var(--ops-form-muted);
+}
+
+.ops-shell .ops-form-card :deep(.t-form__item) {
+  display: block;
+  margin-bottom: 20px;
+}
+
+.ops-shell .ops-form-card :deep(.t-form__label) {
+  position: static;
+  display: block;
+  width: 100% !important;
+  max-width: none;
+  height: auto;
+  margin: 0 0 8px;
+  padding: 0;
+  line-height: 22px;
+  color: var(--ops-form-text);
+  text-align: left;
+}
+
+.ops-shell .ops-form-card :deep(.t-form__controls) {
+  width: 100%;
+  margin-left: 0 !important;
+}
+
+.ops-shell .ops-form-card :deep(.t-form__controls-content),
+.ops-shell .ops-form-card :deep(.t-input) {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .ops-shell .ops-brand-panel,
+  .ops-shell .ops-form-panel {
+    min-width: 0;
+  }
+
+  .ops-shell .ops-form-card {
+    padding: 24px 20px;
+  }
+}
+
 @media (max-width: 980px) {
   .ops-shell {
     grid-template-columns: 1fr;
