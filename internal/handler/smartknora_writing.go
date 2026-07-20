@@ -3,6 +3,7 @@ package handler
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"html"
@@ -14,19 +15,35 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/application/service"
+	"github.com/Tencent/WeKnora/internal/config"
+	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // SmartKnoraWritingHandler handles AI writing assistant.
 type SmartKnoraWritingHandler struct {
-	db  *gorm.DB
-	llm *SmartKnoraLLMService
+	db                    *gorm.DB
+	llm                   *SmartKnoraLLMService
+	webSearchService      interfaces.WebSearchService
+	webSearchProviderRepo interfaces.WebSearchProviderRepository
 }
 
 // NewSmartKnoraWritingHandler creates a new writing handler.
 func NewSmartKnoraWritingHandler(db *gorm.DB) *SmartKnoraWritingHandler {
-	return &SmartKnoraWritingHandler{db: db, llm: NewSmartKnoraLLMService(db)}
+	registry := infra_web_search.NewRegistry()
+	registerSmartKnoraWebSearchProviders(registry)
+	providerRepo := repository.NewWebSearchProviderRepository(db)
+	webSearchService, _ := service.NewWebSearchService(&config.Config{}, registry, providerRepo)
+	return &SmartKnoraWritingHandler{
+		db:                    db,
+		llm:                   NewSmartKnoraLLMService(db),
+		webSearchService:      webSearchService,
+		webSearchProviderRepo: providerRepo,
+	}
 }
 
 // RegisterRoutes registers writing and ops routes.
@@ -177,9 +194,17 @@ func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search knowledge base"})
 		return
 	}
+	var webResults []*types.WebSearchResult
+	if req.WebSearchEnabled {
+		webResults, err = h.searchWritingWebResults(c.Request.Context(), tenantID, req.Prompt)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "failed to search internet", "detail": err.Error()})
+			return
+		}
+	}
 	categoryLabel := smartKnoraWritingCategoryLabel(req.Category)
 	systemPrompt := "你是 SmartKnora 的企业写作助手。请根据用户写作要求和知识库参考内容生成结构清晰、可直接编辑的中文 Markdown 文稿。不要编造参考资料中没有的事实；如资料不足，请在文末列出需要补充的信息。"
-	userPrompt := buildSmartKnoraWritingPrompt(categoryLabel, req.Prompt, req.SourceType, req.WebSearchEnabled, chunks)
+	userPrompt := buildSmartKnoraWritingPrompt(categoryLabel, req.Prompt, req.SourceType, req.WebSearchEnabled, chunks, webResults)
 	llmResult, err := h.llm.Generate(c.Request.Context(), tenantID, systemPrompt, userPrompt, 2200)
 	if err != nil {
 		status := http.StatusBadGateway
@@ -197,7 +222,7 @@ func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
 	}
 	userID := middleware.GetUserID(c)
 	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/smartknora/writing/generate", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
-	c.JSON(http.StatusOK, gin.H{"content": content, "category": req.Category, "source_type": req.SourceType, "web_search_enabled": req.WebSearchEnabled, "sources_count": len(chunks), "model_id": llmResult.ModelID, "model": llmResult.ModelName})
+	c.JSON(http.StatusOK, gin.H{"content": content, "category": req.Category, "source_type": req.SourceType, "web_search_enabled": req.WebSearchEnabled, "sources_count": len(chunks) + len(webResults), "knowledge_sources_count": len(chunks), "web_sources_count": len(webResults), "model_id": llmResult.ModelID, "model": llmResult.ModelName})
 }
 
 func smartKnoraWritingCategoryLabel(category string) string {
@@ -237,7 +262,7 @@ func (h *SmartKnoraWritingHandler) defaultWritingSpaceID(tenantDB *gorm.DB, tena
 	return ""
 }
 
-func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, sourceType string, webSearchEnabled bool, chunks []types.SmartKnoraDocumentChunk) string {
+func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, sourceType string, webSearchEnabled bool, chunks []types.SmartKnoraDocumentChunk, webResults []*types.WebSearchResult) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("写作类型:%s\n", categoryLabel))
 	b.WriteString("写作要求:\n")
@@ -256,8 +281,66 @@ func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, sourceTyp
 			b.WriteString(fmt.Sprintf("[%d] 文档ID:%s\n%s\n\n", i+1, chunk.DocumentID, chunk.Content))
 		}
 	}
-	b.WriteString("请生成一份结构完整、标题清晰、段落可读的 Markdown 文稿。")
+	if webSearchEnabled || sourceType == "knowledge_plus_web" {
+		b.WriteString("互联网搜索参考内容:\n")
+		if len(webResults) == 0 {
+			b.WriteString("（未检索到相关互联网搜索结果）\n")
+		} else {
+			for i, result := range webResults {
+				b.WriteString(fmt.Sprintf("[W%d] 标题:%s\n来源:%s\n链接:%s\n摘要:%s\n\n", i+1, result.Title, result.Source, result.URL, resultSnippet(result)))
+			}
+		}
+	}
+	b.WriteString("请综合知识库参考内容与互联网搜索参考内容，优先采用知识库中已有的内部事实；互联网搜索内容仅作为补充背景和公开信息来源。请生成一份结构完整、标题清晰、段落可读的 Markdown 文稿。")
 	return b.String()
+}
+
+func registerSmartKnoraWebSearchProviders(registry *infra_web_search.Registry) {
+	registry.Register(string(types.WebSearchProviderTypeDuckDuckGo), infra_web_search.NewDuckDuckGoProvider)
+	registry.Register(string(types.WebSearchProviderTypeGoogle), infra_web_search.NewGoogleProvider)
+	registry.Register(string(types.WebSearchProviderTypeBing), infra_web_search.NewBingProvider)
+	registry.Register(string(types.WebSearchProviderTypeTavily), infra_web_search.NewTavilyProvider)
+	registry.Register(string(types.WebSearchProviderTypeOllama), infra_web_search.NewOllamaProvider)
+	registry.Register(string(types.WebSearchProviderTypeBaidu), infra_web_search.NewBaiduProvider)
+	registry.Register(string(types.WebSearchProviderTypeSearxng), infra_web_search.NewSearxngProvider)
+}
+
+func (h *SmartKnoraWritingHandler) searchWritingWebResults(ctx context.Context, tenantID uint64, query string) ([]*types.WebSearchResult, error) {
+	if h.webSearchService == nil {
+		return nil, fmt.Errorf("web search service is not available")
+	}
+	searchCtx := context.WithValue(ctx, types.TenantIDContextKey, tenantID)
+	cfg := types.DefaultWebSearchConfig()
+	cfg.MaxResults = 5
+	cfg.IncludeDate = true
+	providerID := ""
+	if h.webSearchProviderRepo != nil {
+		if provider, err := h.webSearchProviderRepo.GetDefault(searchCtx, tenantID); err == nil && provider != nil {
+			providerID = provider.ID
+		}
+	}
+	if providerID == "" {
+		cfg.Provider = string(types.WebSearchProviderTypeDuckDuckGo)
+	}
+	return h.webSearchService.Search(searchCtx, providerID, cfg, query)
+}
+
+func resultSnippet(result *types.WebSearchResult) string {
+	if result == nil {
+		return ""
+	}
+	if strings.TrimSpace(result.Snippet) != "" {
+		return result.Snippet
+	}
+	if strings.TrimSpace(result.Content) != "" {
+		content := strings.TrimSpace(result.Content)
+		runes := []rune(content)
+		if len(runes) > 180 {
+			return string(runes[:180])
+		}
+		return content
+	}
+	return ""
 }
 
 func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantDB *gorm.DB, tenantID uint64, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {

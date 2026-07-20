@@ -2,7 +2,7 @@
   <t-dialog
     :visible="visible"
     header="创建知识空间"
-    width="640px"
+    width="600px"
     @update:visible="emit('update:visible', $event)"
     @confirm="emit('confirm')"
     :confirm-btn="{ loading: loading, content: '创建并继续' }"
@@ -58,16 +58,16 @@ function updateField(field: 'name' | 'description' | 'visibility', value: string
 
 <style scoped>
 .create-dialog {
-  padding-top: 8px;
+  padding-top: 6px;
 }
 
 .dialog-tip {
-  margin-bottom: 18px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
   background: var(--sk-brand-soft);
   color: var(--sk-brand-deep);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
 }
 </style>

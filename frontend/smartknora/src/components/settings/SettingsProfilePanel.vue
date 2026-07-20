@@ -58,21 +58,21 @@ defineProps<{
 <style scoped>
 .profile-panel-stack {
   display: grid;
-  gap: 20px;
+  gap: 18px;
 }
 .settings-panel {
-  padding: 24px;
+  padding: 22px;
   background: var(--surface-elevated);
   border: 1px solid var(--border-soft);
-  border-radius: 24px;
+  border-radius: 16px;
   box-shadow: var(--shadow-soft);
 }
 .panel-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 14px;
+  margin-bottom: 18px;
 }
 .panel-kicker {
   margin: 0 0 8px;
@@ -84,7 +84,7 @@ defineProps<{
 }
 .panel-head h2 {
   margin: 0;
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1.1;
   color: var(--text-primary);
 }
@@ -96,8 +96,8 @@ defineProps<{
 }
 .profile-card,
 .placeholder-card {
-  border-radius: 20px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 16px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: color-mix(in srgb, var(--surface-elevated) 84%, transparent);
 }
@@ -110,7 +110,7 @@ defineProps<{
 .profile-card strong {
   display: block;
   margin-top: 8px;
-  font-size: 22px;
+  font-size: 20px;
   color: var(--text-primary);
 }
 .profile-card small,
@@ -124,14 +124,14 @@ defineProps<{
   color: var(--text-primary);
 }
 .focus-card {
-  min-height: 150px;
+  min-height: 132px;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   gap: 10px;
 }
 .muted-panel {
-  margin-top: 20px;
+  margin-top: 18px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 98%, transparent), color-mix(in srgb, var(--sk-surface-soft) 94%, transparent));
 }
 @media (max-width: 1080px) {

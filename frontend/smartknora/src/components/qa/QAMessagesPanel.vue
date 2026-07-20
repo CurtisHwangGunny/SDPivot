@@ -35,16 +35,16 @@ defineProps<{
 <style scoped>
 .messages-area {
   flex: 1;
-  padding: 24px 28px 0;
+  padding: 20px 24px 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   overflow-y: auto;
 }
 
 .msg-row {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   align-items: flex-start;
 }
 
@@ -53,9 +53,9 @@ defineProps<{
 }
 
 .msg-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
@@ -66,8 +66,8 @@ defineProps<{
 
 .msg-bubble {
   max-width: min(760px, 100%);
-  padding: 16px 18px;
-  border-radius: 22px;
+  padding: 14px 16px;
+  border-radius: 16px;
   background: color-mix(in srgb, var(--surface-elevated) 94%, transparent);
   border: 1px solid var(--border-soft);
 }

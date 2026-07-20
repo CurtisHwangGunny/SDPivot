@@ -166,15 +166,15 @@ onMounted(loadSessions)
 <style scoped>
 .qa-page {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 18px;
   padding: 18px;
   background: transparent;
 }
 
 .qa-sidebar {
-  padding: 22px;
-  border-radius: 24px;
+  padding: 20px;
+  border-radius: 16px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, transparent) 0%, color-mix(in srgb, var(--sk-surface-soft) 86%, transparent) 100%);
   border: 1px solid var(--border-soft);
 }
@@ -200,7 +200,7 @@ onMounted(loadSessions)
 }
 
 .session-list {
-  margin-top: 22px;
+  margin-top: 20px;
 }
 
 .session-item {
@@ -209,7 +209,7 @@ onMounted(loadSessions)
   gap: 12px;
   padding: 12px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 8px;
   background: transparent;
   cursor: pointer;
   transition: background 0.24s ease, transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
@@ -273,7 +273,7 @@ onMounted(loadSessions)
 }
 
 .qa-header {
-  padding: 26px 28px 18px;
+  padding: 22px 24px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -297,7 +297,7 @@ onMounted(loadSessions)
 
 .qa-welcome {
   flex: 1;
-  padding: 32px;
+  padding: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -306,9 +306,9 @@ onMounted(loadSessions)
 }
 
 .welcome-mark {
-  width: 82px;
-  height: 82px;
-  border-radius: 24px;
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
   display: grid;
   place-items: center;
   background: var(--sk-brand-soft);

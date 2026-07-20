@@ -1,5 +1,5 @@
 <template>
-  <t-dialog :visible="visible" header="导入文档" :footer="false" width="500px" @update:visible="emit('update:visible', $event)">
+  <t-dialog :visible="visible" header="导入文档" :footer="false" width="480px" @update:visible="emit('update:visible', $event)">
     <t-tabs v-model="uploadTab">
       <t-tab-panel value="file" label="文件上传">
         <t-upload v-model="fileList" :action="`/api/v1/smartknora/documents/upload`" :data="{ space_id: spaceId }" :headers="uploadHeaders" :max="20" :size-limit="{ size: 50, unit: 'MB' }" :accept="acceptFormats" multiple auto-upload @success="onUploadSuccess" @fail="onUploadFail">
@@ -72,5 +72,5 @@ async function handleManualCreate() {
 </script>
 
 <style scoped>
-.manual-form { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; }
+.manual-form { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; }
 </style>

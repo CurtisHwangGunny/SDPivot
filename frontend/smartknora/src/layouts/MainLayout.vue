@@ -154,7 +154,7 @@ async function onUserMenuClick(val: string) {
 .main-layout {
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   background: transparent;
 }
 
@@ -165,7 +165,7 @@ async function onUserMenuClick(val: string) {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 24px 16px 18px;
+  padding: 20px 14px 16px;
   background: linear-gradient(180deg, var(--sk-sidebar) 0%, var(--sk-sidebar-strong) 100%);
   border-right: 1px solid var(--sidebar-border);
 }
@@ -173,7 +173,7 @@ async function onUserMenuClick(val: string) {
 .sidebar-top {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 .brand-block {
@@ -186,7 +186,7 @@ async function onUserMenuClick(val: string) {
 .brand-mark {
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -209,7 +209,7 @@ async function onUserMenuClick(val: string) {
 
 .theme-switcher-card {
   padding: 14px;
-  border-radius: 18px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -240,7 +240,7 @@ async function onUserMenuClick(val: string) {
   color: rgba(255, 255, 255, 0.76);
   padding: 8px 10px;
   cursor: pointer;
-  transition: transform 0.24s ease, background 0.24s ease, color 0.24s ease;
+  transition: transform 0.24s ease, background 0.24s ease, color 0.24s ease, border-color 0.24s ease;
 }
 
 .theme-chip:hover,
@@ -286,7 +286,7 @@ async function onUserMenuClick(val: string) {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
-  border-radius: 18px;
+  border-radius: 12px;
   padding: 12px;
   display: flex;
   align-items: center;
@@ -302,9 +302,9 @@ async function onUserMenuClick(val: string) {
 }
 
 .user-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;

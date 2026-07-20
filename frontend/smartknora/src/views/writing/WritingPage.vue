@@ -207,15 +207,15 @@ onMounted(loadDrafts)
 <style scoped>
 .writing-page {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 18px;
   padding: 18px;
   background: transparent;
 }
 
 .writing-sidebar {
-  padding: 22px;
-  border-radius: 24px;
+  padding: 20px;
+  border-radius: 16px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 92%, transparent) 0%, color-mix(in srgb, var(--sk-surface-soft) 86%, transparent) 100%);
   border: 1px solid var(--border-soft);
 }
@@ -241,7 +241,7 @@ onMounted(loadDrafts)
 }
 
 .draft-list {
-  margin-top: 22px;
+  margin-top: 20px;
   flex: 1;
   overflow-y: auto;
 }
@@ -252,7 +252,7 @@ onMounted(loadDrafts)
   gap: 12px;
   padding: 12px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 8px;
   background: transparent;
   cursor: pointer;
   transition: background 0.24s ease, transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
@@ -318,7 +318,7 @@ onMounted(loadDrafts)
 
 .welcome {
   flex: 1;
-  padding: 32px;
+  padding: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -327,9 +327,9 @@ onMounted(loadDrafts)
 }
 
 .welcome-mark {
-  width: 80px;
-  height: 80px;
-  border-radius: 24px;
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
   display: grid;
   place-items: center;
   background: var(--sk-brand-soft);

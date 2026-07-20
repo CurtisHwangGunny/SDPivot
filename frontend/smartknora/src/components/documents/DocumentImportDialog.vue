@@ -1,5 +1,5 @@
 <template>
-  <t-dialog :visible="visible" header="导入文档" :footer="false" width="560px" @update:visible="emit('update:visible', $event)">
+  <t-dialog :visible="visible" header="导入文档" :footer="false" width="520px" @update:visible="emit('update:visible', $event)">
     <t-tabs v-model="localImportTab">
       <t-tab-panel value="file" label="文件上传">
         <div class="upload-area">
@@ -143,9 +143,9 @@ async function handleManualCreate() {
 </script>
 
 <style scoped>
-.upload-area { padding: 20px 0; }
-.upload-tips { font-size: 12px; color: var(--text-secondary); text-align: center; margin-top: 8px; line-height: 1.6; }
-.url-form { display: flex; flex-direction: column; gap: 12px; padding: 20px 0; }
+.upload-area { padding: 14px 0; }
+.upload-tips { font-size: 12px; color: var(--text-secondary); text-align: center; margin-top: 4px; line-height: 1.6; }
+.url-form { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; }
 .form-tip { font-size: 12px; color: var(--text-secondary); text-align: center; }
-.manual-form { display: flex; flex-direction: column; gap: 12px; padding: 20px 0; }
+.manual-form { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; }
 </style>
