@@ -234,7 +234,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 	}
 
-	// Register SDPivot (随越·智枢) routes
+	// Register SDPivot routes
 	if params.SDPivotRouter != nil {
 		params.SDPivotRouter.RegisterRoutes(r)
 	}
