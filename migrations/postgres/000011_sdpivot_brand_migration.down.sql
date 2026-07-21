@@ -1,13 +1,13 @@
 -- Restore only rows recorded by 000011 and only while they still hold the migrated value.
--- SDPivot values created or edited after the migration are not present in the map and remain untouched.
+-- SDPivot values created after the migration are not present in the map and remain untouched.
 
 DO $$
 BEGIN
-    IF to_regclass('public.sdpivot_brand_migration_000011') IS NULL THEN
+    IF to_regclass('sdpivot_brand_migration_000011') IS NULL THEN
         RETURN;
     END IF;
 
-    IF to_regclass('public.tenants') IS NOT NULL THEN
+    IF to_regclass('tenants') IS NOT NULL THEN
         UPDATE tenants AS target
         SET description = mapping.old_value
         FROM sdpivot_brand_migration_000011 AS mapping
@@ -25,7 +25,7 @@ BEGIN
           AND target.business = mapping.new_value;
     END IF;
 
-    IF to_regclass('public.organizations') IS NOT NULL THEN
+    IF to_regclass('organizations') IS NOT NULL THEN
         UPDATE organizations AS target
         SET description = mapping.old_value
         FROM sdpivot_brand_migration_000011 AS mapping
@@ -35,7 +35,7 @@ BEGIN
           AND target.description = mapping.new_value;
     END IF;
 
-    IF to_regclass('public.system_configs') IS NOT NULL THEN
+    IF to_regclass('system_configs') IS NOT NULL THEN
         UPDATE system_configs AS target
         SET value = mapping.old_value
         FROM sdpivot_brand_migration_000011 AS mapping

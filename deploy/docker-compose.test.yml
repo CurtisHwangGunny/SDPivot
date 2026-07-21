@@ -12,19 +12,19 @@ services:
     ports:
       - "${SDP_BACKEND_PORT:-8082}:8081"
     environment:
-      SMART_DB_HOST: ${SMART_DB_HOST:-WeKnora-postgres}
-      SMART_DB_PORT: ${SMART_DB_PORT:-5432}
-      SMART_DB_NAME: ${SMART_DB_NAME:-WeKnora}
-      SMART_DB_USER: ${SMART_DB_USER:-postgres}
-      SMART_DB_PASSWORD: ${SMART_DB_PASSWORD:?SMART_DB_PASSWORD is required}
-      REDIS_ADDR: ${REDIS_ADDR:-WeKnora-redis:6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      UPLOAD_DIR: /tmp/sdp-uploads
+      SDP_DB_HOST: ${SDP_DB_HOST:-WeKnora-postgres}
+      SDP_DB_PORT: ${SDP_DB_PORT:-5432}
+      SDP_DB_NAME: ${SDP_DB_NAME:-WeKnora}
+      SDP_DB_USER: ${SDP_DB_USER:-postgres}
+      SDP_DB_PASSWORD: ${SDP_DB_PASSWORD:?SDP_DB_PASSWORD is required}
+      SDP_REDIS_ADDR: ${SDP_REDIS_ADDR:-WeKnora-redis:6379}
+      SDP_REDIS_PASSWORD: ${SDP_REDIS_PASSWORD:-}
+      SDP_UPLOAD_DIR: /tmp/sdpivot-uploads
       SDP_JWT_SECRET: ${SDP_JWT_SECRET:?SDP_JWT_SECRET is required}
       SDP_ALLOWED_ORIGINS: ${SDP_ALLOWED_ORIGINS:-}
       GIN_MODE: release
     volumes:
-      - "${SDP_UPLOAD_DIR:-/tmp/sdp-uploads}:/tmp/sdp-uploads"
+      - "${SDP_UPLOAD_DIR:-/tmp/sdpivot-uploads}:/tmp/sdpivot-uploads"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 30s

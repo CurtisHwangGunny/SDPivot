@@ -5,6 +5,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+FRONTEND_DIR="$REPO_ROOT/frontend/sdpivot"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.test.yml"
 ENV_FILE="$SCRIPT_DIR/.env.test"
 
@@ -43,8 +45,29 @@ preflight() {
     log_info "Pre-flight checks passed."
 }
 
+build_artifacts() {
+    local go_bin
+    if [ -x /usr/local/go/bin/go ]; then
+        go_bin=/usr/local/go/bin/go
+    else
+        go_bin="$(command -v go || true)"
+    fi
+    if [ -z "$go_bin" ]; then
+        log_error "Go is not installed"
+        exit 1
+    fi
+    command -v npm &>/dev/null || { log_error "npm is not installed"; exit 1; }
+
+    log_info "Building SDPivot backend artifact..."
+    (cd "$REPO_ROOT" && "$go_bin" build -trimpath -o frontend/sdpivot/sdp-server ./cmd/sdp-server)
+    log_info "Building SDPivot frontend artifact..."
+    (cd "$FRONTEND_DIR" && npm run build)
+    log_info "Artifacts are up to date."
+}
+
 cmd_build() {
     preflight
+    build_artifacts
     log_info "Building SDPivot images..."
     compose build
     log_info "Build complete."
@@ -52,8 +75,9 @@ cmd_build() {
 
 cmd_up() {
     preflight
+    build_artifacts
     log_info "Starting SDPivot services..."
-    compose up -d
+    compose up -d --build
     compose ps
     log_info "Services started."
 }
@@ -89,8 +113,8 @@ SDPivot Test Environment Deployment
 Usage: bash deploy-test.sh <command>
 
 Commands:
-  build     Build SDPivot Docker images
-  up        Start all SDPivot services
+  build     Build artifacts and SDPivot Docker images
+  up        Build artifacts and start all SDPivot services
   down      Stop all SDPivot services
   restart   Restart all SDPivot services
   status    Show service status
