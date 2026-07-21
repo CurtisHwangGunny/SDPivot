@@ -52,28 +52,96 @@ jobs:
       - name: Check changed Go formatting
         shell: bash
         env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [[ -n "$BASE_SHA" && "$BASE_SHA" != "0000000000000000000000000000000000000000" ]] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            mapfile -t changed_go_files < <(
-              git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$GITHUB_SHA" -- \
-                cmd/sdp-server internal/config internal/router internal/middleware \
-                | grep -E '\.go$' || true
+          go_scope=(cmd/sdp-server internal/config internal/router internal/middleware)
+          phase0_go_files=(
+            cmd/sdp-server/main.go
+            cmd/sdp-server/main_test.go
+            internal/config/config.go
+            internal/config/product_test.go
+            internal/middleware/auth.go
+            internal/middleware/auth_public_routes_test.go
+            internal/router/sdpivot.go
+            internal/router/sdpivot_test.go
+          )
+          zero_sha=0000000000000000000000000000000000000000
+          changed_go_files=()
+
+          collect_diff_files() {
+            local base_sha="$1"
+            mapfile -d '' -t changed_go_files < <(
+              git diff --name-only -z --diff-filter=ACMR "$base_sha" "$GITHUB_SHA" -- "${go_scope[@]}" |
+                while IFS= read -r -d '' file; do
+                  [[ "$file" == *.go ]] && printf '%s\0' "$file"
+                done
             )
+          }
+
+          collect_phase0_fallback_files() {
+            local reason="$1"
+            echo "Fallback: $reason Checking tracked Phase0 Go files."
+            changed_go_files=()
+            local file
+            for file in "${phase0_go_files[@]}"; do
+              if [[ -f "$file" ]] && git ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
+                changed_go_files+=("$file")
+              fi
+            done
+          }
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ -n "$PR_BASE_SHA" ]] && git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
+              echo "Checking pull request changes from $PR_BASE_SHA to $GITHUB_SHA."
+              collect_diff_files "$PR_BASE_SHA"
+            else
+              collect_phase0_fallback_files "pull request base commit is unavailable."
+            fi
+          elif [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "$zero_sha" ]]; then
+            if git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              echo "Checking push changes from $BEFORE_SHA to $GITHUB_SHA."
+              collect_diff_files "$BEFORE_SHA"
+            else
+              collect_phase0_fallback_files "push base commit is unavailable."
+            fi
+          elif [[ "$BEFORE_SHA" == "$zero_sha" ]]; then
+            if [[ -z "$DEFAULT_BRANCH" ]]; then
+              collect_phase0_fallback_files "repository default branch is empty."
+            else
+              default_ref="refs/remotes/origin/${DEFAULT_BRANCH}"
+              if ! git cat-file -e "${default_ref}^{commit}" 2>/dev/null; then
+                echo "Default branch ref $default_ref is unavailable; fetching it."
+                if ! git fetch --no-tags origin "+refs/heads/${DEFAULT_BRANCH}:${default_ref}"; then
+                  collect_phase0_fallback_files "failed to fetch default branch $DEFAULT_BRANCH."
+                fi
+              fi
+              if (( ${#changed_go_files[@]} == 0 )); then
+                if git cat-file -e "${default_ref}^{commit}" 2>/dev/null; then
+                  if merge_base="$(git merge-base "$default_ref" "$GITHUB_SHA")" && [[ -n "$merge_base" ]]; then
+                    echo "Checking first-push changes from merge base $merge_base to $GITHUB_SHA."
+                    collect_diff_files "$merge_base"
+                  else
+                    collect_phase0_fallback_files "failed to calculate a merge base with $DEFAULT_BRANCH."
+                  fi
+                else
+                  collect_phase0_fallback_files "default branch ref $default_ref is unavailable."
+                fi
+              fi
+            fi
           else
-            mapfile -t changed_go_files < <(
-              git show --pretty='' --name-only --diff-filter=ACMR "$GITHUB_SHA" -- \
-                cmd/sdp-server internal/config internal/router internal/middleware \
-                | grep -E '\.go$' || true
-            )
+            collect_phase0_fallback_files "push before SHA is empty."
           fi
+
           if (( ${#changed_go_files[@]} == 0 )); then
             echo 'No changed Go files require formatting checks.'
             exit 0
           fi
           unformatted="$(gofmt -l "${changed_go_files[@]}")"
           if [[ -n "$unformatted" ]]; then
-            printf 'The following changed Go files are not gofmt formatted:\n%s\n' "$unformatted"
+            printf 'The following relevant Go files are not gofmt formatted:\n%s\n' "$unformatted"
             exit 1
           fi
 
