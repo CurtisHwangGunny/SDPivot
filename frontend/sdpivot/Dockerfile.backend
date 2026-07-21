@@ -1,0 +1,15 @@
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tzdata && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY sdp-server .
+RUN chmod +x sdp-server
+
+# gojieba dictionary files - must match the build-time GOPATH path
+COPY deps/ /home/ubuntu/go/pkg/mod/github.com/yanyiwu/gojieba@v1.4.7/deps/
+RUN chmod -R a+rX /home/ubuntu/
+
+RUN groupadd -r appgroup && useradd -r -g appgroup -s /usr/sbin/nologin appuser
+USER appuser
+EXPOSE 8081
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -f http://localhost:8081/health || exit 1
+CMD ["./sdp-server"]
