@@ -1,4 +1,7 @@
-# 随越·智枢 (smartKnora) 部署报告
+# SDPivot 部署报告
+
+> 当前产品显示名为 **SDPivot（SDP）**。历史 migration、表名、账号和备份中的 `smartknora`/`SMK` 属于 legacy 标识并保持不变；旧 `/api/v1/smartknora` 路由由兼容层继续提供。
+
 
 > **版本**: v2.0.0  
 > **日期**: 2026-07-02  
@@ -12,8 +15,8 @@
 |------|:----:|:----:|------|
 | PostgreSQL | ✅ 运行中 | 5432 | WeKnora-postgres (ParadeDB PG17) |
 | Redis | ✅ 运行中 | 内部 | WeKnora-redis |
-| smartKnora 后端 | ⚠️ 待更新 | 8082 | 需重启加载新版本 |
-| smartKnora 前端 | ✅ 运行中 | 3099 | React + TDesign React |
+| SDPivot 后端 | ⚠️ 待更新 | 8082 | 需重启加载新版本 |
+| SDPivot 前端 | ✅ 运行中 | 3099 | React + TDesign React |
 | WeKnora 后端 | ✅ 运行中 | 8080 | 原版 WeKnora |
 | WeKnora 前端 | ✅ 运行中 | 81 | 原版 WeKnora |
 
@@ -75,14 +78,14 @@ CREATE EXTENSION IF NOT EXISTS vector;  -- pgvector 向量扩展
 | SMART_DB_PORT | 5432 | PostgreSQL 端口 |
 | SMART_DB_USER | postgres | 数据库用户 |
 | SMART_DB_PASSWORD | *** | 数据库密码 |
-| SMART_DB_NAME | WeKnora | 数据库名（SMK 与 WeKnora 共享数据库，Phase 1 方案 A） |
-| SMARTKNORA_JWT_SECRET | *** | JWT 签名密钥 |
+| SMART_DB_NAME | WeKnora | 数据库名（SDP 与 WeKnora 共享数据库，Phase 1 方案 A） |
+| SDP_JWT_SECRET | *** | JWT 签名密钥 |
 | PORT | 8081 | 服务监听端口 |
 
 ### 3.3 数据库架构决策（Phase 1 方案 A）
 
-- **设计决策**：SMK 与 WeKnora 共享 PostgreSQL 数据库 `WeKnora`，SMK 不再维护独立 `smartknora` 数据库。
-- **隔离规范**：SMK 用户、空间、文档、会话、写作草稿等业务数据必须通过 `tenant_id` 与 WeKnora 用户及数据区分；所有 SMK 查询必须继承认证上下文中的 `tenant_id` 并加租户过滤。
+- **设计决策**：SDP 与 WeKnora 共享 PostgreSQL 数据库 `WeKnora`，SDP 不再维护独立 `smartknora` 数据库。
+- **隔离规范**：SDP 用户、空间、文档、会话、写作草稿等业务数据必须通过 `tenant_id` 与 WeKnora 用户及数据区分；所有 SDP 查询必须继承认证上下文中的 `tenant_id` 并加租户过滤。
 - **环境变量要求**：`SMART_DB_NAME=WeKnora` 是标准配置；不得配置为 `smartknora`。
 - **冗余库处理**：历史遗留 `smartknora` 独立库已按方案 A 清理；如需回滚，可使用 `backups/` 下的 drop 前备份。
 
@@ -94,7 +97,7 @@ CREATE EXTENSION IF NOT EXISTS vector;  -- pgvector 向量扩展
 
 **重启命令**:
 ```bash
-docker restart smartknora-backend
+docker restart sdp-backend
 ```
 
 ---
@@ -107,7 +110,7 @@ docker restart smartknora-backend
 - **输出大小**: JS 892KB + CSS 235KB
 
 ### 4.2 Docker 镜像
-- **镜像名**: smartknora-frontend-v2
+- **镜像名**: sdp-frontend-v2
 - **基础镜像**: nginx:alpine
 - **端口映射**: 3100:80
 
@@ -132,42 +135,42 @@ docker restart smartknora-backend
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/v1/smartknora/auth/register | 用户注册 |
-| POST | /api/v1/smartknora/auth/login | 用户登录 |
-| POST | /api/v1/smartknora/auth/refresh | 刷新 Token |
-| GET | /api/v1/smartknora/health | 健康检查 |
+| POST | /api/v1/sdp/auth/register | 用户注册 |
+| POST | /api/v1/sdp/auth/login | 用户登录 |
+| POST | /api/v1/sdp/auth/refresh | 刷新 Token |
+| GET | /api/v1/sdp/health | 健康检查 |
 
 ### 5.2 受保护路由（需 JWT）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/v1/smartknora/profile | 获取个人资料 |
-| PUT | /api/v1/smartknora/profile | 更新个人资料 |
-| PUT | /api/v1/smartknora/password | 修改密码 |
-| POST | /api/v1/smartknora/organizations | 创建企业 |
-| GET | /api/v1/smartknora/organizations | 企业列表 |
-| GET | /api/v1/smartknora/organizations/:id | 企业详情 |
-| PUT | /api/v1/smartknora/organizations/:id | 更新企业 |
-| POST | /api/v1/smartknora/organizations/join | 加入企业 |
-| GET | /api/v1/smartknora/organizations/:id/members | 成员列表 |
-| POST | /api/v1/smartknora/organizations/:id/members | 添加成员 |
-| DELETE | /api/v1/smartknora/organizations/:id/members/:userId | 移除成员 |
-| PUT | /api/v1/smartknora/organizations/:id/members/:userId/role | 更新角色 |
-| POST | /api/v1/smartknora/spaces | 创建知识空间 |
-| GET | /api/v1/smartknora/spaces | 空间列表 |
-| GET | /api/v1/smartknora/spaces/:id | 空间详情 |
-| PUT | /api/v1/smartknora/spaces/:id | 更新空间 |
-| DELETE | /api/v1/smartknora/spaces/:id | 删除空间 |
-| GET | /api/v1/smartknora/spaces/:id/members | 空间成员 |
-| POST | /api/v1/smartknora/spaces/:id/members | 添加成员 |
-| DELETE | /api/v1/smartknora/spaces/:id/members/:userId | 移除成员 |
-| PUT | /api/v1/smartknora/spaces/:id/members/:userId | 更新角色 |
-| POST | /api/v1/smartknora/categories | 创建分类 |
-| GET | /api/v1/smartknora/categories | 分类列表 |
-| DELETE | /api/v1/smartknora/categories/:id | 删除分类 |
-| GET | /api/v1/smartknora/usage/summary | Token 用量汇总 |
-| GET | /api/v1/smartknora/usage/history | 用量历史 |
-| GET | /api/v1/smartknora/usage/by-model | 按模型统计 |
+| GET | /api/v1/sdp/profile | 获取个人资料 |
+| PUT | /api/v1/sdp/profile | 更新个人资料 |
+| PUT | /api/v1/sdp/password | 修改密码 |
+| POST | /api/v1/sdp/organizations | 创建企业 |
+| GET | /api/v1/sdp/organizations | 企业列表 |
+| GET | /api/v1/sdp/organizations/:id | 企业详情 |
+| PUT | /api/v1/sdp/organizations/:id | 更新企业 |
+| POST | /api/v1/sdp/organizations/join | 加入企业 |
+| GET | /api/v1/sdp/organizations/:id/members | 成员列表 |
+| POST | /api/v1/sdp/organizations/:id/members | 添加成员 |
+| DELETE | /api/v1/sdp/organizations/:id/members/:userId | 移除成员 |
+| PUT | /api/v1/sdp/organizations/:id/members/:userId/role | 更新角色 |
+| POST | /api/v1/sdp/spaces | 创建知识空间 |
+| GET | /api/v1/sdp/spaces | 空间列表 |
+| GET | /api/v1/sdp/spaces/:id | 空间详情 |
+| PUT | /api/v1/sdp/spaces/:id | 更新空间 |
+| DELETE | /api/v1/sdp/spaces/:id | 删除空间 |
+| GET | /api/v1/sdp/spaces/:id/members | 空间成员 |
+| POST | /api/v1/sdp/spaces/:id/members | 添加成员 |
+| DELETE | /api/v1/sdp/spaces/:id/members/:userId | 移除成员 |
+| PUT | /api/v1/sdp/spaces/:id/members/:userId | 更新角色 |
+| POST | /api/v1/sdp/categories | 创建分类 |
+| GET | /api/v1/sdp/categories | 分类列表 |
+| DELETE | /api/v1/sdp/categories/:id | 删除分类 |
+| GET | /api/v1/sdp/usage/summary | Token 用量汇总 |
+| GET | /api/v1/sdp/usage/history | 用量历史 |
+| GET | /api/v1/sdp/usage/by-model | 按模型统计 |
 
 ---
 
@@ -175,8 +178,8 @@ docker restart smartknora-backend
 
 | 服务 | 地址 | 说明 |
 |------|------|------|
-| smartKnora 前端 | http://43.133.61.77:3099 | React 应用 |
-| smartKnora 后端 | http://43.133.61.77:8082 | API 服务 |
+| SDPivot 前端 | http://43.133.61.77:3099 | React 应用 |
+| SDPivot 后端 | http://43.133.61.77:8082 | API 服务 |
 | WeKnora 前端 | http://43.133.61.77:81 | 原版 WeKnora |
 | WeKnora 后端 | http://43.133.61.77:8080 | 原版 WeKnora API |
 
@@ -185,7 +188,7 @@ docker restart smartknora-backend
 ## 七、待完成事项
 
 ### 7.1 部署待完成
-- [ ] 重启 smartknora-backend 容器加载新版本二进制
+- [ ] 重启 sdp-backend 容器加载新版本二进制
 - [ ] 验证新版本 API 功能正常
 
 ### 7.2 Sprint 2-4 开发待完成
@@ -199,7 +202,7 @@ docker restart smartknora-backend
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    smartKnora v2.0.0                         │
+│                      SDPivot v2.0.0                       │
 ├─────────────────────────────────────────────────────────────┤
 │  Frontend: React 18 + TypeScript + Vite + TDesign React    │
 │  Backend: Go 1.22 + Gin + GORM + JWT (HS256)              │

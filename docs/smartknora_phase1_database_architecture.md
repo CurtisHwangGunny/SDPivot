@@ -1,13 +1,16 @@
-# SmartKnora Phase 1 数据库架构决策
+# SDPivot Phase 1 数据库架构决策
+
+> 文件名和文中的 `smartknora` 独立库名称属于 legacy 历史审计标识；当前运行配置使用 SDPivot/SDP 命名，历史库名和表名不做替换。
+
 
 > 适用阶段：Phase 1 快速迭代  
 > 决策方案：方案 A — 保持当前架构，SMK 与 WeKnora 共享数据库
 
 ## 1. 设计决策
 
-SmartKnora（SMK）在 Phase 1 不使用独立数据库，统一连接 WeKnora PostgreSQL 实例中的 `WeKnora` 数据库。
+SDPivot（SDP）在 Phase 1 不使用独立数据库，统一连接 WeKnora PostgreSQL 实例中的 `WeKnora` 数据库。
 
-- SMK 后端标准配置：`SMART_DB_NAME=WeKnora`
+- SDP 后端标准配置：`SMART_DB_NAME=WeKnora`
 - WeKnora 主服务标准配置：`DB_NAME=WeKnora`
 - 历史遗留的 `smartknora` 独立数据库不再作为运行时依赖，并已从开发服务器清理
 
@@ -18,7 +21,7 @@ SmartKnora（SMK）在 Phase 1 不使用独立数据库，统一连接 WeKnora P
 | 服务 | 数据库主机 | 数据库名 | 说明 |
 |------|------------|----------|------|
 | WeKnora-app | `WeKnora-postgres` | `WeKnora` | WeKnora 主服务 |
-| smartknora-backend | `WeKnora-postgres` | `WeKnora` | SMK API 服务，共享 WeKnora 库 |
+| sdp-backend | `WeKnora-postgres` | `WeKnora` | SDP API 服务，共享 WeKnora 库 |
 
 SMK 的数据库环境变量必须保持如下语义：
 
@@ -76,11 +79,11 @@ WHERE deleted_at IS NULL;
 
 ## 4. 冗余数据库清理
 
-开发服务器历史存在 `smartknora` 独立数据库，但该库未被 SMK 后端使用，且存在以下问题：
+开发服务器历史存在 `smartknora` 独立数据库，但该库未被 SDP 后端使用，且存在以下问题：
 
 - 与 WeKnora `users.id` 类型不一致
 - 缺失 `enterprises`、`billing_plans`、`audit_logs`、`models` 等运营必需表
-- 与当前 SMK API 没有运行时连接关系
+- 与当前 SDP API 没有运行时连接关系
 - 容易造成部署与排障混淆
 
 因此 Phase 1 执行：

@@ -1,7 +1,10 @@
-# 随越·智枢 (smartKnora) Sprint 1 开发计划
+# SDPivot Sprint 1 开发计划
+
+> 新 API 使用 `/api/v1/sdp`，新部署使用后端实际读取的 `SMART_DB_*`、`REDIS_*`、`UPLOAD_DIR`，品牌专属变量使用 `SDP_*`；历史路径与数据标识视为 legacy，不做破坏性重命名。
+
 
 > **基座项目**: WeKnora (fork at `/home/ubuntu/projects/weknora/`)
-> **废弃代码**: `/home/ubuntu/projects/smartKnora-1/` (已标记-1，勿参考)
+> **废弃代码**: `/home/ubuntu/projects/SDPivot-1/` (已标记-1，勿参考)
 > **设计文档**: `/home/ubuntu/产品设计文档/` (全套13份)
 > **技术栈**: Go 1.26 (Gin + GORM + PostgreSQL + pgvector) + Vue 3 + TDesign React + Vite
 
