@@ -19,9 +19,8 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"github.com/Tencent/WeKnora/internal/auth"
-	"github.com/Tencent/WeKnora/internal/handler"
-	"github.com/Tencent/WeKnora/internal/middleware"
+	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/router"
 )
 
 func main() {
@@ -33,12 +32,11 @@ func main() {
 	dbName := getEnvFallback("SDP_DB_NAME", "SMART_DB_NAME", "WeKnora")
 	redisAddr := getEnvFallback("SDP_REDIS_ADDR", "REDIS_ADDR", "")
 	redisPassword := getEnvFallback("SDP_REDIS_PASSWORD", "REDIS_PASSWORD", "")
-	jwtSecret := getEnvFallback("SDP_JWT_SECRET", "SMARTKNORA_JWT_SECRET", "")
-	if jwtSecret == "" {
-		log.Println("WARNING: Using default JWT secret. Set SDP_JWT_SECRET in production!")
-		jwtSecret = "sdp-dev-secret-change-in-production"
-	}
 	port := getEnv("PORT", "8081")
+	product := config.DefaultProductConfig()
+	if err := config.ApplyProductEnvOverrides(product); err != nil {
+		log.Fatalf("Invalid product configuration: %v", err)
+	}
 
 	// ── Database ───────────────────────────────────────────────
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=Asia/Shanghai",
@@ -66,10 +64,6 @@ func main() {
 		}
 	}
 
-	// ── JWT Manager ────────────────────────────────────────────
-	jwtConfig := auth.DefaultJWTConfig(jwtSecret)
-	jwtManager := auth.NewJWTManager(jwtConfig)
-
 	// ── Gin Router ─────────────────────────────────────────────
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -84,72 +78,13 @@ func main() {
 	}))
 
 	// ── Health check ───────────────────────────────────────────
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok", "service": "sdp", "version": "2.0.0"})
-	})
+	registerTopLevelHealth(r)
 
-	registerSDPivotRoutes := func(sk *gin.RouterGroup) {
-		registerSDPivotHealth(sk)
-
-		// Public routes
-		authHandler := handler.NewSDPivotAuthHandler(db, jwtManager, redisClient)
-		authHandler.RegisterRoutes(sk)
-
-		// Protected routes
-		protected := sk.Group("")
-		protected.Use(middleware.SDPivotAuth(jwtManager))
-		protected.Use(middleware.SDPivotTenantContext(db))
-		protected.Use(middleware.TokenMeteringMiddleware(db))
-		{
-			// Sprint 1: User profile
-			protected.GET("/profile", func(c *gin.Context) {
-				c.JSON(200, gin.H{"user_id": middleware.GetUserID(c)})
-			})
-			protected.PUT("/profile", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "profile updated"})
-			})
-			protected.PUT("/password", func(c *gin.Context) {
-				c.JSON(200, gin.H{"message": "password changed"})
-			})
-
-			// Sprint 1: Organization management
-			orgHandler := handler.NewSDPivotOrgHandler(db)
-			orgHandler.RegisterRoutes(protected)
-
-			// Sprint 1: Knowledge space management
-			spaceHandler := handler.NewSDPivotSpaceHandler(db)
-			spaceHandler.RegisterRoutes(protected)
-
-			// Sprint 1: Token usage queries
-			tokenHandler := handler.NewSDPivotTokenHandler(db)
-			tokenHandler.RegisterRoutes(protected)
-
-			// Sprint 2: Document management
-			docHandler := handler.NewSDPivotDocumentHandler(db)
-			docHandler.RegisterRoutes(protected)
-
-			// Sprint 3: AI Q&A + Admin
-			qaHandler := handler.NewSDPivotQAHandler(db)
-			qaHandler.RegisterRoutes(protected)
-
-			// Sprint 4: AI Writing + Operations
-			writingHandler := handler.NewSDPivotWritingHandler(db)
-			writingHandler.RegisterRoutes(protected)
-
-			// Ops admin auth (PRD 1.1.4)
-			opsHandler := handler.NewSDPivotOpsHandler(db, jwtManager)
-			opsHandler.RegisterPublicRoutes(sk)
-			opsHandler.RegisterProtectedRoutes(protected)
-
-			// Ops admin management handler (PRD 4.1)
-			opsAdminHandler := handler.NewSDPivotOpsAdminHandler(db)
-			opsAdminHandler.RegisterOpsRoutes(protected)
-			opsAdminHandler.RegisterPublicOpsRoutes(sk)
-		}
-	}
-
-	registerSDPivotRoutes(r.Group("/api/v1/sdp"))
-	registerSDPivotRoutes(r.Group("/api/v1/smartknora"))
+	router.NewSDPivotRouter(router.SDPivotRouterParams{
+		DB:          db,
+		RedisClient: redisClient,
+		Config:      &config.Config{Product: product},
+	}).RegisterRoutes(r)
 
 	// ── Start Server ───────────────────────────────────────────
 	srv := &http.Server{Addr: ":" + port, Handler: r}
@@ -170,6 +105,12 @@ func main() {
 	defer cancel()
 	srv.Shutdown(ctx)
 	log.Println("[Server] Stopped")
+}
+
+func registerTopLevelHealth(r *gin.Engine) {
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "sdp", "version": "2.0.0"})
+	})
 }
 
 func getAllowedOrigins() []string {
@@ -210,10 +151,4 @@ func getEnvFallback(primary, fallback, def string) string {
 		return value
 	}
 	return getEnv(fallback, def)
-}
-
-func registerSDPivotHealth(group *gin.RouterGroup) {
-	group.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "sdp", "version": "2.0.0"})
-	})
 }

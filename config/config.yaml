@@ -3,6 +3,13 @@ server:
   port: 8080
   host: "0.0.0.0"
 
+# SDPivot product configuration
+product:
+  op_mode: false
+  brand: "sdpivot"
+  # Compatibility alias for /api/v1/smartknora; canonical API remains /api/v1/sdp.
+  enable_legacy_alias: true
+
 # Conversation service configuration
 # NOTE: Prompt content is resolved from prompt_templates/ YAML files via xxx_id fields.
 # Set the _id to the template ID you want; the system will load its content at startup.

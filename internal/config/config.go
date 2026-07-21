@@ -23,6 +23,7 @@ type Config struct {
 	Tenant          *TenantConfig          `yaml:"tenant"           json:"tenant"`
 	Auth            *AuthConfig            `yaml:"auth"             json:"auth"`
 	Audit           *AuditConfig           `yaml:"audit"            json:"audit"`
+	Product         *ProductConfig         `yaml:"product"          json:"product"`
 	OIDCAuth        *OIDCAuthConfig        `yaml:"oidc_auth"        json:"oidc_auth"`
 	Models          []ModelConfig          `yaml:"models"           json:"models"`
 	VectorDatabase  *VectorDatabaseConfig  `yaml:"vector_database"  json:"vector_database"`
@@ -239,6 +240,55 @@ func (t *TenantConfig) IsRBACEnforced() bool {
 		return true
 	}
 	return *t.EnableRBAC
+}
+
+// ProductConfig controls SDPivot product identity and compatibility routing.
+type ProductConfig struct {
+	OPMode            bool   `yaml:"op_mode"             json:"op_mode"`
+	Brand             string `yaml:"brand"               json:"brand"`
+	EnableLegacyAlias bool   `yaml:"enable_legacy_alias" json:"enable_legacy_alias"`
+}
+
+// DefaultProductConfig returns the product defaults used by integrated and standalone servers.
+func DefaultProductConfig() *ProductConfig {
+	return &ProductConfig{
+		Brand:             "sdpivot",
+		EnableLegacyAlias: true,
+	}
+}
+
+// ApplyProductEnvOverrides applies standalone-safe product environment overrides.
+func ApplyProductEnvOverrides(product *ProductConfig) error {
+	if product == nil {
+		return fmt.Errorf("product config is required")
+	}
+
+	for _, override := range []struct {
+		name   string
+		target *bool
+	}{
+		{name: "OP_MODE", target: &product.OPMode},
+		{name: "SDP_ENABLE_LEGACY_ALIAS", target: &product.EnableLegacyAlias},
+	} {
+		value := strings.TrimSpace(os.Getenv(override.name))
+		if value == "" {
+			continue
+		}
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid %s value %q: %w", override.name, value, err)
+		}
+		*override.target = parsed
+	}
+
+	if value := strings.TrimSpace(os.Getenv("BRAND")); value != "" {
+		product.Brand = value
+	}
+	product.Brand = strings.TrimSpace(product.Brand)
+	if product.Brand == "" {
+		product.Brand = "sdpivot"
+	}
+	return nil
 }
 
 // AuditConfig governs durable audit log behaviour. Writes happen on
@@ -510,8 +560,8 @@ func LoadConfig() (*Config, error) {
 	// 使用处理后的配置内容
 	viper.ReadConfig(strings.NewReader(result))
 
-	// 解析配置到结构体
-	var cfg Config
+	// 解析配置到结构体。预置产品默认值以区分缺失字段与显式 false。
+	cfg := Config{Product: DefaultProductConfig()}
 	if err := viper.Unmarshal(&cfg, func(dc *mapstructure.DecoderConfig) {
 		dc.TagName = "yaml"
 	}); err != nil {
@@ -565,6 +615,12 @@ func LoadConfig() (*Config, error) {
 	applyKnowledgeBaseEnvOverrides(&cfg)
 	applyAuthAndTenantDefaults(&cfg)
 	applyAuditDefaults(&cfg)
+	if cfg.Product == nil {
+		cfg.Product = DefaultProductConfig()
+	}
+	if err := ApplyProductEnvOverrides(cfg.Product); err != nil {
+		return nil, err
+	}
 
 	if err := ValidateConfig(&cfg); err != nil {
 		return nil, err
@@ -595,6 +651,12 @@ func LoadConfig() (*Config, error) {
 // It checks for obviously invalid or missing values that would cause runtime failures.
 func ValidateConfig(cfg *Config) error {
 	var errs []string
+
+	if cfg.Product == nil {
+		errs = append(errs, "product config is required")
+	} else if strings.TrimSpace(cfg.Product.Brand) == "" {
+		errs = append(errs, "product.brand is required")
+	}
 
 	if cfg.OIDCAuth != nil && cfg.OIDCAuth.Enable {
 		if strings.TrimSpace(cfg.OIDCAuth.ClientID) == "" {

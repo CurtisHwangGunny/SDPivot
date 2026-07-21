@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/auth"
+	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/middleware"
 )
@@ -21,6 +22,7 @@ type SDPivotRouterParams struct {
 
 	DB          *gorm.DB
 	RedisClient *redis.Client
+	Config      *config.Config
 }
 
 // SDPivotRouter holds all SDPivot-specific route handlers.
@@ -28,6 +30,7 @@ type SDPivotRouter struct {
 	db         *gorm.DB
 	redis      *redis.Client
 	jwtManager *auth.JWTManager
+	product    *config.ProductConfig
 }
 
 // NewSDPivotRouter creates a new SDPivot router via DI.
@@ -41,19 +44,29 @@ func NewSDPivotRouter(params SDPivotRouterParams) *SDPivotRouter {
 
 	jwtConfig := auth.DefaultJWTConfig(jwtSecret)
 	jwtManager := auth.NewJWTManager(jwtConfig)
+	product := config.DefaultProductConfig()
+	if params.Config != nil && params.Config.Product != nil {
+		configured := *params.Config.Product
+		product = &configured
+		if product.Brand == "" {
+			product.Brand = "sdpivot"
+		}
+	}
 
 	return &SDPivotRouter{
 		db:         params.DB,
 		redis:      params.RedisClient,
 		jwtManager: jwtManager,
+		product:    product,
 	}
 }
 
-// RegisterRoutes registers all SDPivot routes on the given engine.
-// Routes are mounted under /api/v1/sdp/
+// RegisterRoutes registers canonical SDPivot routes and the optional legacy alias.
 func (sr *SDPivotRouter) RegisterRoutes(r *gin.Engine) {
 	sr.registerRoutes(r.Group("/api/v1/sdp"))
-	sr.registerRoutes(r.Group("/api/v1/smartknora"))
+	if sr.product != nil && sr.product.EnableLegacyAlias {
+		sr.registerRoutes(r.Group("/api/v1/smartknora"))
+	}
 }
 
 func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
@@ -63,6 +76,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 	spaceHandler := handler.NewSDPivotSpaceHandler(sr.db)
 	tokenHandler := handler.NewSDPivotTokenHandler(sr.db)
 	opsHandler := handler.NewSDPivotOpsHandler(sr.db, sr.jwtManager)
+	opsAdminHandler := handler.NewSDPivotOpsAdminHandler(sr.db)
 
 	// Public routes (no auth required)
 	public := sk.Group("")
@@ -75,8 +89,9 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 	// Auth routes (public)
 	authHandler.RegisterRoutes(sk)
 
-	// Ops admin auth routes (public)
+	// Ops admin auth and anonymous announcement routes
 	opsHandler.RegisterPublicRoutes(sk)
+	opsAdminHandler.RegisterPublicOpsRoutes(sk)
 
 	// Protected routes (require JWT)
 	protected := sk.Group("")
@@ -118,6 +133,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 
 		// Ops admin protected routes
 		opsHandler.RegisterProtectedRoutes(protected)
+		opsAdminHandler.RegisterOpsRoutes(protected)
 	}
 }
 
