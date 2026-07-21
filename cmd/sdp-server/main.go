@@ -1,4 +1,4 @@
-// SDPivot (随越·智枢) standalone server
+// SDPivot standalone server
 // Connects directly to PostgreSQL + Redis, serves SDPivot API
 package main
 
