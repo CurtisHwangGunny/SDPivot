@@ -1,0 +1,143 @@
+name: SDPivot OP CI
+
+on:
+  push:
+    branches:
+      - sdp-dev
+      - 'feature/op-*'
+    paths:
+      - 'cmd/sdp-server/**'
+      - 'internal/config/**'
+      - 'internal/router/**'
+      - 'internal/middleware/**'
+      - 'frontend/sdpivot/**'
+      - 'deploy/**'
+      - 'config/config.yaml'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/sdpivot-op.yml'
+  pull_request:
+    paths:
+      - 'cmd/sdp-server/**'
+      - 'internal/config/**'
+      - 'internal/router/**'
+      - 'internal/middleware/**'
+      - 'frontend/sdpivot/**'
+      - 'deploy/**'
+      - 'config/config.yaml'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/sdpivot-op.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Check changed Go formatting
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -n "$BASE_SHA" && "$BASE_SHA" != "0000000000000000000000000000000000000000" ]] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            mapfile -t changed_go_files < <(
+              git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$GITHUB_SHA" -- \
+                cmd/sdp-server internal/config internal/router internal/middleware \
+                | grep -E '\.go$' || true
+            )
+          else
+            mapfile -t changed_go_files < <(
+              git show --pretty='' --name-only --diff-filter=ACMR "$GITHUB_SHA" -- \
+                cmd/sdp-server internal/config internal/router internal/middleware \
+                | grep -E '\.go$' || true
+            )
+          fi
+          if (( ${#changed_go_files[@]} == 0 )); then
+            echo 'No changed Go files require formatting checks.'
+            exit 0
+          fi
+          unformatted="$(gofmt -l "${changed_go_files[@]}")"
+          if [[ -n "$unformatted" ]]; then
+            printf 'The following changed Go files are not gofmt formatted:\n%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Run focused Go tests
+        run: go test -count=1 ./internal/config ./internal/router ./internal/middleware ./cmd/sdp-server
+
+      - name: Run focused Go vet
+        run: go vet ./internal/config ./internal/router ./internal/middleware ./cmd/sdp-server
+
+      - name: Build SDPivot backend
+        shell: bash
+        run: |
+          output="${RUNNER_TEMP}/sdp-server"
+          go build -o "$output" ./cmd/sdp-server
+          test -x "$output"
+          rm -f "$output"
+
+  frontend:
+    name: Frontend quality gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/sdpivot
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/sdpivot/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Check deployment script syntax
+        run: bash -n ../../deploy/deploy-test.sh
+
+      - name: Type-check frontend
+        run: npm run typecheck
+
+      - name: Build OP frontend
+        run: npm run build:op
+
+      - name: Assert OP artifact shape
+        shell: bash
+        run: |
+          test -f dist/index.html
+          test ! -e dist/ops.html
+
+      - name: Run Chromium end-to-end tests
+        run: npm run test:e2e
+
+      - name: Build compatible dual-entry frontend
+        run: npm run build
+
+      - name: Assert dual-entry artifact shape
+        shell: bash
+        run: |
+          test -f dist/index.html
+          test -f dist/ops.html
+
