@@ -4,9 +4,16 @@ WORKDIR /app
 COPY sdp-server .
 RUN chmod +x sdp-server
 
-# gojieba dictionary files - must match the build-time GOPATH path
-COPY deps/ /home/ubuntu/go/pkg/mod/github.com/yanyiwu/gojieba@v1.4.7/deps/
-RUN chmod -R a+rX /home/ubuntu/
+# The statically linked binary resolves Jieba dictionaries at runtime.
+# Keep them in an image-owned, stable path rather than a build-host GOPATH.
+COPY deps/cppjieba/dict/ /app/gojieba-dict/
+RUN test -r /app/gojieba-dict/jieba.dict.utf8 \
+    && test -r /app/gojieba-dict/hmm_model.utf8 \
+    && test -r /app/gojieba-dict/user.dict.utf8 \
+    && test -r /app/gojieba-dict/idf.utf8 \
+    && test -r /app/gojieba-dict/stop_words.utf8 \
+    && chmod -R a+rX /app/gojieba-dict
+ENV JIEBA_DICT_DIR=/app/gojieba-dict
 
 RUN groupadd -r appgroup && useradd -r -g appgroup -s /usr/sbin/nologin appuser
 USER appuser
