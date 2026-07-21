@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# smartKnora (随越·智枢) Test Environment Deployment Script
-# Usage: bash deploy-test.sh [build|up|down|restart|status|logs]
+# SDPivot test environment deployment helper.
+# Usage: bash deploy-test.sh [build|up|down|restart|status|logs|smoke]
 
 set -euo pipefail
 
@@ -8,139 +8,105 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.test.yml"
 ENV_FILE="$SCRIPT_DIR/.env.test"
 
-# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-log_info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_info()  { printf '%b[INFO]%b %s\n' "$GREEN" "$NC" "$1"; }
+log_warn()  { printf '%b[WARN]%b %s\n' "$YELLOW" "$NC" "$1"; }
+log_error() { printf '%b[ERROR]%b %s\n' "$RED" "$NC" "$1"; }
 
-# Pre-flight checks
+require_env_file() {
+    if [ ! -f "$ENV_FILE" ]; then
+        log_error ".env.test not found; copy deploy/.env.example and provide test secrets."
+        exit 1
+    fi
+}
+
+compose() {
+    require_env_file
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+}
+
 preflight() {
     log_info "Running pre-flight checks..."
-
-    # Check docker
-    if ! command -v docker &>/dev/null; then
-        log_error "Docker is not installed"
-        exit 1
-    fi
-
-    # Check docker compose
-    if ! docker compose version &>/dev/null; then
-        log_error "Docker Compose plugin is not installed"
-        exit 1
-    fi
-
-    # Check WeKnora network
-    if ! docker network ls --format '{{.Name}}' | grep -q 'weknora_WeKnora-network'; then
+    command -v docker &>/dev/null || { log_error "Docker is not installed"; exit 1; }
+    docker compose version &>/dev/null || { log_error "Docker Compose plugin is not installed"; exit 1; }
+    require_env_file
+    docker network inspect weknora_WeKnora-network &>/dev/null || {
         log_error "WeKnora network (weknora_WeKnora-network) not found."
-        log_error "Please start WeKnora services first: cd ~/projects/weknora && docker compose up -d"
+        log_error "Start WeKnora services before deploying SDPivot."
         exit 1
-    fi
-
-    # Check .env file
-    if [ ! -f "$ENV_FILE" ]; then
-        log_warn ".env.test not found, copying from template..."
-        cp "$SCRIPT_DIR/.env.test.template" "$ENV_FILE" 2>/dev/null || {
-            log_error "No .env.test or .env.test.template found. Please create .env.test first."
-            exit 1
-        }
-        log_warn "Please edit .env.test with your actual configuration before deploying."
-        exit 1
-    fi
-
-    log_info "Pre-flight checks passed!"
+    }
+    compose config --quiet
+    log_info "Pre-flight checks passed."
 }
 
-# Build images
 cmd_build() {
-    log_info "Building smartKnora images..."
-    cd "$SCRIPT_DIR"
-
-    # Build backend
-    log_info "Building backend..."
-    docker build \
-        -t smartknora-backend:test \
-        -f ../../frontend/smartknora/Dockerfile.backend \
-        "$(cd "$SCRIPT_DIR/../.." && pwd)"
-
-    # Build frontend (if using production mode)
-    log_info "Building frontend..."
-    cd "$SCRIPT_DIR/../../frontend/smartknora"
-    docker build \
-        -t smartknora-frontend:test \
-        -f Dockerfile.frontend \
-        .
-
-    cd "$SCRIPT_DIR"
-    log_info "Build complete!"
+    preflight
+    log_info "Building SDPivot images..."
+    compose build
+    log_info "Build complete."
 }
 
-# Start services
 cmd_up() {
     preflight
-    log_info "Starting smartKnora services..."
-    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
-    log_info "Waiting for health checks..."
-    sleep 5
-    docker compose -f "$COMPOSE_FILE" ps
-    log_info "Services started. Frontend: http://localhost:$(grep SMARTKNORA_FRONTEND_PORT "$ENV_FILE" | cut -d= -f2 || echo 3099)"
+    log_info "Starting SDPivot services..."
+    compose up -d
+    compose ps
+    log_info "Services started."
 }
 
-# Stop services
 cmd_down() {
-    log_info "Stopping smartKnora services..."
-    docker compose -f "$COMPOSE_FILE" down
-    log_info "Services stopped."
+    log_info "Stopping SDPivot services..."
+    compose down
 }
 
-# Restart services
 cmd_restart() {
-    log_info "Restarting smartKnora services..."
-    docker compose -f "$COMPOSE_FILE" restart
-    log_info "Services restarted."
+    preflight
+    log_info "Restarting SDPivot services..."
+    compose restart
 }
 
-# Show status
 cmd_status() {
-    log_info "smartKnora services status:"
-    docker compose -f "$COMPOSE_FILE" ps 2>/dev/null || log_warn "No services running"
-    echo ""
-    log_info "WeKnora services status:"
-    cd "$SCRIPT_DIR/../.." && docker compose ps 2>/dev/null || true
+    log_info "SDPivot services status:"
+    compose ps
 }
 
-# Show logs
 cmd_logs() {
-    docker compose -f "$COMPOSE_FILE" logs -f --tail=100 "${@}"
+    compose logs -f --tail=100 "$@"
 }
 
-# Help
+cmd_smoke() {
+    "$SCRIPT_DIR/smoke-api-routes.sh"
+}
+
 cmd_help() {
-    echo "smartKnora Test Environment Deployment"
-    echo ""
-    echo "Usage: bash deploy-test.sh <command>"
-    echo ""
-    echo "Commands:"
-    echo "  build     Build smartKnora Docker images"
-    echo "  up        Start all smartKnora services"
-    echo "  down      Stop all smartKnora services"
-    echo "  restart   Restart all smartKnora services"
-    echo "  status    Show service status"
-    echo "  logs      Follow service logs"
-    echo ""
+    cat <<'HELP'
+SDPivot Test Environment Deployment
+
+Usage: bash deploy-test.sh <command>
+
+Commands:
+  build     Build SDPivot Docker images
+  up        Start all SDPivot services
+  down      Stop all SDPivot services
+  restart   Restart all SDPivot services
+  status    Show service status
+  logs      Follow service logs
+  smoke     Verify canonical and legacy API routes (requires SDP_BASE_URL)
+HELP
 }
 
-# Main
 case "${1:-help}" in
-    build)    cmd_build "${@:2}" ;;
-    up)       cmd_up "${@:2}" ;;
-    down)     cmd_down "${@:2}" ;;
-    restart)  cmd_restart "${@:2}" ;;
-    status)   cmd_status "${@:2}" ;;
-    logs)     cmd_logs "${@:2}" ;;
-    help|*)   cmd_help ;;
+    build)   cmd_build "${@:2}" ;;
+    up)      cmd_up "${@:2}" ;;
+    down)    cmd_down "${@:2}" ;;
+    restart) cmd_restart "${@:2}" ;;
+    status)  cmd_status "${@:2}" ;;
+    logs)    cmd_logs "${@:2}" ;;
+    smoke)   cmd_smoke "${@:2}" ;;
+    help|-h|--help) cmd_help ;;
+    *) log_error "Unknown command: $1"; cmd_help; exit 2 ;;
 esac

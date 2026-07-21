@@ -1,4 +1,7 @@
-# SmartKnora 新产品设计 v4.2 / 架构评审 v1.1 差异落地报告
+# SDPivot 新产品设计 v4.2 / 架构评审 v1.1 差异落地报告
+
+> 文件名和 `000010_smartknora_v42_alignment.*` 属于 legacy 审计/迁移标识；当前产品显示名为 SDPivot，简称 SDP。
+
 
 ## 1. 本次对齐范围
 
@@ -18,7 +21,7 @@
 文件：
 
 - `internal/types/user.go`
-- `internal/handler/smartknora_auth.go`
+- `internal/handler/sdpivot_auth.go`
 - `migrations/postgres/000010_smartknora_v42_alignment.up.sql`
 
 调整：
@@ -38,8 +41,8 @@
 
 文件：
 
-- `internal/middleware/smartknora_tenant.go`
-- `internal/middleware/smartknora_auth.go`
+- `internal/middleware/sdpivot_tenant.go`
+- `internal/middleware/sdpivot_auth.go`
 - `migrations/postgres/000010_smartknora_v42_alignment.up.sql`
 
 调整：
@@ -56,10 +59,10 @@
 
 文件：
 
-- `internal/types/smartknora.go`
-- `internal/handler/smartknora_writing.go`
-- `frontend/smartknora/src/api/writing.ts`
-- `frontend/smartknora/src/views/writing/WritingPage.vue`
+- `internal/types/sdpivot.go`
+- `internal/handler/sdpivot_writing.go`
+- `frontend/sdpivot/src/api/writing.ts`
+- `frontend/sdpivot/src/views/writing/WritingPage.vue`
 - `migrations/postgres/000010_smartknora_v42_alignment.up.sql`
 
 调整：
@@ -80,8 +83,8 @@
 
 文件：
 
-- `frontend/smartknora/src/style.css`
-- `frontend/smartknora/src/views/auth/RegisterPage.vue`
+- `frontend/sdpivot/src/style.css`
+- `frontend/sdpivot/src/views/auth/RegisterPage.vue`
 
 调整：
 
@@ -107,18 +110,18 @@
 ### 4.1 后端
 
 - Go 关键包测试通过：
-  - `./cmd/smartknora-server`
+  - `./cmd/sdpivot-server`
   - `./internal/handler`
   - `./internal/middleware`
   - `./internal/types`
 - 后端二进制已重新编译。
-- `smartknora-backend:latest` 镜像已重新构建。
-- `smartknora-backend` 容器已重建并健康运行。
+- `sdpivot-backend:latest` 镜像已重新构建。
+- `sdpivot-backend` 容器已重建并健康运行。
 - 健康检查：`http://127.0.0.1:8082/health` 返回 OK。
 
 ### 4.2 前端
 
-- `frontend/smartknora` 生产构建通过。
+- `frontend/sdpivot` 生产构建通过。
 - 3099 预览服务已加载新构建产物。
 - 已验证 bundle 包含：
   - `knowledge_plus_web`

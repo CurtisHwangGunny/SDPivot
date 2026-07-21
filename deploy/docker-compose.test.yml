@@ -1,40 +1,30 @@
-# smartKnora (随越·智枢) Docker Compose - Test Environment
-# Requires WeKnora docker-compose.yml already running on the same network
-
-version: "3.8"
+# SDPivot Docker Compose - Test Environment
+# Requires the WeKnora Docker network and backing services to be running.
 
 services:
-  # ========== smartKnora Backend ==========
-  smartknora-backend:
+  sdp-backend:
     build:
-      context: ../..
-      dockerfile: frontend/smartknora/Dockerfile.backend
-    image: smartknora-backend:test
-    container_name: smartknora-backend
+      context: ../frontend/sdpivot
+      dockerfile: Dockerfile.backend
+    image: sdp-backend:test
+    container_name: sdp-backend
     restart: unless-stopped
     ports:
-      - "${SMARTKNORA_BACKEND_PORT:-8082}:8081"
+      - "${SDP_BACKEND_PORT:-8082}:8081"
     environment:
-      - SMART_DB_HOST=${SMART_DB_HOST:-WeKnora-postgres}
-      - SMART_DB_PORT=${SMART_DB_PORT:-5432}
-      - SMART_DB_NAME=${SMART_DB_NAME:-WeKnora}
-      - SMART_DB_USER=${SMART_DB_USER:-postgres}
-      - SMART_DB_PASSWORD=${SMART_DB_PASSWORD}
-      - REDIS_ADDR=${REDIS_ADDR:-WeKnora-redis:6379}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - SMARTKNORA_JWT_SECRET=${SMARTKNORA_JWT_SECRET}
-      - GIN_MODE=release
-      # LLM
-      - SMARTKNORA_LLM_PROVIDER=${SMARTKNORA_LLM_PROVIDER:-}
-      - SMARTKNORA_LLM_API_KEY=${SMARTKNORA_LLM_API_KEY:-}
-      - SMARTKNORA_LLM_BASE_URL=${SMARTKNORA_LLM_BASE_URL:-}
-      - SMARTKNORA_LLM_MODEL=${SMARTKNORA_LLM_MODEL:-}
-      # SMS
-      - SMARTKNORA_SMS_PROVIDER=${SMARTKNORA_SMS_PROVIDER:-}
-      - SMARTKNORA_SMS_ACCESS_KEY=${SMARTKNORA_SMS_ACCESS_KEY:-}
-      - SMARTKNORA_SMS_ACCESS_SECRET=${SMARTKNORA_SMS_ACCESS_SECRET:-}
-      - SMARTKNORA_SMS_SIGN_NAME=${SMARTKNORA_SMS_SIGN_NAME:-}
-      - SMARTKNORA_SMS_TEMPLATE_CODE=${SMARTKNORA_SMS_TEMPLATE_CODE:-}
+      SMART_DB_HOST: ${SMART_DB_HOST:-WeKnora-postgres}
+      SMART_DB_PORT: ${SMART_DB_PORT:-5432}
+      SMART_DB_NAME: ${SMART_DB_NAME:-WeKnora}
+      SMART_DB_USER: ${SMART_DB_USER:-postgres}
+      SMART_DB_PASSWORD: ${SMART_DB_PASSWORD:?SMART_DB_PASSWORD is required}
+      REDIS_ADDR: ${REDIS_ADDR:-WeKnora-redis:6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      UPLOAD_DIR: /tmp/sdp-uploads
+      SDP_JWT_SECRET: ${SDP_JWT_SECRET:?SDP_JWT_SECRET is required}
+      SDP_ALLOWED_ORIGINS: ${SDP_ALLOWED_ORIGINS:-}
+      GIN_MODE: release
+    volumes:
+      - "${SDP_UPLOAD_DIR:-/tmp/sdp-uploads}:/tmp/sdp-uploads"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 30s
@@ -42,29 +32,25 @@ services:
       retries: 3
     networks:
       - weknora_WeKnora-network
-    depends_on:
-      WeKnora-postgres:
-        condition: service_healthy
 
-  # ========== smartKnora Frontend (Production) ==========
-  smartknora-frontend:
+  sdp-frontend:
     build:
-      context: ../../frontend/smartknora
+      context: ../frontend/sdpivot
       dockerfile: Dockerfile.frontend
-    image: smartknora-frontend:test
-    container_name: smartknora-frontend
+    image: sdp-frontend:test
+    container_name: sdp-frontend
     restart: unless-stopped
     ports:
-      - "${SMARTKNORA_FRONTEND_PORT:-3099}:80"
+      - "${SDP_FRONTEND_PORT:-3099}:80"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
       interval: 30s
       timeout: 5s
       retries: 3
     networks:
       - weknora_WeKnora-network
     depends_on:
-      - smartknora-backend
+      - sdp-backend
 
 networks:
   weknora_WeKnora-network:
