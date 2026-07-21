@@ -35,6 +35,7 @@ preflight() {
     log_info "Running pre-flight checks..."
     command -v docker &>/dev/null || { log_error "Docker is not installed"; exit 1; }
     docker compose version &>/dev/null || { log_error "Docker Compose plugin is not installed"; exit 1; }
+    command -v npm &>/dev/null || { log_error "npm is not installed"; exit 1; }
     require_env_file
     docker network inspect weknora_WeKnora-network &>/dev/null || {
         log_error "WeKnora network (weknora_WeKnora-network) not found."
@@ -46,22 +47,46 @@ preflight() {
 }
 
 build_artifacts() {
-    local go_bin
+    local go_bin=""
+    local go_image="${SDP_GO_BUILD_IMAGE:-golang:1.26-bookworm}"
+    local frontend_build_dir
     if [ -x /usr/local/go/bin/go ]; then
         go_bin=/usr/local/go/bin/go
-    else
-        go_bin="$(command -v go || true)"
+    elif command -v go &>/dev/null; then
+        go_bin="$(command -v go)"
     fi
-    if [ -z "$go_bin" ]; then
-        log_error "Go is not installed"
-        exit 1
-    fi
-    command -v npm &>/dev/null || { log_error "npm is not installed"; exit 1; }
 
-    log_info "Building SDPivot backend artifact..."
-    (cd "$REPO_ROOT" && "$go_bin" build -trimpath -o frontend/sdpivot/sdp-server ./cmd/sdp-server)
-    log_info "Building SDPivot frontend artifact..."
-    (cd "$FRONTEND_DIR" && npm run build)
+    if [ -n "$go_bin" ]; then
+        log_info "Building SDPivot backend artifact with $go_bin..."
+        (cd "$REPO_ROOT" && "$go_bin" build -trimpath -buildvcs=false -o frontend/sdpivot/sdp-server ./cmd/sdp-server)
+    else
+        log_info "Building SDPivot backend artifact with $go_image..."
+        docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e CGO_ENABLED=1 \
+            -e GOCACHE=/tmp/go-build-cache \
+            -e GOMODCACHE=/tmp/go-mod-cache \
+            -v "$REPO_ROOT:/src" \
+            -w /src \
+            "$go_image" \
+            go build -trimpath -buildvcs=false -o frontend/sdpivot/sdp-server ./cmd/sdp-server
+    fi
+
+    log_info "Building SDPivot frontend artifact in an isolated workspace..."
+    frontend_build_dir="$(mktemp -d)"
+    trap 'rm -rf "$frontend_build_dir"' RETURN
+    (
+        cd "$FRONTEND_DIR"
+        tar --exclude='./node_modules' --exclude='./dist' -cf - .
+    ) | (cd "$frontend_build_dir" && tar -xf -)
+    (cd "$frontend_build_dir" && npm ci && npm run build)
+    rm -rf "$FRONTEND_DIR/dist"
+    cp -R "$frontend_build_dir/dist" "$FRONTEND_DIR/dist"
+    rm -rf "$frontend_build_dir"
+    trap - RETURN
+
+    test -x "$FRONTEND_DIR/sdp-server" || { log_error "Backend artifact was not produced"; exit 1; }
+    test -f "$FRONTEND_DIR/dist/index.html" || { log_error "Frontend artifact was not produced"; exit 1; }
     log_info "Artifacts are up to date."
 }
 
@@ -76,7 +101,7 @@ cmd_build() {
 cmd_up() {
     preflight
     build_artifacts
-    log_info "Starting SDPivot services..."
+    log_info "Building and starting SDPivot services..."
     compose up -d --build
     compose ps
     log_info "Services started."
@@ -113,10 +138,10 @@ SDPivot Test Environment Deployment
 Usage: bash deploy-test.sh <command>
 
 Commands:
-  build     Build artifacts and SDPivot Docker images
-  up        Build artifacts and start all SDPivot services
+  build     Build current Go/Vue artifacts and Docker images
+  up        Rebuild current artifacts/images and start services
   down      Stop all SDPivot services
-  restart   Restart all SDPivot services
+  restart   Restart existing SDPivot containers without rebuilding
   status    Show service status
   logs      Follow service logs
   smoke     Verify canonical and legacy API routes (requires SDP_BASE_URL)

@@ -74,11 +74,11 @@ CREATE EXTENSION IF NOT EXISTS vector;  -- pgvector 向量扩展
 
 | 变量 | 值 | 说明 |
 |------|---|------|
-| SMART_DB_HOST | WeKnora-postgres | PostgreSQL 主机 |
-| SMART_DB_PORT | 5432 | PostgreSQL 端口 |
-| SMART_DB_USER | postgres | 数据库用户 |
-| SMART_DB_PASSWORD | *** | 数据库密码 |
-| SMART_DB_NAME | WeKnora | 数据库名（SDP 与 WeKnora 共享数据库，Phase 1 方案 A） |
+| SDP_DB_HOST | WeKnora-postgres | PostgreSQL 主机 |
+| SDP_DB_PORT | 5432 | PostgreSQL 端口 |
+| SDP_DB_USER | postgres | 数据库用户 |
+| SDP_DB_PASSWORD | *** | 数据库密码 |
+| SDP_DB_NAME | WeKnora | 数据库名（SDP 与 WeKnora 共享数据库，Phase 1 方案 A） |
 | SDP_JWT_SECRET | *** | JWT 签名密钥 |
 | PORT | 8081 | 服务监听端口 |
 
@@ -86,7 +86,7 @@ CREATE EXTENSION IF NOT EXISTS vector;  -- pgvector 向量扩展
 
 - **设计决策**：SDP 与 WeKnora 共享 PostgreSQL 数据库 `WeKnora`，SDP 不再维护独立 `smartknora` 数据库。
 - **隔离规范**：SDP 用户、空间、文档、会话、写作草稿等业务数据必须通过 `tenant_id` 与 WeKnora 用户及数据区分；所有 SDP 查询必须继承认证上下文中的 `tenant_id` 并加租户过滤。
-- **环境变量要求**：`SMART_DB_NAME=WeKnora` 是标准配置；不得配置为 `smartknora`。
+- **环境变量要求**：`SDP_DB_NAME=WeKnora` 是标准配置；不得配置为 `smartknora`。
 - **冗余库处理**：历史遗留 `smartknora` 独立库已按方案 A 清理；如需回滚，可使用 `backups/` 下的 drop 前备份。
 
 ### 3.3 部署状态

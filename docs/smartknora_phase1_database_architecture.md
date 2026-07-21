@@ -10,7 +10,7 @@
 
 SDPivot（SDP）在 Phase 1 不使用独立数据库，统一连接 WeKnora PostgreSQL 实例中的 `WeKnora` 数据库。
 
-- SDP 后端标准配置：`SMART_DB_NAME=WeKnora`
+- SDP 后端标准配置：`SDP_DB_NAME=WeKnora`
 - WeKnora 主服务标准配置：`DB_NAME=WeKnora`
 - 历史遗留的 `smartknora` 独立数据库不再作为运行时依赖，并已从开发服务器清理
 
@@ -26,13 +26,13 @@ SDPivot（SDP）在 Phase 1 不使用独立数据库，统一连接 WeKnora Post
 SMK 的数据库环境变量必须保持如下语义：
 
 ```env
-SMART_DB_HOST=WeKnora-postgres
-SMART_DB_PORT=5432
-SMART_DB_USER=postgres
-SMART_DB_NAME=WeKnora
+SDP_DB_HOST=WeKnora-postgres
+SDP_DB_PORT=5432
+SDP_DB_USER=postgres
+SDP_DB_NAME=WeKnora
 ```
 
-> 注意：`SMART_DB_NAME` 不得配置为 `smartknora`。`smartknora` 独立库是历史冗余残留，不属于 Phase 1 运行架构。
+> 注意：`SDP_DB_NAME` 不得配置为 `smartknora`。`smartknora` 独立库是历史冗余残留，不属于 Phase 1 运行架构。
 
 ## 3. tenant_id 隔离规范
 
