@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "typecheck": "vue-tsc -b",
+    "build": "npm run typecheck && vite build",
+    "build:op": "npm run typecheck && vite build --mode op",
+    "preview": "vite preview",
+    "test:e2e": "npm run build:op && playwright test"
   },
   "dependencies": {
     "axios": "^1.18.1",
@@ -21,6 +24,7 @@
     "@vue/tsconfig": "^0.9.1",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
-    "vue-tsc": "^3.3.5"
+    "vue-tsc": "^3.3.5",
+    "@playwright/test": "^1.55.1"
   }
 }

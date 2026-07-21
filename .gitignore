@@ -61,3 +61,11 @@ miniprogram/project.private.config.json
 *.bak
 smartknora-server
 sdp-server
+
+# Public OP frontend environment
+!frontend/sdpivot/.env.op
+
+# Playwright artifacts
+playwright-report/
+test-results/
+blob-report/

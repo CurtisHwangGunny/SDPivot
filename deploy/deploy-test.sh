@@ -103,7 +103,9 @@ build_artifacts() {
         cd "$FRONTEND_DIR"
         tar --exclude='./node_modules' --exclude='./dist' -cf - .
     ) | (cd "$frontend_build_dir" && tar -xf -)
-    (cd "$frontend_build_dir" && npm ci && npm run build)
+    (cd "$frontend_build_dir" && npm ci && npm run build:op)
+    test -f "$frontend_build_dir/dist/index.html" || { log_error "Frontend index artifact was not produced"; exit 1; }
+    test ! -e "$frontend_build_dir/dist/ops.html" || { log_error "OP frontend artifact unexpectedly contains ops.html"; exit 1; }
     rm -rf "$FRONTEND_DIR/dist"
     cp -R "$frontend_build_dir/dist" "$FRONTEND_DIR/dist"
     rm -rf "$frontend_build_dir"
