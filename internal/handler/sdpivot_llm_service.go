@@ -14,8 +14,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-var ErrSDPivotLLMNotConfigured = errors.New("sdpivot llm model is not configured")
-var ErrSDPivotLLMModelNotAvailable = errors.New("sdpivot llm model is not available")
+var ErrSDPivotLLMNotConfigured = errors.New("SDPivot LLM model is not configured")
+var ErrSDPivotLLMModelNotAvailable = errors.New("SDPivot LLM model is not available")
 
 type SDPivotLLMService struct {
 	db            *gorm.DB
