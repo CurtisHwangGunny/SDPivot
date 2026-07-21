@@ -1,0 +1,10 @@
+# ========== SDPivot Frontend - Production (pre-built dist) ==========
+FROM nginx:1.27-alpine
+RUN rm -rf /usr/share/nginx/html/*
+COPY dist/ /usr/share/nginx/html/
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+# 注意：busybox wget 解析 localhost 会优先走 IPv6(::1)，而 nginx 仅监听 IPv4，
+# 导致健康检查连接被拒、容器被误标 unhealthy。故改用 curl + 127.0.0.1 强制 IPv4。
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -sf http://127.0.0.1/health || exit 1
+CMD ["nginx", "-g", "daemon off;"]
