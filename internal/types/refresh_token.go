@@ -1,2 +1,2 @@
-// Deprecated. All types in smartknora.go
+// Deprecated. All types in sdpivot.go
 package types

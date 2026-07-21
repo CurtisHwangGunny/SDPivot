@@ -11,18 +11,18 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// SmartKnoraTokenHandler handles token usage queries.
-type SmartKnoraTokenHandler struct {
+// SDPivotTokenHandler handles token usage queries.
+type SDPivotTokenHandler struct {
 	db *gorm.DB
 }
 
-// NewSmartKnoraTokenHandler creates a new token handler.
-func NewSmartKnoraTokenHandler(db *gorm.DB) *SmartKnoraTokenHandler {
-	return &SmartKnoraTokenHandler{db: db}
+// NewSDPivotTokenHandler creates a new token handler.
+func NewSDPivotTokenHandler(db *gorm.DB) *SDPivotTokenHandler {
+	return &SDPivotTokenHandler{db: db}
 }
 
 // RegisterRoutes registers token usage routes.
-func (h *SmartKnoraTokenHandler) RegisterRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotTokenHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	usage := rg.Group("/usage")
 	{
 		usage.GET("/summary", h.GetUsageSummary)
@@ -32,18 +32,18 @@ func (h *SmartKnoraTokenHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // GetUsageSummary returns aggregated token usage.
-func (h *SmartKnoraTokenHandler) GetUsageSummary(c *gin.Context) {
+func (h *SDPivotTokenHandler) GetUsageSummary(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
-	var query types.SmartKnoraTokenUsageQuery
+	var query types.SDPivotTokenUsageQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	db := tenantDB.Model(&types.SmartKnoraTokenUsage{})
+	db := tenantDB.Model(&types.SDPivotTokenUsage{})
 	db = db.Where("tenant_id = ?", tenantID)
 
 	// Default: user's own usage
@@ -67,7 +67,7 @@ func (h *SmartKnoraTokenHandler) GetUsageSummary(c *gin.Context) {
 		}
 	}
 
-	var summary types.SmartKnoraTokenUsageSummary
+	var summary types.SDPivotTokenUsageSummary
 	db.Select(
 		"COALESCE(SUM(input_tokens), 0) as total_prompt_tokens",
 		"COALESCE(SUM(output_tokens), 0) as total_completion_tokens",
@@ -79,12 +79,12 @@ func (h *SmartKnoraTokenHandler) GetUsageSummary(c *gin.Context) {
 }
 
 // GetUsageHistory returns token usage history grouped by time.
-func (h *SmartKnoraTokenHandler) GetUsageHistory(c *gin.Context) {
+func (h *SDPivotTokenHandler) GetUsageHistory(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
-	var query types.SmartKnoraTokenUsageQuery
+	var query types.SDPivotTokenUsageQuery
 	c.ShouldBindQuery(&query)
 
 	groupBy := query.GroupBy
@@ -102,7 +102,7 @@ func (h *SmartKnoraTokenHandler) GetUsageHistory(c *gin.Context) {
 		dateFormat = "YYYY-MM-DD"
 	}
 
-	db := tenantDB.Model(&types.SmartKnoraTokenUsage{})
+	db := tenantDB.Model(&types.SDPivotTokenUsage{})
 	db = db.Where("tenant_id = ? AND user_id = ?", tenantID, userID)
 
 	if query.StartAt != nil {
@@ -127,7 +127,7 @@ func (h *SmartKnoraTokenHandler) GetUsageHistory(c *gin.Context) {
 }
 
 // GetUsageByModel returns token usage broken down by model.
-func (h *SmartKnoraTokenHandler) GetUsageByModel(c *gin.Context) {
+func (h *SDPivotTokenHandler) GetUsageByModel(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
@@ -139,7 +139,7 @@ func (h *SmartKnoraTokenHandler) GetUsageByModel(c *gin.Context) {
 	}
 
 	var results []ModelUsage
-	tenantDB.Model(&types.SmartKnoraTokenUsage{}).
+	tenantDB.Model(&types.SDPivotTokenUsage{}).
 		Where("tenant_id = ? AND user_id = ?", tenantID, userID).
 		Select("model as model_id, SUM(input_tokens + output_tokens) as total_tokens, COUNT(*) as request_count").
 		Group("model").

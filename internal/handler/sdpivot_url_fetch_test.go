@@ -108,8 +108,8 @@ func TestLoadDocumentContentRejectsPrivateURLBeforeRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := &SmartKnoraDocumentHandler{}
-	doc := &types.SmartKnoraDocument{FilePath: server.URL, FileType: ".html"}
+	handler := &SDPivotDocumentHandler{}
+	doc := &types.SDPivotDocument{FilePath: server.URL, FileType: ".html"}
 	if _, err := handler.loadDocumentContent(context.Background(), doc); err == nil {
 		t.Fatal("expected private reparse URL to be rejected")
 	}

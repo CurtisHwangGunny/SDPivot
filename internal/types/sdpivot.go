@@ -7,9 +7,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// SmartKnoraUserProfile extends WeKnora's User with smartKnora-specific fields.
+// SDPivotUserProfile extends WeKnora's User with SDPivot-specific fields.
 // Stored as a separate table joined on user_id, avoiding modifications to WeKnora core types.
-type SmartKnoraUserProfile struct {
+type SDPivotUserProfile struct {
 	ID        string         `json:"id" gorm:"type:varchar(36);primaryKey"`
 	UserID    string         `json:"user_id" gorm:"type:varchar(36);uniqueIndex;not null"`
 	Phone     *string        `json:"phone" gorm:"type:varchar(20);uniqueIndex"`
@@ -20,9 +20,9 @@ type SmartKnoraUserProfile struct {
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
-func (SmartKnoraUserProfile) TableName() string { return "smartknora_user_profiles" }
+func (SDPivotUserProfile) TableName() string { return "smartknora_user_profiles" }
 
-func (p *SmartKnoraUserProfile) BeforeCreate(tx *gorm.DB) error {
+func (p *SDPivotUserProfile) BeforeCreate(tx *gorm.DB) error {
 	if p.ID == "" {
 		p.ID = uuid.New().String()
 	}
@@ -61,7 +61,7 @@ func (oe OrgExt) DaysRemaining() int {
 }
 
 // RefreshToken represents an opaque refresh token stored server-side.
-type SmartKnoraOrgMember struct {
+type SDPivotOrgMember struct {
 	ID        string    `json:"id" gorm:"type:varchar(36);primaryKey"`
 	OrgID     string    `json:"org_id" gorm:"type:varchar(36);not null;index"`
 	UserID    string    `json:"user_id" gorm:"type:varchar(36);not null;index"`
@@ -72,9 +72,9 @@ type SmartKnoraOrgMember struct {
 	UpdatedAt time.Time `json:"updated_at" gorm:"->;-:migration"`
 }
 
-func (SmartKnoraOrgMember) TableName() string { return "org_members" }
+func (SDPivotOrgMember) TableName() string { return "org_members" }
 
-func (m *SmartKnoraOrgMember) BeforeCreate(tx *gorm.DB) error {
+func (m *SDPivotOrgMember) BeforeCreate(tx *gorm.DB) error {
 	if m.ID == "" {
 		m.ID = uuid.New().String()
 	}
@@ -101,8 +101,8 @@ func (rt *RefreshToken) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// SmartKnoraTokenUsage records per-request token consumption for smartKnora metering.
-type SmartKnoraTokenUsage struct {
+// SDPivotTokenUsage records per-request token consumption for SDPivot metering.
+type SDPivotTokenUsage struct {
 	ID               string    `json:"id" gorm:"type:varchar(36);primaryKey"`
 	UserID           *string   `json:"user_id" gorm:"column:user_id;type:varchar(36);index"`
 	OrgID            *string   `json:"org_id,omitempty" gorm:"-"`
@@ -115,9 +115,9 @@ type SmartKnoraTokenUsage struct {
 	CreatedAt        time.Time `json:"created_at" gorm:"column:created_at;index"`
 }
 
-func (SmartKnoraTokenUsage) TableName() string { return "token_usage" }
+func (SDPivotTokenUsage) TableName() string { return "token_usage" }
 
-func (tu *SmartKnoraTokenUsage) BeforeCreate(tx *gorm.DB) error {
+func (tu *SDPivotTokenUsage) BeforeCreate(tx *gorm.DB) error {
 	if tu.ID == "" {
 		tu.ID = uuid.New().String()
 	}
@@ -128,7 +128,7 @@ func (tu *SmartKnoraTokenUsage) BeforeCreate(tx *gorm.DB) error {
 }
 
 // TokenUsageSummary is the aggregated result for usage queries.
-type SmartKnoraTokenUsageSummary struct {
+type SDPivotTokenUsageSummary struct {
 	TotalPromptTokens     int64 `json:"total_prompt_tokens"`
 	TotalCompletionTokens int64 `json:"total_completion_tokens"`
 	TotalTokens           int64 `json:"total_tokens"`
@@ -199,20 +199,20 @@ func (sc *SpaceCategory) BeforeCreate(tx *gorm.DB) error {
 // Request / Response DTOs
 // ────────────────────────────────────────────────────────────────────
 
-type SmartKnoraLoginRequest struct {
+type SDPivotLoginRequest struct {
 	Phone    string `json:"phone" binding:"omitempty"`
 	Email    string `json:"email" binding:"omitempty"`
 	Password string `json:"password" binding:"required"`
 }
 
-type SmartKnoraRegisterRequest struct {
+type SDPivotRegisterRequest struct {
 	Phone    string `json:"phone" binding:"omitempty"`
 	Email    string `json:"email" binding:"omitempty,email"`
 	Password string `json:"password" binding:"required,min=8"`
 	Nickname string `json:"nickname" binding:"omitempty"`
 }
 
-type SmartKnoraAuthResponse struct {
+type SDPivotAuthResponse struct {
 	Success      bool   `json:"success"`
 	Token        string `json:"token"`
 	AccessToken  string `json:"access_token"`
@@ -221,7 +221,7 @@ type SmartKnoraAuthResponse struct {
 	User         *User  `json:"user"`
 }
 
-type SmartKnoraRefreshRequest struct {
+type SDPivotRefreshRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
@@ -271,7 +271,7 @@ type CreateCategoryRequest struct {
 	Color string `json:"color"`
 }
 
-type SmartKnoraTokenUsageQuery struct {
+type SDPivotTokenUsageQuery struct {
 	OrgID   *string `form:"org_id"`
 	UserID  *string `form:"user_id"`
 	StartAt *string `form:"start_at"`

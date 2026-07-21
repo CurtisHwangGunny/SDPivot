@@ -7,12 +7,12 @@ import (
 	"gorm.io/gorm"
 )
 
-const smartKnoraTenantDBKey = "smartknora_tenant_db"
+const sdPivotTenantDBKey = "sdpivot_tenant_db"
 
-// SmartKnoraTenantContext creates a middleware that binds a request-scoped
+// SDPivotTenantContext creates a middleware that binds a request-scoped
 // database transaction to the current request and sets PostgreSQL tenant
-// context for RLS policies. Must run AFTER SmartKnoraAuth.
-func SmartKnoraTenantContext(baseDB *gorm.DB) gin.HandlerFunc {
+// context for RLS policies. Must run AFTER SDPivotAuth.
+func SDPivotTenantContext(baseDB *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tenantID := GetTenantID(c)
 		if tenantID == 0 {
@@ -41,7 +41,7 @@ func SmartKnoraTenantContext(baseDB *gorm.DB) gin.HandlerFunc {
 			}
 		}
 
-		c.Set(smartKnoraTenantDBKey, tx)
+		c.Set(sdPivotTenantDBKey, tx)
 		defer func() {
 			if r := recover(); r != nil {
 				_ = tx.Rollback().Error
@@ -62,7 +62,7 @@ func SmartKnoraTenantContext(baseDB *gorm.DB) gin.HandlerFunc {
 // TenantDB returns the request-scoped tenant transaction when available.
 func TenantDB(c *gin.Context, fallback *gorm.DB) *gorm.DB {
 	if c != nil {
-		if tx, ok := c.Get(smartKnoraTenantDBKey); ok {
+		if tx, ok := c.Get(sdPivotTenantDBKey); ok {
 			if tenantDB, ok := tx.(*gorm.DB); ok && tenantDB != nil {
 				return tenantDB
 			}

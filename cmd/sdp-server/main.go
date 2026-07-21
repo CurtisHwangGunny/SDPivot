@@ -1,5 +1,5 @@
-// smartKnora (随越·智枢) standalone server
-// Connects directly to PostgreSQL + Redis, serves smartKnora API
+// SDPivot (随越·智枢) standalone server
+// Connects directly to PostgreSQL + Redis, serves SDPivot API
 package main
 
 import (
@@ -26,17 +26,17 @@ import (
 
 func main() {
 	// ── Config from env ────────────────────────────────────────
-	dbHost := getEnv("SMART_DB_HOST", "localhost")
-	dbPort := getEnv("SMART_DB_PORT", "5432")
-	dbUser := getEnv("SMART_DB_USER", "postgres")
-	dbPass := getEnv("SMART_DB_PASSWORD", "postgres")
-	dbName := getEnv("SMART_DB_NAME", "WeKnora")
-	redisAddr := getEnv("REDIS_ADDR", "")
-	redisPassword := getEnv("REDIS_PASSWORD", "")
-	jwtSecret := getEnv("SMARTKNORA_JWT_SECRET", "")
+	dbHost := getEnvFallback("SDP_DB_HOST", "SMART_DB_HOST", "localhost")
+	dbPort := getEnvFallback("SDP_DB_PORT", "SMART_DB_PORT", "5432")
+	dbUser := getEnvFallback("SDP_DB_USER", "SMART_DB_USER", "postgres")
+	dbPass := getEnvFallback("SDP_DB_PASSWORD", "SMART_DB_PASSWORD", "postgres")
+	dbName := getEnvFallback("SDP_DB_NAME", "SMART_DB_NAME", "WeKnora")
+	redisAddr := getEnvFallback("SDP_REDIS_ADDR", "REDIS_ADDR", "")
+	redisPassword := getEnvFallback("SDP_REDIS_PASSWORD", "REDIS_PASSWORD", "")
+	jwtSecret := getEnvFallback("SDP_JWT_SECRET", "SMARTKNORA_JWT_SECRET", "")
 	if jwtSecret == "" {
-		log.Println("WARNING: Using default JWT secret. Set SMARTKNORA_JWT_SECRET in production!")
-		jwtSecret = "smartknora-dev-secret-change-in-production"
+		log.Println("WARNING: Using default JWT secret. Set SDP_JWT_SECRET in production!")
+		jwtSecret = "sdp-dev-secret-change-in-production"
 	}
 	port := getEnv("PORT", "8081")
 
@@ -85,72 +85,77 @@ func main() {
 
 	// ── Health check ───────────────────────────────────────────
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok", "service": "smartknora", "version": "2.0.0"})
+		c.JSON(200, gin.H{"status": "ok", "service": "sdp", "version": "2.0.0"})
 	})
 
-	// ── smartKnora API ─────────────────────────────────────────
-	sk := r.Group("/api/v1/smartknora")
+	registerSDPivotRoutes := func(sk *gin.RouterGroup) {
+		registerSDPivotHealth(sk)
 
-	// Public routes
-	authHandler := handler.NewSmartKnoraAuthHandler(db, jwtManager, redisClient)
-	authHandler.RegisterRoutes(sk)
+		// Public routes
+		authHandler := handler.NewSDPivotAuthHandler(db, jwtManager, redisClient)
+		authHandler.RegisterRoutes(sk)
 
-	// Protected routes
-	protected := sk.Group("")
-	protected.Use(middleware.SmartKnoraAuth(jwtManager))
-	protected.Use(middleware.SmartKnoraTenantContext(db))
-	{
-		// Sprint 1: User profile
-		protected.GET("/profile", func(c *gin.Context) {
-			c.JSON(200, gin.H{"user_id": middleware.GetUserID(c)})
-		})
-		protected.PUT("/profile", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "profile updated"})
-		})
-		protected.PUT("/password", func(c *gin.Context) {
-			c.JSON(200, gin.H{"message": "password changed"})
-		})
+		// Protected routes
+		protected := sk.Group("")
+		protected.Use(middleware.SDPivotAuth(jwtManager))
+		protected.Use(middleware.SDPivotTenantContext(db))
+		protected.Use(middleware.TokenMeteringMiddleware(db))
+		{
+			// Sprint 1: User profile
+			protected.GET("/profile", func(c *gin.Context) {
+				c.JSON(200, gin.H{"user_id": middleware.GetUserID(c)})
+			})
+			protected.PUT("/profile", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "profile updated"})
+			})
+			protected.PUT("/password", func(c *gin.Context) {
+				c.JSON(200, gin.H{"message": "password changed"})
+			})
 
-		// Sprint 1: Organization management
-		orgHandler := handler.NewSmartKnoraOrgHandler(db)
-		orgHandler.RegisterRoutes(protected)
+			// Sprint 1: Organization management
+			orgHandler := handler.NewSDPivotOrgHandler(db)
+			orgHandler.RegisterRoutes(protected)
 
-		// Sprint 1: Knowledge space management
-		spaceHandler := handler.NewSmartKnoraSpaceHandler(db)
-		spaceHandler.RegisterRoutes(protected)
+			// Sprint 1: Knowledge space management
+			spaceHandler := handler.NewSDPivotSpaceHandler(db)
+			spaceHandler.RegisterRoutes(protected)
 
-		// Sprint 1: Token usage queries
-		tokenHandler := handler.NewSmartKnoraTokenHandler(db)
-		tokenHandler.RegisterRoutes(protected)
+			// Sprint 1: Token usage queries
+			tokenHandler := handler.NewSDPivotTokenHandler(db)
+			tokenHandler.RegisterRoutes(protected)
 
-		// Sprint 2: Document management
-		docHandler := handler.NewSmartKnoraDocumentHandler(db)
-		docHandler.RegisterRoutes(protected)
+			// Sprint 2: Document management
+			docHandler := handler.NewSDPivotDocumentHandler(db)
+			docHandler.RegisterRoutes(protected)
 
-		// Sprint 3: AI Q&A + Admin
-		qaHandler := handler.NewSmartKnoraQAHandler(db)
-		qaHandler.RegisterRoutes(protected)
+			// Sprint 3: AI Q&A + Admin
+			qaHandler := handler.NewSDPivotQAHandler(db)
+			qaHandler.RegisterRoutes(protected)
 
-		// Sprint 4: AI Writing + Operations
-		writingHandler := handler.NewSmartKnoraWritingHandler(db)
-		writingHandler.RegisterRoutes(protected)
+			// Sprint 4: AI Writing + Operations
+			writingHandler := handler.NewSDPivotWritingHandler(db)
+			writingHandler.RegisterRoutes(protected)
 
-		// Ops admin auth (PRD 1.1.4)
-		opsHandler := handler.NewSmartKnoraOpsHandler(db, jwtManager)
-		opsHandler.RegisterPublicRoutes(sk)
-		opsHandler.RegisterProtectedRoutes(protected)
+			// Ops admin auth (PRD 1.1.4)
+			opsHandler := handler.NewSDPivotOpsHandler(db, jwtManager)
+			opsHandler.RegisterPublicRoutes(sk)
+			opsHandler.RegisterProtectedRoutes(protected)
 
-		// Ops admin management handler (PRD 4.1)
-		opsAdminHandler := handler.NewSmartKnoraOpsAdminHandler(db)
-		opsAdminHandler.RegisterOpsRoutes(protected)
-		opsAdminHandler.RegisterPublicOpsRoutes(sk)
+			// Ops admin management handler (PRD 4.1)
+			opsAdminHandler := handler.NewSDPivotOpsAdminHandler(db)
+			opsAdminHandler.RegisterOpsRoutes(protected)
+			opsAdminHandler.RegisterPublicOpsRoutes(sk)
+		}
 	}
+
+	registerSDPivotRoutes(r.Group("/api/v1/sdp"))
+	registerSDPivotRoutes(r.Group("/api/v1/smartknora"))
 
 	// ── Start Server ───────────────────────────────────────────
 	srv := &http.Server{Addr: ":" + port, Handler: r}
 
 	go func() {
-		log.Printf("[Server] smartKnora v2.0.0 starting on :%s", port)
+		log.Printf("[Server] SDPivot v2.0.0 starting on :%s", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
 		}
@@ -168,7 +173,7 @@ func main() {
 }
 
 func getAllowedOrigins() []string {
-	value := os.Getenv("SMARTKNORA_ALLOWED_ORIGINS")
+	value := getEnvFallback("SDP_ALLOWED_ORIGINS", "SMARTKNORA_ALLOWED_ORIGINS", "")
 	if value == "" {
 		return []string{
 			// Dev server (43.133.61.77)
@@ -198,4 +203,17 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func getEnvFallback(primary, fallback, def string) string {
+	if value := os.Getenv(primary); value != "" {
+		return value
+	}
+	return getEnv(fallback, def)
+}
+
+func registerSDPivotHealth(group *gin.RouterGroup) {
+	group.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "sdp", "version": "2.0.0"})
+	})
 }

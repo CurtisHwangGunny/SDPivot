@@ -8,7 +8,7 @@ import (
 )
 
 // Document represents an imported document in a knowledge space.
-type SmartKnoraDocument struct {
+type SDPivotDocument struct {
 	ID              string         `json:"id" gorm:"type:varchar(36);primaryKey"`
 	TenantID        uint64         `json:"tenant_id" gorm:"not null;index"`
 	SpaceID         string         `json:"space_id" gorm:"type:varchar(36);not null;index"`
@@ -29,9 +29,9 @@ type SmartKnoraDocument struct {
 	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
-func (SmartKnoraDocument) TableName() string { return "documents" }
+func (SDPivotDocument) TableName() string { return "documents" }
 
-func (d *SmartKnoraDocument) BeforeCreate(tx *gorm.DB) error {
+func (d *SDPivotDocument) BeforeCreate(tx *gorm.DB) error {
 	if d.ID == "" {
 		d.ID = uuid.New().String()
 	}
@@ -39,7 +39,7 @@ func (d *SmartKnoraDocument) BeforeCreate(tx *gorm.DB) error {
 }
 
 // DocumentChunk represents a chunk of a parsed document.
-type SmartKnoraDocumentChunk struct {
+type SDPivotDocumentChunk struct {
 	ID          string    `json:"id" gorm:"type:varchar(36);primaryKey"`
 	DocumentID  string    `json:"document_id" gorm:"type:varchar(36);not null;index"`
 	TenantID    uint64    `json:"tenant_id" gorm:"not null;index"`
@@ -51,9 +51,9 @@ type SmartKnoraDocumentChunk struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-func (SmartKnoraDocumentChunk) TableName() string { return "document_chunks" }
+func (SDPivotDocumentChunk) TableName() string { return "document_chunks" }
 
-func (c *SmartKnoraDocumentChunk) BeforeCreate(tx *gorm.DB) error {
+func (c *SDPivotDocumentChunk) BeforeCreate(tx *gorm.DB) error {
 	if c.ID == "" {
 		c.ID = uuid.New().String()
 	}
@@ -61,7 +61,7 @@ func (c *SmartKnoraDocumentChunk) BeforeCreate(tx *gorm.DB) error {
 }
 
 // DocumentVersion represents a version of a document.
-type SmartKnoraDocumentVersion struct {
+type SDPivotDocumentVersion struct {
 	ID         string    `json:"id" gorm:"type:varchar(36);primaryKey"`
 	DocumentID string    `json:"document_id" gorm:"type:varchar(36);not null;index"`
 	TenantID   uint64    `json:"tenant_id" gorm:"not null;index"`
@@ -73,9 +73,9 @@ type SmartKnoraDocumentVersion struct {
 	CreatedBy  string    `json:"created_by" gorm:"type:varchar(36)"`
 }
 
-func (SmartKnoraDocumentVersion) TableName() string { return "document_versions" }
+func (SDPivotDocumentVersion) TableName() string { return "document_versions" }
 
-func (v *SmartKnoraDocumentVersion) BeforeCreate(tx *gorm.DB) error {
+func (v *SDPivotDocumentVersion) BeforeCreate(tx *gorm.DB) error {
 	if v.ID == "" {
 		v.ID = uuid.New().String()
 	}
@@ -83,7 +83,7 @@ func (v *SmartKnoraDocumentVersion) BeforeCreate(tx *gorm.DB) error {
 }
 
 // ChunkStrategy represents chunking configuration.
-type SmartKnoraChunkStrategy struct {
+type SDPivotChunkStrategy struct {
 	ID           string    `json:"id" gorm:"type:varchar(36);primaryKey"`
 	TenantID     uint64    `json:"tenant_id" gorm:"not null;index"`
 	SpaceID      string    `json:"space_id" gorm:"type:varchar(36);index"`
@@ -97,9 +97,9 @@ type SmartKnoraChunkStrategy struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-func (SmartKnoraChunkStrategy) TableName() string { return "chunk_strategies" }
+func (SDPivotChunkStrategy) TableName() string { return "chunk_strategies" }
 
-func (s *SmartKnoraChunkStrategy) BeforeCreate(tx *gorm.DB) error {
+func (s *SDPivotChunkStrategy) BeforeCreate(tx *gorm.DB) error {
 	if s.ID == "" {
 		s.ID = uuid.New().String()
 	}
@@ -136,7 +136,7 @@ type SearchRequest struct {
 	TopK    int    `json:"top_k"`
 }
 
-type SmartKnoraSearchResult struct {
+type SDPivotSearchResult struct {
 	DocumentID string  `json:"document_id"`
 	ChunkID    string  `json:"chunk_id"`
 	Content    string  `json:"content"`

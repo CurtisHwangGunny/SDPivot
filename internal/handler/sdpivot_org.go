@@ -12,18 +12,18 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// SmartKnoraOrgHandler handles enterprise/organization management.
-type SmartKnoraOrgHandler struct {
+// SDPivotOrgHandler handles enterprise/organization management.
+type SDPivotOrgHandler struct {
 	db *gorm.DB
 }
 
-// NewSmartKnoraOrgHandler creates a new org handler.
-func NewSmartKnoraOrgHandler(db *gorm.DB) *SmartKnoraOrgHandler {
-	return &SmartKnoraOrgHandler{db: db}
+// NewSDPivotOrgHandler creates a new org handler.
+func NewSDPivotOrgHandler(db *gorm.DB) *SDPivotOrgHandler {
+	return &SDPivotOrgHandler{db: db}
 }
 
 // RegisterRoutes registers org management routes.
-func (h *SmartKnoraOrgHandler) RegisterRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotOrgHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	orgs := rg.Group("/organizations")
 	{
 		orgs.POST("", h.CreateOrganization)
@@ -39,7 +39,7 @@ func (h *SmartKnoraOrgHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // CreateOrganization creates a new enterprise organization.
-func (h *SmartKnoraOrgHandler) CreateOrganization(c *gin.Context) {
+func (h *SDPivotOrgHandler) CreateOrganization(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	var req types.CreateOrgRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -68,7 +68,7 @@ func (h *SmartKnoraOrgHandler) CreateOrganization(c *gin.Context) {
 		return
 	}
 
-	// Create smartKnora extension with auth status
+	// Create SDPivot extension with auth status
 	authExpires := now.Add(30 * 24 * time.Hour) // 30-day trial
 	orgExt := types.OrgExt{
 		OrgID:         org.ID,
@@ -82,7 +82,7 @@ func (h *SmartKnoraOrgHandler) CreateOrganization(c *gin.Context) {
 	tenantDB.Create(&orgExt)
 
 	// Add owner as org member
-	member := types.SmartKnoraOrgMember{
+	member := types.SDPivotOrgMember{
 		ID:       uuid.New().String(),
 		OrgID:    org.ID,
 		UserID:   userID,
@@ -100,11 +100,11 @@ func (h *SmartKnoraOrgHandler) CreateOrganization(c *gin.Context) {
 }
 
 // ListOrganizations lists organizations the current user belongs to.
-func (h *SmartKnoraOrgHandler) ListOrganizations(c *gin.Context) {
+func (h *SDPivotOrgHandler) ListOrganizations(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 
-	var members []types.SmartKnoraOrgMember
+	var members []types.SDPivotOrgMember
 	tenantDB.Where("user_id = ? AND status = 'active'", userID).Find(&members)
 
 	orgIDs := make([]string, len(members))
@@ -139,7 +139,7 @@ func (h *SmartKnoraOrgHandler) ListOrganizations(c *gin.Context) {
 }
 
 // GetOrganization gets a specific organization.
-func (h *SmartKnoraOrgHandler) GetOrganization(c *gin.Context) {
+func (h *SDPivotOrgHandler) GetOrganization(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 
@@ -161,7 +161,7 @@ func (h *SmartKnoraOrgHandler) GetOrganization(c *gin.Context) {
 }
 
 // UpdateOrganization updates org info.
-func (h *SmartKnoraOrgHandler) UpdateOrganization(c *gin.Context) {
+func (h *SDPivotOrgHandler) UpdateOrganization(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 	userID := middleware.GetUserID(c)
@@ -199,7 +199,7 @@ func (h *SmartKnoraOrgHandler) UpdateOrganization(c *gin.Context) {
 }
 
 // JoinOrganization allows a user to join via invite code.
-func (h *SmartKnoraOrgHandler) JoinOrganization(c *gin.Context) {
+func (h *SDPivotOrgHandler) JoinOrganization(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	var req types.JoinOrgRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -217,14 +217,14 @@ func (h *SmartKnoraOrgHandler) JoinOrganization(c *gin.Context) {
 	}
 
 	// Check if already a member
-	var existing types.SmartKnoraOrgMember
+	var existing types.SDPivotOrgMember
 	if err := tenantDB.Where("org_id = ? AND user_id = ?", org.ID, userID).First(&existing).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "already a member"})
 		return
 	}
 
 	// Add as member
-	member := types.SmartKnoraOrgMember{
+	member := types.SDPivotOrgMember{
 		ID:       uuid.New().String(),
 		OrgID:    org.ID,
 		UserID:   userID,
@@ -238,24 +238,24 @@ func (h *SmartKnoraOrgHandler) JoinOrganization(c *gin.Context) {
 }
 
 // ListMembers lists members of an organization.
-func (h *SmartKnoraOrgHandler) ListMembers(c *gin.Context) {
+func (h *SDPivotOrgHandler) ListMembers(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 
-	var members []types.SmartKnoraOrgMember
+	var members []types.SDPivotOrgMember
 	tenantDB.Where("org_id = ? AND status = 'active'", orgID).Find(&members)
 
 	c.JSON(http.StatusOK, gin.H{"members": members})
 }
 
 // AddMember adds a member to an organization.
-func (h *SmartKnoraOrgHandler) AddMember(c *gin.Context) {
+func (h *SDPivotOrgHandler) AddMember(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller is owner/admin of the org
-	var caller types.SmartKnoraOrgMember
+	var caller types.SDPivotOrgMember
 	if err := tenantDB.Where("org_id = ? AND user_id = ? AND role IN ('owner','admin')", orgID, callerID).First(&caller).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to add members"})
 		return
@@ -274,7 +274,7 @@ func (h *SmartKnoraOrgHandler) AddMember(c *gin.Context) {
 		req.Role = "viewer"
 	}
 
-	member := types.SmartKnoraOrgMember{
+	member := types.SDPivotOrgMember{
 		ID:       uuid.New().String(),
 		OrgID:    orgID,
 		UserID:   req.UserID,
@@ -288,20 +288,20 @@ func (h *SmartKnoraOrgHandler) AddMember(c *gin.Context) {
 }
 
 // RemoveMember removes a member from an organization.
-func (h *SmartKnoraOrgHandler) RemoveMember(c *gin.Context) {
+func (h *SDPivotOrgHandler) RemoveMember(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 	targetUserID := c.Param("userId")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller is owner/admin of the org
-	var caller types.SmartKnoraOrgMember
+	var caller types.SDPivotOrgMember
 	if err := tenantDB.Where("org_id = ? AND user_id = ? AND role IN ('owner','admin')", orgID, callerID).First(&caller).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to remove members"})
 		return
 	}
 
-	if err := tenantDB.Where("org_id = ? AND user_id = ?", orgID, targetUserID).Delete(&types.SmartKnoraOrgMember{}).Error; err != nil {
+	if err := tenantDB.Where("org_id = ? AND user_id = ?", orgID, targetUserID).Delete(&types.SDPivotOrgMember{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove member"})
 		return
 	}
@@ -310,14 +310,14 @@ func (h *SmartKnoraOrgHandler) RemoveMember(c *gin.Context) {
 }
 
 // UpdateMemberRole updates a member's role.
-func (h *SmartKnoraOrgHandler) UpdateMemberRole(c *gin.Context) {
+func (h *SDPivotOrgHandler) UpdateMemberRole(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	orgID := c.Param("id")
 	targetUserID := c.Param("userId")
 	callerID := middleware.GetUserID(c)
 
 	// Verify caller is owner/admin of the org
-	var caller types.SmartKnoraOrgMember
+	var caller types.SDPivotOrgMember
 	if err := tenantDB.Where("org_id = ? AND user_id = ? AND role IN ('owner','admin')", orgID, callerID).First(&caller).Error; err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to update member roles"})
 		return
@@ -331,7 +331,7 @@ func (h *SmartKnoraOrgHandler) UpdateMemberRole(c *gin.Context) {
 		return
 	}
 
-	tenantDB.Model(&types.SmartKnoraOrgMember{}).
+	tenantDB.Model(&types.SDPivotOrgMember{}).
 		Where("org_id = ? AND user_id = ?", orgID, targetUserID).
 		Update("role", req.Role)
 

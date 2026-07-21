@@ -14,15 +14,15 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-var ErrSmartKnoraLLMNotConfigured = errors.New("smartknora llm model is not configured")
-var ErrSmartKnoraLLMModelNotAvailable = errors.New("smartknora llm model is not available")
+var ErrSDPivotLLMNotConfigured = errors.New("sdpivot llm model is not configured")
+var ErrSDPivotLLMModelNotAvailable = errors.New("sdpivot llm model is not available")
 
-type SmartKnoraLLMService struct {
+type SDPivotLLMService struct {
 	db            *gorm.DB
 	ollamaService *ollama.OllamaService
 }
 
-type SmartKnoraLLMResult struct {
+type SDPivotLLMResult struct {
 	Content          string
 	ModelID          string
 	ModelName        string
@@ -32,22 +32,22 @@ type SmartKnoraLLMResult struct {
 	FinishReason     string
 }
 
-func NewSmartKnoraLLMService(db *gorm.DB) *SmartKnoraLLMService {
+func NewSDPivotLLMService(db *gorm.DB) *SDPivotLLMService {
 	ollamaService, _ := ollama.GetOllamaService()
-	return &SmartKnoraLLMService{db: db, ollamaService: ollamaService}
+	return &SDPivotLLMService{db: db, ollamaService: ollamaService}
 }
 
-func (s *SmartKnoraLLMService) Generate(ctx context.Context, tenantID uint64, systemPrompt string, userPrompt string, maxTokens int) (*SmartKnoraLLMResult, error) {
+func (s *SDPivotLLMService) Generate(ctx context.Context, tenantID uint64, systemPrompt string, userPrompt string, maxTokens int) (*SDPivotLLMResult, error) {
 	return s.GenerateWithModel(ctx, tenantID, "", systemPrompt, userPrompt, maxTokens)
 }
 
-func (s *SmartKnoraLLMService) GenerateWithModel(ctx context.Context, tenantID uint64, modelID string, systemPrompt string, userPrompt string, maxTokens int) (*SmartKnoraLLMResult, error) {
+func (s *SDPivotLLMService) GenerateWithModel(ctx context.Context, tenantID uint64, modelID string, systemPrompt string, userPrompt string, maxTokens int) (*SDPivotLLMResult, error) {
 	model, err := s.findChatModel(ctx, tenantID, modelID)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(model.Parameters.APIKey) == "" && model.Source != types.ModelSourceLocal {
-		return nil, fmt.Errorf("%w: model %s missing api_key", ErrSmartKnoraLLMNotConfigured, model.Name)
+		return nil, fmt.Errorf("%w: model %s missing api_key", ErrSDPivotLLMNotConfigured, model.Name)
 	}
 
 	chatModel, err := chat.NewChat(chat.ConfigFromModel(model, model.Parameters.AppID, model.Parameters.AppSecret), s.ollamaService)
@@ -65,7 +65,7 @@ func (s *SmartKnoraLLMService) GenerateWithModel(ctx context.Context, tenantID u
 	if err != nil {
 		return nil, err
 	}
-	return &SmartKnoraLLMResult{
+	return &SDPivotLLMResult{
 		Content:          strings.TrimSpace(resp.Content),
 		ModelID:          model.ID,
 		ModelName:        model.Name,
@@ -76,11 +76,11 @@ func (s *SmartKnoraLLMService) GenerateWithModel(ctx context.Context, tenantID u
 	}, nil
 }
 
-func (s *SmartKnoraLLMService) findDefaultChatModel(ctx context.Context, tenantID uint64) (*types.Model, error) {
+func (s *SDPivotLLMService) findDefaultChatModel(ctx context.Context, tenantID uint64) (*types.Model, error) {
 	return s.findChatModel(ctx, tenantID, "")
 }
 
-func (s *SmartKnoraLLMService) findChatModel(ctx context.Context, tenantID uint64, modelID string) (*types.Model, error) {
+func (s *SDPivotLLMService) findChatModel(ctx context.Context, tenantID uint64, modelID string) (*types.Model, error) {
 	baseQuery := func() *gorm.DB {
 		return s.db.WithContext(ctx).
 			Where("(tenant_id = ? OR is_builtin = true) AND deleted_at IS NULL AND status = ?", tenantID, types.ModelStatusActive).
@@ -89,9 +89,9 @@ func (s *SmartKnoraLLMService) findChatModel(ctx context.Context, tenantID uint6
 	if strings.TrimSpace(modelID) != "" {
 		var model types.Model
 		if err := baseQuery().Where("id = ?", strings.TrimSpace(modelID)).First(&model).Error; err == nil {
-			return normalizeSmartKnoraModel(&model), nil
+			return normalizeSDPivotModel(&model), nil
 		} else if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrSmartKnoraLLMModelNotAvailable
+			return nil, ErrSDPivotLLMModelNotAvailable
 		} else {
 			return nil, err
 		}
@@ -106,17 +106,17 @@ func (s *SmartKnoraLLMService) findChatModel(ctx context.Context, tenantID uint6
 		var model types.Model
 		err := buildQuery(baseQuery()).Order("updated_at DESC").First(&model).Error
 		if err == nil {
-			return normalizeSmartKnoraModel(&model), nil
+			return normalizeSDPivotModel(&model), nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 	}
 
-	return nil, ErrSmartKnoraLLMNotConfigured
+	return nil, ErrSDPivotLLMNotConfigured
 }
 
-func normalizeSmartKnoraModel(model *types.Model) *types.Model {
+func normalizeSDPivotModel(model *types.Model) *types.Model {
 	if model == nil {
 		return nil
 	}
@@ -126,9 +126,6 @@ func normalizeSmartKnoraModel(model *types.Model) *types.Model {
 	if model.Source == types.ModelSourceDeepseek {
 		if model.Parameters.Provider == "" {
 			model.Parameters.Provider = "deepseek"
-		}
-		if model.Parameters.BaseURL == "" {
-			model.Parameters.BaseURL = "https://api.deepseek.com/v1"
 		}
 		model.Source = types.ModelSourceRemote
 	}
@@ -144,12 +141,12 @@ func normalizeSmartKnoraModel(model *types.Model) *types.Model {
 	return model
 }
 
-func (s *SmartKnoraLLMService) recordUsage(tenantID uint64, userID string, modelID string, apiPath string, promptTokens, completionTokens, totalTokens int) {
+func (s *SDPivotLLMService) recordUsage(tenantID uint64, userID string, modelID string, apiPath string, promptTokens, completionTokens, totalTokens int) {
 	if s == nil || s.db == nil || totalTokens <= 0 {
 		return
 	}
 	uid := userID
-	usage := types.SmartKnoraTokenUsage{
+	usage := types.SDPivotTokenUsage{
 		UserID:           &uid,
 		TenantID:         tenantID,
 		ModelID:          modelID,

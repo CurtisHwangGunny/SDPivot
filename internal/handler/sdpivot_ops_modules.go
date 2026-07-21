@@ -28,7 +28,7 @@ type OpsSensitiveWord struct {
 
 func (OpsSensitiveWord) TableName() string { return "sensitive_words" }
 
-func (h *SmartKnoraOpsAdminHandler) ListSensitiveWords(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListSensitiveWords(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -55,7 +55,7 @@ func (h *SmartKnoraOpsAdminHandler) ListSensitiveWords(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"words": words, "total": total, "page": page, "page_size": pageSize})
 }
 
-func (h *SmartKnoraOpsAdminHandler) CreateSensitiveWord(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) CreateSensitiveWord(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -89,7 +89,7 @@ func (h *SmartKnoraOpsAdminHandler) CreateSensitiveWord(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"word": sw})
 }
 
-func (h *SmartKnoraOpsAdminHandler) DeleteSensitiveWord(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) DeleteSensitiveWord(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -99,7 +99,7 @@ func (h *SmartKnoraOpsAdminHandler) DeleteSensitiveWord(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-func (h *SmartKnoraOpsAdminHandler) ListFilterHits(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListFilterHits(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -134,7 +134,7 @@ func (h *SmartKnoraOpsAdminHandler) ListFilterHits(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"hits": rows, "total": total, "page": page, "page_size": pageSize})
 }
 
-func (h *SmartKnoraOpsAdminHandler) UpdateFilterHit(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) UpdateFilterHit(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -203,7 +203,7 @@ type OpsInvoice struct {
 
 func (OpsInvoice) TableName() string { return "invoices" }
 
-func (h *SmartKnoraOpsAdminHandler) ListBillingPlans(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListBillingPlans(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -212,7 +212,7 @@ func (h *SmartKnoraOpsAdminHandler) ListBillingPlans(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"plans": plans})
 }
 
-func (h *SmartKnoraOpsAdminHandler) CreateBillingPlan(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) CreateBillingPlan(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -241,7 +241,7 @@ func (h *SmartKnoraOpsAdminHandler) CreateBillingPlan(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"plan": plan})
 }
 
-func (h *SmartKnoraOpsAdminHandler) UpdateBillingPlan(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) UpdateBillingPlan(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -278,7 +278,7 @@ func (h *SmartKnoraOpsAdminHandler) UpdateBillingPlan(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
 }
 
-func (h *SmartKnoraOpsAdminHandler) DeleteBillingPlan(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) DeleteBillingPlan(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -288,7 +288,7 @@ func (h *SmartKnoraOpsAdminHandler) DeleteBillingPlan(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-func (h *SmartKnoraOpsAdminHandler) ListSubscriptions(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListSubscriptions(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -323,7 +323,7 @@ func (h *SmartKnoraOpsAdminHandler) ListSubscriptions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"subscriptions": rows, "total": total, "page": page, "page_size": pageSize})
 }
 
-func (h *SmartKnoraOpsAdminHandler) UpdateSubscription(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) UpdateSubscription(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -364,7 +364,7 @@ func (h *SmartKnoraOpsAdminHandler) UpdateSubscription(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "subscription updated"})
 }
 
-func (h *SmartKnoraOpsAdminHandler) ListInvoices(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListInvoices(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -395,7 +395,7 @@ type OpsSystemConfig struct {
 
 func (OpsSystemConfig) TableName() string { return "system_configs" }
 
-func (h *SmartKnoraOpsAdminHandler) ListConfigs(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListConfigs(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -404,7 +404,7 @@ func (h *SmartKnoraOpsAdminHandler) ListConfigs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"configs": configs})
 }
 
-func (h *SmartKnoraOpsAdminHandler) UpdateConfig(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) UpdateConfig(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -437,7 +437,7 @@ func (h *SmartKnoraOpsAdminHandler) UpdateConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "config updated", "key": key, "value": req.Value})
 }
 
-func (h *SmartKnoraOpsAdminHandler) GetTrialConfig(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) GetTrialConfig(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -451,7 +451,7 @@ func (h *SmartKnoraOpsAdminHandler) GetTrialConfig(c *gin.Context) {
 	})
 }
 
-func (h *SmartKnoraOpsAdminHandler) UpdateTrialConfig(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) UpdateTrialConfig(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -473,7 +473,7 @@ func (h *SmartKnoraOpsAdminHandler) UpdateTrialConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "trial config updated"})
 }
 
-func (h *SmartKnoraOpsAdminHandler) upsertConfig(key, value, description string) {
+func (h *SDPivotOpsAdminHandler) upsertConfig(key, value, description string) {
 	var existing OpsSystemConfig
 	if err := h.db.Where("key = ?", key).First(&existing).Error; err == nil {
 		h.db.Model(&existing).Updates(map[string]interface{}{"value": value, "updated_at": time.Now()})
@@ -482,7 +482,7 @@ func (h *SmartKnoraOpsAdminHandler) upsertConfig(key, value, description string)
 	}
 }
 
-func (h *SmartKnoraOpsAdminHandler) getOrCreateConfigValue(key, defaultValue, description string) string {
+func (h *SDPivotOpsAdminHandler) getOrCreateConfigValue(key, defaultValue, description string) string {
 	var cfg OpsSystemConfig
 	if err := h.db.Where("key = ?", key).First(&cfg).Error; err == nil {
 		if cfg.Value != "" {
@@ -510,7 +510,7 @@ func (h *SmartKnoraOpsAdminHandler) getOrCreateConfigValue(key, defaultValue, de
 // Models — 模型管理（PRD §4.1.3）
 // ============================================================
 
-func (h *SmartKnoraOpsAdminHandler) ListModels(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListModels(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -540,7 +540,7 @@ func (h *SmartKnoraOpsAdminHandler) ListModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"models": models})
 }
 
-func (h *SmartKnoraOpsAdminHandler) CreateModel(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) CreateModel(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -585,7 +585,7 @@ func (h *SmartKnoraOpsAdminHandler) CreateModel(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"model": model})
 }
 
-func (h *SmartKnoraOpsAdminHandler) UpdateModel(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) UpdateModel(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -618,7 +618,7 @@ func (h *SmartKnoraOpsAdminHandler) UpdateModel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "model updated"})
 }
 
-func (h *SmartKnoraOpsAdminHandler) DeleteModel(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) DeleteModel(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -628,7 +628,7 @@ func (h *SmartKnoraOpsAdminHandler) DeleteModel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "model deleted"})
 }
 
-func (h *SmartKnoraOpsAdminHandler) SetDefaultModel(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) SetDefaultModel(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}

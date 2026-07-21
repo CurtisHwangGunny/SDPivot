@@ -16,19 +16,19 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// SmartKnoraQAHandler handles AI Q&A sessions.
-type SmartKnoraQAHandler struct {
+// SDPivotQAHandler handles AI Q&A sessions.
+type SDPivotQAHandler struct {
 	db  *gorm.DB
-	llm *SmartKnoraLLMService
+	llm *SDPivotLLMService
 }
 
-// NewSmartKnoraQAHandler creates a new QA handler.
-func NewSmartKnoraQAHandler(db *gorm.DB) *SmartKnoraQAHandler {
-	return &SmartKnoraQAHandler{db: db, llm: NewSmartKnoraLLMService(db)}
+// NewSDPivotQAHandler creates a new QA handler.
+func NewSDPivotQAHandler(db *gorm.DB) *SDPivotQAHandler {
+	return &SDPivotQAHandler{db: db, llm: NewSDPivotLLMService(db)}
 }
 
 // RegisterRoutes registers Q&A routes.
-func (h *SmartKnoraQAHandler) RegisterRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotQAHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	q := rg.Group("/qa")
 	{
 		q.GET("/models", h.ListModels)
@@ -49,7 +49,7 @@ func (h *SmartKnoraQAHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // ListModels returns the active chat models visible to the current tenant.
-func (h *SmartKnoraQAHandler) ListModels(c *gin.Context) {
+func (h *SDPivotQAHandler) ListModels(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 	models := make([]types.Model, 0)
@@ -108,7 +108,7 @@ func (h *SmartKnoraQAHandler) ListModels(c *gin.Context) {
 }
 
 // CreateSession creates a new Q&A session.
-func (h *SmartKnoraQAHandler) CreateSession(c *gin.Context) {
+func (h *SDPivotQAHandler) CreateSession(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
@@ -149,7 +149,7 @@ func (h *SmartKnoraQAHandler) CreateSession(c *gin.Context) {
 }
 
 // ListSessions lists Q&A sessions for the current user.
-func (h *SmartKnoraQAHandler) ListSessions(c *gin.Context) {
+func (h *SDPivotQAHandler) ListSessions(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
@@ -162,7 +162,7 @@ func (h *SmartKnoraQAHandler) ListSessions(c *gin.Context) {
 }
 
 // GetSession gets a specific Q&A session.
-func (h *SmartKnoraQAHandler) GetSession(c *gin.Context) {
+func (h *SDPivotQAHandler) GetSession(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	sessionID := c.Param("id")
 	userID := middleware.GetUserID(c)
@@ -177,7 +177,7 @@ func (h *SmartKnoraQAHandler) GetSession(c *gin.Context) {
 }
 
 // SendMessage sends a message in a Q&A session.
-func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
+func (h *SDPivotQAHandler) SendMessage(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	sessionID := c.Param("id")
 	userID := middleware.GetUserID(c)
@@ -230,16 +230,16 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 		sources = string(sourcesBytes)
 	}
 
-	systemPrompt := "你是 SmartKnora 的企业知识库问答助手。请严格基于给定参考资料回答；如果参考资料不足，请说明缺少哪些信息。回答要准确、简洁，并优先使用中文。"
-	userPrompt := buildSmartKnoraQAPrompt(req.Content, chunks)
+	systemPrompt := "你是 SDPivot 的企业知识库问答助手。请严格基于给定参考资料回答；如果参考资料不足，请说明缺少哪些信息。回答要准确、简洁，并优先使用中文。"
+	userPrompt := buildSDPivotQAPrompt(req.Content, chunks)
 	llmResult, err := h.llm.GenerateWithModel(c.Request.Context(), tenantID, req.ModelID, systemPrompt, userPrompt, 1400)
 	if err != nil {
 		status := http.StatusBadGateway
 		message := "failed to call configured llm"
-		if errors.Is(err, ErrSmartKnoraLLMNotConfigured) {
+		if errors.Is(err, ErrSDPivotLLMNotConfigured) {
 			status = http.StatusPreconditionFailed
 			message = "llm model is not configured. Please configure a KnowledgeQA model in WeKnora model settings first"
-		} else if errors.Is(err, ErrSmartKnoraLLMModelNotAvailable) {
+		} else if errors.Is(err, ErrSDPivotLLMModelNotAvailable) {
 			status = http.StatusBadRequest
 			message = "selected llm model is not available"
 		}
@@ -250,7 +250,7 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 	if strings.TrimSpace(aiContent) == "" {
 		aiContent = "模型未返回有效内容，请稍后重试。"
 	}
-	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/smartknora/qa/sessions/:id/messages", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
+	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/sdp/qa/sessions/:id/messages", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
 
 	aiMsg := types.QAMessage{ID: uuid.New().String(), SessionID: sessionID, TenantID: tenantID, Role: "assistant", Content: aiContent, Sources: sources, CreatedAt: now}
 	if err := tenantDB.Create(&aiMsg).Error; err != nil {
@@ -266,12 +266,12 @@ func (h *SmartKnoraQAHandler) SendMessage(c *gin.Context) {
 	})
 }
 
-func (h *SmartKnoraQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint64, userID string, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
+func (h *SDPivotQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint64, userID string, spaceID string, query string, topK int) ([]types.SDPivotDocumentChunk, error) {
 	if topK <= 0 || topK > 20 {
 		topK = 5
 	}
 	search := escapeQAQuery(query)
-	db := tenantDB.Model(&types.SmartKnoraDocumentChunk{}).
+	db := tenantDB.Model(&types.SDPivotDocumentChunk{}).
 		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
 		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
 	if spaceID != "" {
@@ -279,7 +279,7 @@ func (h *SmartKnoraQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID u
 	} else {
 		db = db.Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, userID))
 	}
-	var chunks []types.SmartKnoraDocumentChunk
+	var chunks []types.SDPivotDocumentChunk
 	err := db.Order("document_chunks.created_at DESC").Limit(topK).Find(&chunks).Error
 	return chunks, err
 }
@@ -291,7 +291,7 @@ func escapeQAQuery(input string) string {
 	return value
 }
 
-func buildSmartKnoraQAPrompt(question string, chunks []types.SmartKnoraDocumentChunk) string {
+func buildSDPivotQAPrompt(question string, chunks []types.SDPivotDocumentChunk) string {
 	var b strings.Builder
 	b.WriteString("用户问题:\n")
 	b.WriteString(question)
@@ -308,7 +308,7 @@ func buildSmartKnoraQAPrompt(question string, chunks []types.SmartKnoraDocumentC
 }
 
 // GetMessages gets messages in a Q&A session.
-func (h *SmartKnoraQAHandler) GetMessages(c *gin.Context) {
+func (h *SDPivotQAHandler) GetMessages(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	sessionID := c.Param("id")
 	userID := middleware.GetUserID(c)
@@ -327,7 +327,7 @@ func (h *SmartKnoraQAHandler) GetMessages(c *gin.Context) {
 }
 
 // DeleteSession deletes a Q&A session.
-func (h *SmartKnoraQAHandler) DeleteSession(c *gin.Context) {
+func (h *SDPivotQAHandler) DeleteSession(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	sessionID := c.Param("id")
 	userID := middleware.GetUserID(c)
@@ -346,7 +346,7 @@ func (h *SmartKnoraQAHandler) DeleteSession(c *gin.Context) {
 }
 
 // ListAllMembers lists all members across organizations (admin view).
-func (h *SmartKnoraQAHandler) ListAllMembers(c *gin.Context) {
+func (h *SDPivotQAHandler) ListAllMembers(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	role, _ := c.Get("role")
 	if role != "admin" && role != "owner" {
@@ -355,7 +355,7 @@ func (h *SmartKnoraQAHandler) ListAllMembers(c *gin.Context) {
 	}
 	tenantID := middleware.GetTenantID(c)
 
-	var members []types.SmartKnoraOrgMember
+	var members []types.SDPivotOrgMember
 	tenantDB.Joins("JOIN org_ext ON org_ext.org_id = org_members.org_id").
 		Where("org_ext.tenant_id = ?", tenantID).
 		Find(&members)
@@ -364,7 +364,7 @@ func (h *SmartKnoraQAHandler) ListAllMembers(c *gin.Context) {
 }
 
 // GetAdminStats returns admin dashboard statistics.
-func (h *SmartKnoraQAHandler) GetAdminStats(c *gin.Context) {
+func (h *SDPivotQAHandler) GetAdminStats(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	role, _ := c.Get("role")
 	if role != "admin" && role != "owner" {
@@ -377,10 +377,10 @@ func (h *SmartKnoraQAHandler) GetAdminStats(c *gin.Context) {
 	tenantDB.Model(&types.KnowledgeSpace{}).Where("tenant_id = ?", tenantID).Count(&spaceCount)
 
 	var docCount int64
-	tenantDB.Model(&types.SmartKnoraDocument{}).Where("tenant_id = ?", tenantID).Count(&docCount)
+	tenantDB.Model(&types.SDPivotDocument{}).Where("tenant_id = ?", tenantID).Count(&docCount)
 
 	var memberCount int64
-	tenantDB.Model(&types.SmartKnoraOrgMember{}).
+	tenantDB.Model(&types.SDPivotOrgMember{}).
 		Joins("JOIN org_ext ON org_ext.org_id = org_members.org_id").
 		Where("org_ext.tenant_id = ?", tenantID).
 		Count(&memberCount)
@@ -393,7 +393,7 @@ func (h *SmartKnoraQAHandler) GetAdminStats(c *gin.Context) {
 }
 
 // ListAllSpaces lists all spaces in the tenant (admin view).
-func (h *SmartKnoraQAHandler) ListAllSpaces(c *gin.Context) {
+func (h *SDPivotQAHandler) ListAllSpaces(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	role, _ := c.Get("role")
 	if role != "admin" && role != "owner" {

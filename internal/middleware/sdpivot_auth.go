@@ -8,9 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SmartKnoraAuth creates a middleware that validates JWT access tokens
-// and sets user context for smartKnora routes.
-func SmartKnoraAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
+// SDPivotAuth creates a middleware that validates JWT access tokens
+// and sets user context for SDPivot routes.
+func SDPivotAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Skip OPTIONS requests
 		if c.Request.Method == "OPTIONS" {
@@ -19,7 +19,7 @@ func SmartKnoraAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 		}
 
 		// Check for public routes
-		if isSmartKnoraPublicPath(c.Request.URL.Path, c.Request.Method) {
+		if isSDPivotPublicPath(c.Request.URL.Path, c.Request.Method) {
 			c.Next()
 			return
 		}
@@ -44,7 +44,7 @@ func SmartKnoraAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 
 		// Ops-admin tokens are scoped to /ops APIs only. Normal SaaS APIs must not
 		// accept them, otherwise the operations plane and tenant plane are mixed.
-		if claims.Role == "ops_admin" && !strings.HasPrefix(c.Request.URL.Path, "/api/v1/smartknora/ops") {
+		if claims.Role == "ops_admin" && !isSDPivotOpsPath(c.Request.URL.Path) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "ops admin token is not allowed on tenant APIs"})
 			c.Abort()
 			return
@@ -60,16 +60,24 @@ func SmartKnoraAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 	}
 }
 
-// SmartKnoraPublicPaths defines routes that skip authentication.
-var smartKnoraPublicPaths = map[string][]string{
+// SDPivotPublicPaths defines routes that skip authentication.
+var sdPivotPublicPaths = map[string][]string{
+	"/api/v1/sdp/auth/register":        {"POST"},
+	"/api/v1/sdp/auth/login":           {"POST"},
+	"/api/v1/sdp/auth/refresh":         {"POST"},
+	"/api/v1/sdp/health":               {"GET"},
 	"/api/v1/smartknora/auth/register": {"POST"},
 	"/api/v1/smartknora/auth/login":    {"POST"},
 	"/api/v1/smartknora/auth/refresh":  {"POST"},
 	"/api/v1/smartknora/health":        {"GET"},
 }
 
-func isSmartKnoraPublicPath(path string, method string) bool {
-	methods, ok := smartKnoraPublicPaths[path]
+func isSDPivotOpsPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/sdp/ops") || strings.HasPrefix(path, "/api/v1/smartknora/ops")
+}
+
+func isSDPivotPublicPath(path string, method string) bool {
+	methods, ok := sdPivotPublicPaths[path]
 	if !ok {
 		return false
 	}
@@ -81,7 +89,7 @@ func isSmartKnoraPublicPath(path string, method string) bool {
 	return false
 }
 
-// GetUserID extracts user_id from Gin context (set by SmartKnoraAuth middleware).
+// GetUserID extracts user_id from Gin context (set by SDPivotAuth middleware).
 func GetUserID(c *gin.Context) string {
 	if v, ok := c.Get("user_id"); ok {
 		if id, ok := v.(string); ok {

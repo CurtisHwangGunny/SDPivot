@@ -135,7 +135,7 @@ func makeURLImportDialContext(resolver urlIPResolver, dial urlDialContext) urlDi
 	}
 }
 
-var fetchSmartKnoraURLDocument = fetchURLDocument
+var fetchSDPivotURLDocument = fetchURLDocument
 
 func fetchURLDocument(ctx context.Context, rawURL string) ([]byte, *url.URL, int, error) {
 	resolver := net.DefaultResolver

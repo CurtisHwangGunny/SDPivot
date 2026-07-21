@@ -86,7 +86,7 @@ type RouterParams struct {
 	DataSourceCredentialsHandler *handler.DataSourceCredentialsHandler
 	WeKnoraCloudHandler          *handler.WeKnoraCloudHandler
 	WikiPageHandler              *handler.WikiPageHandler
-	SmartKnoraRouter             *SmartKnoraRouter
+	SDPivotRouter                *SDPivotRouter
 }
 
 // NewRouter 创建新的路由
@@ -234,9 +234,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 	}
 
-	// Register smartKnora (随越·智枢) routes
-	if params.SmartKnoraRouter != nil {
-		params.SmartKnoraRouter.RegisterRoutes(r)
+	// Register SDPivot (随越·智枢) routes
+	if params.SDPivotRouter != nil {
+		params.SDPivotRouter.RegisterRoutes(r)
 	}
 
 	return r
