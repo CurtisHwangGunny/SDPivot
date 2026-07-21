@@ -113,6 +113,7 @@ build_artifacts() {
 
     test -x "$FRONTEND_DIR/sdp-server" || { log_error "Backend artifact was not produced"; exit 1; }
     test -f "$FRONTEND_DIR/dist/index.html" || { log_error "Frontend artifact was not produced"; exit 1; }
+    test ! -e "$FRONTEND_DIR/dist/ops.html" || { log_error "Installed OP frontend artifact unexpectedly contains ops.html"; exit 1; }
     log_info "Artifacts are up to date."
 }
 
