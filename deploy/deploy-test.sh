@@ -31,6 +31,30 @@ compose() {
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+initialize_upload_dir() {
+    local upload_dir
+    upload_dir="$(compose config --format json | python3 -c 'import json, sys
+config = json.load(sys.stdin)
+for mount in config["services"]["sdp-backend"].get("volumes", []):
+    if mount.get("type") == "bind" and mount.get("target") == "/tmp/sdpivot-uploads":
+        print(mount["source"])
+        break')"
+    if [ -z "$upload_dir" ]; then
+        log_error "Unable to resolve the SDPivot upload bind mount source."
+        exit 1
+    fi
+
+    log_info "Initializing SDPivot upload directory at $upload_dir..."
+    if [ "$(id -u)" -eq 0 ]; then
+        install -d -m 0750 -o 999 -g 999 "$upload_dir"
+    elif command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
+        sudo -n install -d -m 0750 -o 999 -g 999 "$upload_dir"
+    else
+        log_error "Root privileges are required to assign the upload directory to container uid/gid 999."
+        exit 1
+    fi
+}
+
 preflight() {
     log_info "Running pre-flight checks..."
     command -v docker &>/dev/null || { log_error "Docker is not installed"; exit 1; }
@@ -100,6 +124,7 @@ cmd_build() {
 
 cmd_up() {
     preflight
+    initialize_upload_dir
     build_artifacts
     log_info "Building and starting SDPivot services..."
     compose up -d --build
