@@ -20,6 +20,7 @@ services:
       SDP_REDIS_ADDR: ${SDP_REDIS_ADDR:-WeKnora-redis:6379}
       SDP_REDIS_PASSWORD: ${SDP_REDIS_PASSWORD:-}
       SDP_UPLOAD_DIR: /tmp/sdpivot-uploads
+      JIEBA_DICT_DIR: /home/ubuntu/go/pkg/mod/github.com/yanyiwu/gojieba@v1.4.7/deps/cppjieba/dict
       SDP_JWT_SECRET: ${SDP_JWT_SECRET:?SDP_JWT_SECRET is required}
       SDP_ALLOWED_ORIGINS: ${SDP_ALLOWED_ORIGINS:-}
       GIN_MODE: release
