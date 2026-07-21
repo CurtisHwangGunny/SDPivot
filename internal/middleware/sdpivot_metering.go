@@ -42,7 +42,7 @@ func TokenMeteringMiddleware(db *gorm.DB) gin.HandlerFunc {
 			return // No token data available
 		}
 
-		usage := types.SmartKnoraTokenUsage{
+		usage := types.SDPivotTokenUsage{
 			UserID:           &userID,
 			TenantID:         tenantID,
 			PromptTokens:     pTokens,
@@ -62,9 +62,11 @@ func TokenMeteringMiddleware(db *gorm.DB) gin.HandlerFunc {
 // isMeteredPath checks if the API path should be metered.
 func isMeteredPath(path string) bool {
 	meteredPaths := []string{
-		"/api/v1/smartknora/qa/",       // AI Q&A sessions
-		"/api/v1/smartknora/writing/",  // AI writing assistant
-		"/api/v1/completion",           // LLM completion
+		"/api/v1/sdp/qa/",             // AI Q&A sessions
+		"/api/v1/sdp/writing/",        // AI writing assistant
+		"/api/v1/smartknora/qa/",      // Legacy AI Q&A alias
+		"/api/v1/smartknora/writing/", // Legacy AI writing alias
+		"/api/v1/completion",          // LLM completion
 	}
 	for _, p := range meteredPaths {
 		if strings.HasPrefix(path, p) {

@@ -24,33 +24,33 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// SmartKnoraWritingHandler handles AI writing assistant.
-type SmartKnoraWritingHandler struct {
+// SDPivotWritingHandler handles AI writing assistant.
+type SDPivotWritingHandler struct {
 	db                    *gorm.DB
-	llm                   *SmartKnoraLLMService
+	llm                   *SDPivotLLMService
 	webSearchService      interfaces.WebSearchService
 	webSearchProviderRepo interfaces.WebSearchProviderRepository
 }
 
-// NewSmartKnoraWritingHandler creates a new writing handler.
-func NewSmartKnoraWritingHandler(db *gorm.DB) *SmartKnoraWritingHandler {
+// NewSDPivotWritingHandler creates a new writing handler.
+func NewSDPivotWritingHandler(db *gorm.DB) *SDPivotWritingHandler {
 	registry := infra_web_search.NewRegistry()
-	registerSmartKnoraWebSearchProviders(registry)
+	registerSDPivotWebSearchProviders(registry)
 	providerRepo := repository.NewWebSearchProviderRepository(db)
 	webSearchService, err := service.NewWebSearchService(&config.Config{}, registry, providerRepo)
 	if err != nil {
 		webSearchService = nil
 	}
-	return &SmartKnoraWritingHandler{
+	return &SDPivotWritingHandler{
 		db:                    db,
-		llm:                   NewSmartKnoraLLMService(db),
+		llm:                   NewSDPivotLLMService(db),
 		webSearchService:      webSearchService,
 		webSearchProviderRepo: providerRepo,
 	}
 }
 
 // RegisterRoutes registers writing and ops routes.
-func (h *SmartKnoraWritingHandler) RegisterRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotWritingHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	w := rg.Group("/writing")
 	{
 		w.POST("/drafts", h.CreateDraft)
@@ -62,11 +62,11 @@ func (h *SmartKnoraWritingHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		w.POST("/drafts/:id/export", h.ExportDraft)
 	}
 
-	// Ops routes moved to smartknora_ops_admin.go
+	// Ops routes moved to sdpivot_ops_admin.go
 }
 
 // CreateDraft creates a new writing draft.
-func (h *SmartKnoraWritingHandler) CreateDraft(c *gin.Context) {
+func (h *SDPivotWritingHandler) CreateDraft(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
@@ -108,7 +108,7 @@ func (h *SmartKnoraWritingHandler) CreateDraft(c *gin.Context) {
 }
 
 // ListDrafts lists writing drafts.
-func (h *SmartKnoraWritingHandler) ListDrafts(c *gin.Context) {
+func (h *SDPivotWritingHandler) ListDrafts(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
@@ -121,7 +121,7 @@ func (h *SmartKnoraWritingHandler) ListDrafts(c *gin.Context) {
 }
 
 // GetDraft gets a specific draft.
-func (h *SmartKnoraWritingHandler) GetDraft(c *gin.Context) {
+func (h *SDPivotWritingHandler) GetDraft(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	draftID := c.Param("id")
 	userID := middleware.GetUserID(c)
@@ -137,7 +137,7 @@ func (h *SmartKnoraWritingHandler) GetDraft(c *gin.Context) {
 }
 
 // UpdateDraft updates a draft.
-func (h *SmartKnoraWritingHandler) UpdateDraft(c *gin.Context) {
+func (h *SDPivotWritingHandler) UpdateDraft(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	draftID := c.Param("id")
 	userID := middleware.GetUserID(c)
@@ -169,7 +169,7 @@ func (h *SmartKnoraWritingHandler) UpdateDraft(c *gin.Context) {
 }
 
 // DeleteDraft deletes a draft.
-func (h *SmartKnoraWritingHandler) DeleteDraft(c *gin.Context) {
+func (h *SDPivotWritingHandler) DeleteDraft(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	draftID := c.Param("id")
 	userID := middleware.GetUserID(c)
@@ -179,7 +179,7 @@ func (h *SmartKnoraWritingHandler) DeleteDraft(c *gin.Context) {
 }
 
 // GenerateContent generates AI content for a draft.
-func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
+func (h *SDPivotWritingHandler) GenerateContent(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	var req struct {
 		Category         string `json:"category" binding:"required"`
@@ -215,14 +215,14 @@ func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
 			return
 		}
 	}
-	categoryLabel := smartKnoraWritingCategoryLabel(req.Category)
-	systemPrompt := "你是 SmartKnora 的企业写作助手。请根据用户写作要求和知识库参考内容生成结构清晰、可直接编辑的中文 Markdown 文稿。不要编造参考资料中没有的事实；如资料不足，请在文末列出需要补充的信息。"
-	userPrompt := buildSmartKnoraWritingPrompt(categoryLabel, req.Prompt, req.SourceType, req.WebSearchEnabled, chunks, webResults)
+	categoryLabel := sdPivotWritingCategoryLabel(req.Category)
+	systemPrompt := "你是 SDPivot 的企业写作助手。请根据用户写作要求和知识库参考内容生成结构清晰、可直接编辑的中文 Markdown 文稿。不要编造参考资料中没有的事实；如资料不足，请在文末列出需要补充的信息。"
+	userPrompt := buildSDPivotWritingPrompt(categoryLabel, req.Prompt, req.SourceType, req.WebSearchEnabled, chunks, webResults)
 	llmResult, err := h.llm.Generate(c.Request.Context(), tenantID, systemPrompt, userPrompt, 2200)
 	if err != nil {
 		status := http.StatusBadGateway
 		message := "failed to call configured llm"
-		if errors.Is(err, ErrSmartKnoraLLMNotConfigured) {
+		if errors.Is(err, ErrSDPivotLLMNotConfigured) {
 			status = http.StatusPreconditionFailed
 			message = "llm model is not configured. Please configure a KnowledgeQA model in WeKnora model settings first"
 		}
@@ -234,11 +234,11 @@ func (h *SmartKnoraWritingHandler) GenerateContent(c *gin.Context) {
 		content = fmt.Sprintf("# %s\n\n模型未返回有效内容，请稍后重试。", categoryLabel)
 	}
 	userID := middleware.GetUserID(c)
-	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/smartknora/writing/generate", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
+	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/sdp/writing/generate", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
 	c.JSON(http.StatusOK, gin.H{"content": content, "category": req.Category, "source_type": req.SourceType, "web_search_enabled": req.WebSearchEnabled, "sources_count": len(chunks) + len(webResults), "knowledge_sources_count": len(chunks), "web_sources_count": len(webResults), "model_id": llmResult.ModelID, "model": llmResult.ModelName})
 }
 
-func smartKnoraWritingCategoryLabel(category string) string {
+func sdPivotWritingCategoryLabel(category string) string {
 	categoryTemplates := map[string]string{
 		"notice":                "通知",
 		"announcement":          "公告",
@@ -267,7 +267,7 @@ func normalizeWritingSource(sourceType string, webSearchEnabled bool) (string, b
 	}
 }
 
-func (h *SmartKnoraWritingHandler) defaultWritingSpaceID(tenantDB *gorm.DB, tenantID uint64, category string) string {
+func (h *SDPivotWritingHandler) defaultWritingSpaceID(tenantDB *gorm.DB, tenantID uint64, category string) string {
 	var cfg types.WriteCategoryConfig
 	if err := tenantDB.Where("tenant_id = ? AND category = ?", tenantID, category).First(&cfg).Error; err == nil {
 		return cfg.DefaultSpaceID
@@ -275,7 +275,7 @@ func (h *SmartKnoraWritingHandler) defaultWritingSpaceID(tenantDB *gorm.DB, tena
 	return ""
 }
 
-func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, sourceType string, webSearchEnabled bool, chunks []types.SmartKnoraDocumentChunk, webResults []*types.WebSearchResult) string {
+func buildSDPivotWritingPrompt(categoryLabel string, prompt string, sourceType string, webSearchEnabled bool, chunks []types.SDPivotDocumentChunk, webResults []*types.WebSearchResult) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("写作类型:%s\n", categoryLabel))
 	b.WriteString("写作要求:\n")
@@ -308,7 +308,7 @@ func buildSmartKnoraWritingPrompt(categoryLabel string, prompt string, sourceTyp
 	return b.String()
 }
 
-func registerSmartKnoraWebSearchProviders(registry *infra_web_search.Registry) {
+func registerSDPivotWebSearchProviders(registry *infra_web_search.Registry) {
 	registry.Register(string(types.WebSearchProviderTypeDuckDuckGo), infra_web_search.NewDuckDuckGoProvider)
 	registry.Register(string(types.WebSearchProviderTypeGoogle), infra_web_search.NewGoogleProvider)
 	registry.Register(string(types.WebSearchProviderTypeBing), infra_web_search.NewBingProvider)
@@ -318,7 +318,7 @@ func registerSmartKnoraWebSearchProviders(registry *infra_web_search.Registry) {
 	registry.Register(string(types.WebSearchProviderTypeSearxng), infra_web_search.NewSearxngProvider)
 }
 
-func (h *SmartKnoraWritingHandler) searchWritingWebResults(ctx context.Context, tenantID uint64, query string) ([]*types.WebSearchResult, error) {
+func (h *SDPivotWritingHandler) searchWritingWebResults(ctx context.Context, tenantID uint64, query string) ([]*types.WebSearchResult, error) {
 	if h.webSearchService == nil {
 		return nil, fmt.Errorf("web search service is not available")
 	}
@@ -364,12 +364,12 @@ func resultSnippet(result *types.WebSearchResult) string {
 	return ""
 }
 
-func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantDB *gorm.DB, tenantID uint64, userID string, spaceID string, query string, topK int) ([]types.SmartKnoraDocumentChunk, error) {
+func (h *SDPivotWritingHandler) searchRelevantWritingChunks(tenantDB *gorm.DB, tenantID uint64, userID string, spaceID string, query string, topK int) ([]types.SDPivotDocumentChunk, error) {
 	if topK <= 0 || topK > 20 {
 		topK = 5
 	}
 	search := escapeWritingQuery(query)
-	db := tenantDB.Model(&types.SmartKnoraDocumentChunk{}).
+	db := tenantDB.Model(&types.SDPivotDocumentChunk{}).
 		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
 		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
 	if spaceID != "" {
@@ -377,7 +377,7 @@ func (h *SmartKnoraWritingHandler) searchRelevantWritingChunks(tenantDB *gorm.DB
 	} else {
 		db = db.Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, userID))
 	}
-	var chunks []types.SmartKnoraDocumentChunk
+	var chunks []types.SDPivotDocumentChunk
 	err := db.Order("document_chunks.created_at DESC").Limit(topK).Find(&chunks).Error
 	return chunks, err
 }
@@ -390,7 +390,7 @@ func escapeWritingQuery(input string) string {
 }
 
 // ExportDraft exports a draft to PDF/DOCX/Markdown.
-func (h *SmartKnoraWritingHandler) ExportDraft(c *gin.Context) {
+func (h *SDPivotWritingHandler) ExportDraft(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	draftID := c.Param("id")
 	var req struct {
@@ -409,7 +409,7 @@ func (h *SmartKnoraWritingHandler) ExportDraft(c *gin.Context) {
 	}
 	filename := sanitizeExportFilename(draft.Title)
 	if filename == "" {
-		filename = "smartknora-draft"
+		filename = "sdpivot-draft"
 	}
 	content := draft.Content
 	if strings.TrimSpace(content) == "" {
@@ -489,7 +489,7 @@ func buildSimplePDF(markdown string) []byte {
 		contentLines = append(contentLines, trimmed)
 	}
 	if len(contentLines) == 0 {
-		contentLines = []string{"SmartKnora Draft"}
+		contentLines = []string{"SDPivot Draft"}
 	}
 
 	var stream strings.Builder

@@ -15,25 +15,25 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// SmartKnoraAuthHandler handles smartKnora-specific authentication.
+// SDPivotAuthHandler handles SDPivot-specific authentication.
 // Extends WeKnora auth with phone/email login and dual-token system.
-type SmartKnoraAuthHandler struct {
+type SDPivotAuthHandler struct {
 	db         *gorm.DB
 	jwtManager *auth.JWTManager
 	redis      *redis.Client
 }
 
-// NewSmartKnoraAuthHandler creates a new auth handler.
-func NewSmartKnoraAuthHandler(db *gorm.DB, jwtManager *auth.JWTManager, redis *redis.Client) *SmartKnoraAuthHandler {
-	return &SmartKnoraAuthHandler{
+// NewSDPivotAuthHandler creates a new auth handler.
+func NewSDPivotAuthHandler(db *gorm.DB, jwtManager *auth.JWTManager, redis *redis.Client) *SDPivotAuthHandler {
+	return &SDPivotAuthHandler{
 		db:         db,
 		jwtManager: jwtManager,
 		redis:      redis,
 	}
 }
 
-// RegisterRoutes registers smartKnora auth routes.
-func (h *SmartKnoraAuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
+// RegisterRoutes registers SDPivot auth routes.
+func (h *SDPivotAuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	auth := rg.Group("/auth")
 	{
 		auth.POST("/register", h.Register)
@@ -44,8 +44,8 @@ func (h *SmartKnoraAuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // Register handles user registration via phone or email.
-func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
-	var req types.SmartKnoraRegisterRequest
+func (h *SDPivotAuthHandler) Register(c *gin.Context) {
+	var req types.SDPivotRegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -69,7 +69,7 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	}
 	if req.Phone != "" {
 		// Look up by phone in smartknora_user_profiles
-		var profile types.SmartKnoraUserProfile
+		var profile types.SDPivotUserProfile
 		if err := h.db.Unscoped().Where("phone = ?", req.Phone).First(&profile).Error; err == nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "phone already registered"})
 			return
@@ -106,7 +106,7 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 		user.Username = req.Email
 	}
 	if user.Email == "" {
-		user.Email = req.Phone + "@smartknora.local"
+		user.Email = req.Phone + "@sdpivot.local"
 	}
 
 	// Generate ID
@@ -117,10 +117,10 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	// cannot accidentally share a tenant ID.
 	tenant := types.Tenant{
 		Name:        user.Username + " 的工作区",
-		Description: "SmartKnora 默认工作区",
+		Description: "SDPivot 默认工作区",
 		APIKey:      uuid.New().String(),
 		Status:      "active",
-		Business:    "smartknora",
+		Business:    "sdpivot",
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -140,7 +140,7 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	if req.Phone != "" {
 		phone = &req.Phone
 	}
-	profile := types.SmartKnoraUserProfile{
+	profile := types.SDPivotUserProfile{
 		UserID:    user.ID,
 		Phone:     phone,
 		Nickname:  req.Nickname,
@@ -194,7 +194,7 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 		}).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&types.SmartKnoraOrgMember{
+		if err := tx.Create(&types.SDPivotOrgMember{
 			OrgID:    org.ID,
 			UserID:   user.ID,
 			Role:     "owner",
@@ -239,7 +239,7 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 	// Update last login
 	h.db.Model(&user).Update("updated_at", now)
 
-	c.JSON(http.StatusCreated, types.SmartKnoraAuthResponse{
+	c.JSON(http.StatusCreated, types.SDPivotAuthResponse{
 		Success:      true,
 		Token:        accessToken,
 		AccessToken:  accessToken,
@@ -250,8 +250,8 @@ func (h *SmartKnoraAuthHandler) Register(c *gin.Context) {
 }
 
 // Login handles user login via phone or email + password.
-func (h *SmartKnoraAuthHandler) Login(c *gin.Context) {
-	var req types.SmartKnoraLoginRequest
+func (h *SDPivotAuthHandler) Login(c *gin.Context) {
+	var req types.SDPivotLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -268,7 +268,7 @@ func (h *SmartKnoraAuthHandler) Login(c *gin.Context) {
 
 	if req.Phone != "" {
 		// Find by phone in profile table
-		var profile types.SmartKnoraUserProfile
+		var profile types.SDPivotUserProfile
 		if err := h.db.Where("phone = ? AND status = 'active'", req.Phone).First(&profile).Error; err == nil {
 			if err := h.db.Where("id = ? AND is_active = true", profile.UserID).First(&user).Error; err == nil {
 				found = true
@@ -323,7 +323,7 @@ func (h *SmartKnoraAuthHandler) Login(c *gin.Context) {
 	// Update last login time
 	h.db.Model(&user).Update("updated_at", now)
 
-	c.JSON(http.StatusOK, types.SmartKnoraAuthResponse{
+	c.JSON(http.StatusOK, types.SDPivotAuthResponse{
 		Success:      true,
 		Token:        accessToken,
 		AccessToken:  accessToken,
@@ -334,8 +334,8 @@ func (h *SmartKnoraAuthHandler) Login(c *gin.Context) {
 }
 
 // RefreshToken handles token refresh.
-func (h *SmartKnoraAuthHandler) RefreshToken(c *gin.Context) {
-	var req types.SmartKnoraRefreshRequest
+func (h *SDPivotAuthHandler) RefreshToken(c *gin.Context) {
+	var req types.SDPivotRefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -396,8 +396,8 @@ func (h *SmartKnoraAuthHandler) RefreshToken(c *gin.Context) {
 }
 
 // Logout handles user logout (revoke refresh token).
-func (h *SmartKnoraAuthHandler) Logout(c *gin.Context) {
-	var req types.SmartKnoraRefreshRequest
+func (h *SDPivotAuthHandler) Logout(c *gin.Context) {
+	var req types.SDPivotRefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -416,7 +416,7 @@ func generateUUID() string {
 
 // resolveUserRole determines the JWT role for a user.
 // Returns "admin" if the user is a system admin, otherwise "member".
-func (h *SmartKnoraAuthHandler) resolveUserRole(userID string) string {
+func (h *SDPivotAuthHandler) resolveUserRole(userID string) string {
 	var user types.User
 	if err := h.db.Select("is_system_admin").Where("id = ?", userID).First(&user).Error; err == nil && user.IsSystemAdmin {
 		return "admin"

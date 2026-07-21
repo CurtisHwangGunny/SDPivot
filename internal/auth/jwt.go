@@ -16,8 +16,8 @@ type JWTConfig struct {
 	SecretKey     string
 	AccessExpiry  time.Duration // Default: 15 minutes
 	RefreshExpiry time.Duration // Default: 7 days
-	Issuer        string        // Default: "smartknora-auth"
-	Audience      string        // Default: "smartknora-api"
+	Issuer        string        // Default: "sdpivot-auth"
+	Audience      string        // Default: "sdpivot-api"
 }
 
 // DefaultJWTConfig returns the default JWT configuration.
@@ -26,8 +26,8 @@ func DefaultJWTConfig(secretKey string) JWTConfig {
 		SecretKey:     secretKey,
 		AccessExpiry:  15 * time.Minute,
 		RefreshExpiry: 7 * 24 * time.Hour,
-		Issuer:        "smartknora-auth",
-		Audience:      "smartknora-api",
+		Issuer:        "sdpivot-auth",
+		Audience:      "sdpivot-api",
 	}
 }
 

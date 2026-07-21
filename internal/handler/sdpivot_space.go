@@ -13,18 +13,18 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// SmartKnoraSpaceHandler handles knowledge space management.
-type SmartKnoraSpaceHandler struct {
+// SDPivotSpaceHandler handles knowledge space management.
+type SDPivotSpaceHandler struct {
 	db *gorm.DB
 }
 
-// NewSmartKnoraSpaceHandler creates a new space handler.
-func NewSmartKnoraSpaceHandler(db *gorm.DB) *SmartKnoraSpaceHandler {
-	return &SmartKnoraSpaceHandler{db: db}
+// NewSDPivotSpaceHandler creates a new space handler.
+func NewSDPivotSpaceHandler(db *gorm.DB) *SDPivotSpaceHandler {
+	return &SDPivotSpaceHandler{db: db}
 }
 
 // RegisterRoutes registers knowledge space routes.
-func (h *SmartKnoraSpaceHandler) RegisterRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotSpaceHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	spaces := rg.Group("/spaces")
 	{
 		spaces.POST("", h.CreateSpace)
@@ -47,7 +47,7 @@ func (h *SmartKnoraSpaceHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // CreateSpace creates a new knowledge space.
-func (h *SmartKnoraSpaceHandler) CreateSpace(c *gin.Context) {
+func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	var req types.CreateSpaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -100,7 +100,7 @@ func (h *SmartKnoraSpaceHandler) CreateSpace(c *gin.Context) {
 }
 
 // ListSpaces lists knowledge spaces the user has access to.
-func (h *SmartKnoraSpaceHandler) ListSpaces(c *gin.Context) {
+func (h *SDPivotSpaceHandler) ListSpaces(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
@@ -116,7 +116,7 @@ func (h *SmartKnoraSpaceHandler) ListSpaces(c *gin.Context) {
 }
 
 // GetSpace gets a specific knowledge space.
-func (h *SmartKnoraSpaceHandler) GetSpace(c *gin.Context) {
+func (h *SDPivotSpaceHandler) GetSpace(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 
@@ -129,7 +129,7 @@ func (h *SmartKnoraSpaceHandler) GetSpace(c *gin.Context) {
 }
 
 // UpdateSpace updates a knowledge space.
-func (h *SmartKnoraSpaceHandler) UpdateSpace(c *gin.Context) {
+func (h *SDPivotSpaceHandler) UpdateSpace(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	if _, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessEdit); !ok {
@@ -164,7 +164,7 @@ func (h *SmartKnoraSpaceHandler) UpdateSpace(c *gin.Context) {
 }
 
 // DeleteSpace soft-deletes a knowledge space.
-func (h *SmartKnoraSpaceHandler) DeleteSpace(c *gin.Context) {
+func (h *SDPivotSpaceHandler) DeleteSpace(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	if _, ok := authorizeSpace(c, tenantDB, spaceID, spaceAccessOwner); !ok {
@@ -184,7 +184,7 @@ func (h *SmartKnoraSpaceHandler) DeleteSpace(c *gin.Context) {
 }
 
 // ListSpaceMembers lists members of a knowledge space.
-func (h *SmartKnoraSpaceHandler) ListSpaceMembers(c *gin.Context) {
+func (h *SDPivotSpaceHandler) ListSpaceMembers(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 
@@ -202,7 +202,7 @@ func (h *SmartKnoraSpaceHandler) ListSpaceMembers(c *gin.Context) {
 }
 
 // AddSpaceMember adds a member to a knowledge space.
-func (h *SmartKnoraSpaceHandler) AddSpaceMember(c *gin.Context) {
+func (h *SDPivotSpaceHandler) AddSpaceMember(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 
@@ -271,7 +271,7 @@ func (h *SmartKnoraSpaceHandler) AddSpaceMember(c *gin.Context) {
 }
 
 // RemoveSpaceMember removes a member from a knowledge space.
-func (h *SmartKnoraSpaceHandler) RemoveSpaceMember(c *gin.Context) {
+func (h *SDPivotSpaceHandler) RemoveSpaceMember(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	targetUserID := c.Param("userId")
@@ -317,7 +317,7 @@ func (h *SmartKnoraSpaceHandler) RemoveSpaceMember(c *gin.Context) {
 }
 
 // UpdateSpaceMemberRole updates a space member's role.
-func (h *SmartKnoraSpaceHandler) UpdateSpaceMemberRole(c *gin.Context) {
+func (h *SDPivotSpaceHandler) UpdateSpaceMemberRole(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	spaceID := c.Param("id")
 	targetUserID := c.Param("userId")
@@ -362,7 +362,7 @@ func (h *SmartKnoraSpaceHandler) UpdateSpaceMemberRole(c *gin.Context) {
 }
 
 // CreateCategory creates a new space category.
-func (h *SmartKnoraSpaceHandler) CreateCategory(c *gin.Context) {
+func (h *SDPivotSpaceHandler) CreateCategory(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	var req types.CreateCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -385,7 +385,7 @@ func (h *SmartKnoraSpaceHandler) CreateCategory(c *gin.Context) {
 }
 
 // ListCategories lists space categories for the current tenant.
-func (h *SmartKnoraSpaceHandler) ListCategories(c *gin.Context) {
+func (h *SDPivotSpaceHandler) ListCategories(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
@@ -396,7 +396,7 @@ func (h *SmartKnoraSpaceHandler) ListCategories(c *gin.Context) {
 }
 
 // DeleteCategory deletes a space category.
-func (h *SmartKnoraSpaceHandler) DeleteCategory(c *gin.Context) {
+func (h *SDPivotSpaceHandler) DeleteCategory(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	categoryID := c.Param("id")
 	tenantDB.Where("id = ? AND tenant_id = ?", categoryID, middleware.GetTenantID(c)).Delete(&types.SpaceCategory{})

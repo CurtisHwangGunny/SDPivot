@@ -95,13 +95,13 @@ type User struct {
 	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
 	// Whether the user is a system administrator (independent of tenant roles)
 	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
-	// Ops admin fields (smartKnora PRD 1.1.4)
+	// Ops admin fields (SDPivot PRD 1.1.4)
 	IsOpsAdmin         bool       `json:"is_ops_admin" gorm:"default:false;index:idx_users_ops_admin,where:is_ops_admin = true"`
 	MustChangePassword bool       `json:"must_change_password" gorm:"default:false"`
 	PasswordChangedAt  *time.Time `json:"password_changed_at"`
 	PasswordExpiresAt  *time.Time `json:"password_expires_at"`
 
-	// SmartKnora lifecycle fields (PRD v4.2): 30-day full trial, 90-day certification extension, paid conversion.
+	// SDPivot lifecycle fields (PRD v4.2): 30-day full trial, 90-day certification extension, paid conversion.
 	TrialStartedAt  *time.Time `json:"trial_started_at"`
 	TrialPhase      string     `json:"trial_phase" gorm:"type:varchar(20);default:30day;index"`
 	AuthenticatedAt *time.Time `json:"authenticated_at"`

@@ -19,9 +19,9 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-func newSmartKnoraDocumentTestDB(t *testing.T) *gorm.DB {
+func newSDPivotDocumentTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := fmt.Sprintf("file:smartknora-document-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	dsn := fmt.Sprintf("file:sdpivot-document-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -29,16 +29,16 @@ func newSmartKnoraDocumentTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&types.KnowledgeSpace{},
 		&types.SpaceMember{},
-		&types.SmartKnoraDocument{},
-		&types.SmartKnoraDocumentVersion{},
-		&types.SmartKnoraDocumentChunk{},
+		&types.SDPivotDocument{},
+		&types.SDPivotDocumentVersion{},
+		&types.SDPivotDocumentChunk{},
 	); err != nil {
 		t.Fatalf("migrate document tables: %v", err)
 	}
 	return db
 }
 
-func serveSmartKnoraDocumentRequest(t *testing.T, db *gorm.DB, uploadDir string, tenantID uint64, method string, path string, body *bytes.Buffer, contentType string) *httptest.ResponseRecorder {
+func serveSDPivotDocumentRequest(t *testing.T, db *gorm.DB, uploadDir string, tenantID uint64, method string, path string, body *bytes.Buffer, contentType string) *httptest.ResponseRecorder {
 	t.Helper()
 	if err := db.Create(&types.KnowledgeSpace{ID: "space-1", TenantID: tenantID, Name: "test space", Visibility: "private"}).Error; err != nil {
 		t.Fatalf("create test space: %v", err)
@@ -53,7 +53,7 @@ func serveSmartKnoraDocumentRequest(t *testing.T, db *gorm.DB, uploadDir string,
 		c.Set("user_id", "user-1")
 		c.Next()
 	})
-	h := &SmartKnoraDocumentHandler{db: db, uploadDir: uploadDir}
+	h := &SDPivotDocumentHandler{db: db, uploadDir: uploadDir}
 	router.POST("/documents/upload", h.UploadDocument)
 	router.POST("/documents/manual", h.UploadManualDocument)
 	router.POST("/documents/url", h.UploadFromURL)
@@ -67,7 +67,7 @@ func serveSmartKnoraDocumentRequest(t *testing.T, db *gorm.DB, uploadDir string,
 	return response
 }
 
-func uploadSmartKnoraTestDocument(t *testing.T, db *gorm.DB, uploadDir string, tenantID uint64) *httptest.ResponseRecorder {
+func uploadSDPivotTestDocument(t *testing.T, db *gorm.DB, uploadDir string, tenantID uint64) *httptest.ResponseRecorder {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -85,16 +85,16 @@ func uploadSmartKnoraTestDocument(t *testing.T, db *gorm.DB, uploadDir string, t
 		t.Fatalf("close multipart writer: %v", err)
 	}
 
-	return serveSmartKnoraDocumentRequest(t, db, uploadDir, tenantID, http.MethodPost, "/documents/upload", &body, writer.FormDataContentType())
+	return serveSDPivotDocumentRequest(t, db, uploadDir, tenantID, http.MethodPost, "/documents/upload", &body, writer.FormDataContentType())
 }
 
-func assertSingleDocumentVersionTenant(t *testing.T, db *gorm.DB, tenantID uint64) (types.SmartKnoraDocument, types.SmartKnoraDocumentVersion) {
+func assertSingleDocumentVersionTenant(t *testing.T, db *gorm.DB, tenantID uint64) (types.SDPivotDocument, types.SDPivotDocumentVersion) {
 	t.Helper()
-	var doc types.SmartKnoraDocument
+	var doc types.SDPivotDocument
 	if err := db.First(&doc).Error; err != nil {
 		t.Fatalf("load document: %v", err)
 	}
-	var versions []types.SmartKnoraDocumentVersion
+	var versions []types.SDPivotDocumentVersion
 	if err := db.Where("document_id = ?", doc.ID).Find(&versions).Error; err != nil {
 		t.Fatalf("load document versions: %v", err)
 	}
@@ -112,9 +112,9 @@ func assertSingleDocumentVersionTenant(t *testing.T, db *gorm.DB, tenantID uint6
 }
 
 func TestUploadDocumentCreatesVersionWithRequestTenant(t *testing.T) {
-	db := newSmartKnoraDocumentTestDB(t)
+	db := newSDPivotDocumentTestDB(t)
 	tenantID := uint64(42)
-	response := uploadSmartKnoraTestDocument(t, db, t.TempDir(), tenantID)
+	response := uploadSDPivotTestDocument(t, db, t.TempDir(), tenantID)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", response.Code, response.Body.String())
 	}
@@ -126,7 +126,7 @@ func TestUploadDocumentCreatesVersionWithRequestTenant(t *testing.T) {
 }
 
 func TestUploadManualDocumentCreatesInitialVersionWithRequestTenant(t *testing.T) {
-	db := newSmartKnoraDocumentTestDB(t)
+	db := newSDPivotDocumentTestDB(t)
 	tenantID := uint64(51)
 	payload, err := json.Marshal(map[string]string{
 		"space_id": "space-1",
@@ -136,7 +136,7 @@ func TestUploadManualDocumentCreatesInitialVersionWithRequestTenant(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := serveSmartKnoraDocumentRequest(t, db, t.TempDir(), tenantID, http.MethodPost, "/documents/manual", bytes.NewBuffer(payload), "application/json")
+	response := serveSDPivotDocumentRequest(t, db, t.TempDir(), tenantID, http.MethodPost, "/documents/manual", bytes.NewBuffer(payload), "application/json")
 	if response.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", response.Code, response.Body.String())
 	}
@@ -150,18 +150,18 @@ func TestUploadManualDocumentCreatesInitialVersionWithRequestTenant(t *testing.T
 	}
 }
 
-func TestCreateSmartKnoraDocumentWithVersionRollsBackManualOrURLDocument(t *testing.T) {
-	db := newSmartKnoraDocumentTestDB(t)
+func TestCreateSDPivotDocumentWithVersionRollsBackManualOrURLDocument(t *testing.T) {
+	db := newSDPivotDocumentTestDB(t)
 	if err := db.Exec(`CREATE TRIGGER reject_document_version BEFORE INSERT ON document_versions BEGIN SELECT RAISE(FAIL, 'forced version failure'); END`).Error; err != nil {
 		t.Fatalf("create failure trigger: %v", err)
 	}
-	doc := types.SmartKnoraDocument{ID: "doc-rollback", TenantID: 82, SpaceID: "space-1", Title: "rollback", Version: 1}
-	version := types.SmartKnoraDocumentVersion{ID: "version-rollback", DocumentID: doc.ID, TenantID: doc.TenantID, Version: 1}
-	if err := createSmartKnoraDocumentWithVersion(db, &doc, &version); err == nil {
+	doc := types.SDPivotDocument{ID: "doc-rollback", TenantID: 82, SpaceID: "space-1", Title: "rollback", Version: 1}
+	version := types.SDPivotDocumentVersion{ID: "version-rollback", DocumentID: doc.ID, TenantID: doc.TenantID, Version: 1}
+	if err := createSDPivotDocumentWithVersion(db, &doc, &version); err == nil {
 		t.Fatal("expected version insert failure")
 	}
 	var documentCount int64
-	if err := db.Model(&types.SmartKnoraDocument{}).Count(&documentCount).Error; err != nil {
+	if err := db.Model(&types.SDPivotDocument{}).Count(&documentCount).Error; err != nil {
 		t.Fatalf("count documents: %v", err)
 	}
 	if documentCount != 0 {
@@ -170,18 +170,18 @@ func TestCreateSmartKnoraDocumentWithVersionRollsBackManualOrURLDocument(t *test
 }
 
 func TestUploadDocumentVersionInsertFailureRollsBackAndRemovesFile(t *testing.T) {
-	db := newSmartKnoraDocumentTestDB(t)
+	db := newSDPivotDocumentTestDB(t)
 	if err := db.Exec(`CREATE TRIGGER reject_document_version BEFORE INSERT ON document_versions BEGIN SELECT RAISE(FAIL, 'forced version failure'); END`).Error; err != nil {
 		t.Fatalf("create failure trigger: %v", err)
 	}
 	uploadDir := t.TempDir()
-	response := uploadSmartKnoraTestDocument(t, db, uploadDir, 73)
+	response := uploadSDPivotTestDocument(t, db, uploadDir, 73)
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d body=%s", response.Code, response.Body.String())
 	}
 
 	var documentCount int64
-	if err := db.Model(&types.SmartKnoraDocument{}).Count(&documentCount).Error; err != nil {
+	if err := db.Model(&types.SDPivotDocument{}).Count(&documentCount).Error; err != nil {
 		t.Fatalf("count documents: %v", err)
 	}
 	if documentCount != 0 {

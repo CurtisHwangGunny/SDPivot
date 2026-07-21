@@ -15,18 +15,18 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// SmartKnoraOpsAdminHandler handles operations admin management endpoints.
+// SDPivotOpsAdminHandler handles operations admin management endpoints.
 // All endpoints require ops_admin role (PRD §0.1.4).
-type SmartKnoraOpsAdminHandler struct {
+type SDPivotOpsAdminHandler struct {
 	db *gorm.DB
 }
 
-func NewSmartKnoraOpsAdminHandler(db *gorm.DB) *SmartKnoraOpsAdminHandler {
-	return &SmartKnoraOpsAdminHandler{db: db}
+func NewSDPivotOpsAdminHandler(db *gorm.DB) *SDPivotOpsAdminHandler {
+	return &SDPivotOpsAdminHandler{db: db}
 }
 
 // RegisterOpsRoutes registers protected ops admin routes (requires ops_admin role).
-func (h *SmartKnoraOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
 	ops := rg.Group("/ops")
 	{
 		ops.GET("/dashboard", h.GetOpsDashboard)
@@ -75,7 +75,7 @@ func (h *SmartKnoraOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
 }
 
 // RegisterPublicOpsRoutes registers public ops routes (no auth required).
-func (h *SmartKnoraOpsAdminHandler) RegisterPublicOpsRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotOpsAdminHandler) RegisterPublicOpsRoutes(rg *gin.RouterGroup) {
 	ops := rg.Group("/ops")
 	ops.GET("/announcements/active", h.GetActiveAnnouncements)
 }
@@ -108,7 +108,7 @@ func parsePagination(c *gin.Context) (int, int) {
 
 // ── Dashboard ──────────────────────────────────────────────
 
-func (h *SmartKnoraOpsAdminHandler) GetOpsDashboard(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) GetOpsDashboard(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -139,7 +139,7 @@ func (h *SmartKnoraOpsAdminHandler) GetOpsDashboard(c *gin.Context) {
 
 // ── Enterprises ────────────────────────────────────────────
 
-func (h *SmartKnoraOpsAdminHandler) ListEnterprises(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListEnterprises(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -200,7 +200,7 @@ func (h *SmartKnoraOpsAdminHandler) ListEnterprises(c *gin.Context) {
 	})
 }
 
-func (h *SmartKnoraOpsAdminHandler) GetEnterprise(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) GetEnterprise(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -219,7 +219,7 @@ func (h *SmartKnoraOpsAdminHandler) GetEnterprise(c *gin.Context) {
 	var memberCount int64
 	h.db.Table("org_members").Where("org_id = ? AND status = 'active'", id).Count(&memberCount)
 
-	var members []types.SmartKnoraOrgMember
+	var members []types.SDPivotOrgMember
 	h.db.Where("org_id = ?", id).Find(&members)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -231,7 +231,7 @@ func (h *SmartKnoraOpsAdminHandler) GetEnterprise(c *gin.Context) {
 	})
 }
 
-func (h *SmartKnoraOpsAdminHandler) UpdateEnterpriseStatus(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) UpdateEnterpriseStatus(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -256,7 +256,7 @@ func (h *SmartKnoraOpsAdminHandler) UpdateEnterpriseStatus(c *gin.Context) {
 
 // ── Users ──────────────────────────────────────────────────
 
-func (h *SmartKnoraOpsAdminHandler) ListUsers(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListUsers(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -305,7 +305,7 @@ func (h *SmartKnoraOpsAdminHandler) ListUsers(c *gin.Context) {
 	})
 }
 
-func (h *SmartKnoraOpsAdminHandler) UpdateUserStatus(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) UpdateUserStatus(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -328,7 +328,7 @@ func (h *SmartKnoraOpsAdminHandler) UpdateUserStatus(c *gin.Context) {
 
 // ── Audit Logs ─────────────────────────────────────────────
 
-func (h *SmartKnoraOpsAdminHandler) GetAuditLogs(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) GetAuditLogs(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -381,7 +381,7 @@ func (h *SmartKnoraOpsAdminHandler) GetAuditLogs(c *gin.Context) {
 	})
 }
 
-func (h *SmartKnoraOpsAdminHandler) ExportAuditLogs(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ExportAuditLogs(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -426,7 +426,7 @@ func (h *SmartKnoraOpsAdminHandler) ExportAuditLogs(c *gin.Context) {
 
 // ── Announcements ──────────────────────────────────────────
 
-func (h *SmartKnoraOpsAdminHandler) CreateAnnouncement(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) CreateAnnouncement(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -456,7 +456,7 @@ func (h *SmartKnoraOpsAdminHandler) CreateAnnouncement(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"announcement": ann})
 }
 
-func (h *SmartKnoraOpsAdminHandler) ListAnnouncements(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) ListAnnouncements(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -467,7 +467,7 @@ func (h *SmartKnoraOpsAdminHandler) ListAnnouncements(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"announcements": list})
 }
 
-func (h *SmartKnoraOpsAdminHandler) DeleteAnnouncement(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) DeleteAnnouncement(c *gin.Context) {
 	if denyIfNotOpsAdmin(c) {
 		return
 	}
@@ -477,7 +477,7 @@ func (h *SmartKnoraOpsAdminHandler) DeleteAnnouncement(c *gin.Context) {
 }
 
 // GetActiveAnnouncements returns published announcements (public, no auth).
-func (h *SmartKnoraOpsAdminHandler) GetActiveAnnouncements(c *gin.Context) {
+func (h *SDPivotOpsAdminHandler) GetActiveAnnouncements(c *gin.Context) {
 	var list []types.Announcement
 	h.db.Where("status = ?", "published").Order("created_at DESC").Limit(20).Find(&list)
 	c.JSON(http.StatusOK, gin.H{"announcements": list})
@@ -485,7 +485,7 @@ func (h *SmartKnoraOpsAdminHandler) GetActiveAnnouncements(c *gin.Context) {
 
 // ── Audit Log Helper ───────────────────────────────────────
 
-func (h *SmartKnoraOpsAdminHandler) writeAuditLog(c *gin.Context, action, resource, resourceID, detail string) {
+func (h *SDPivotOpsAdminHandler) writeAuditLog(c *gin.Context, action, resource, resourceID, detail string) {
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 	role := middleware.GetRole(c)

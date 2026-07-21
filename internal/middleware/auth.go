@@ -39,8 +39,10 @@ var noAuthAPI = map[string][]string{
 	// MCP OAuth provider redirect: the third-party authorization server
 	// redirects the browser here without a WeKnora bearer token. The request
 	// is authenticated by the opaque, single-use `state` parameter instead.
-	"/api/v1/mcp-oauth/callback": {"GET"},
-	"/api/v1/auth/refresh":            {"POST"},
+	"/api/v1/mcp-oauth/callback":     {"GET"},
+	"/api/v1/auth/refresh":           {"POST"},
+	"/api/v1/sdp/ops/login":          {"POST"},
+	"/api/v1/sdp/ops/refresh":        {"POST"},
 	"/api/v1/smartknora/ops/login":   {"POST"},
 	"/api/v1/smartknora/ops/refresh": {"POST"},
 	// IM platforms (Feishu, Slack, etc.) commonly issue a HEAD request

@@ -23,24 +23,27 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// SmartKnoraDocumentHandler handles document upload, parsing, and management.
-type SmartKnoraDocumentHandler struct {
+// SDPivotDocumentHandler handles document upload, parsing, and management.
+type SDPivotDocumentHandler struct {
 	db        *gorm.DB
 	uploadDir string
 }
 
-// NewSmartKnoraDocumentHandler creates a new document handler.
-func NewSmartKnoraDocumentHandler(db *gorm.DB) *SmartKnoraDocumentHandler {
-	uploadDir := os.Getenv("UPLOAD_DIR")
+// NewSDPivotDocumentHandler creates a new document handler.
+func NewSDPivotDocumentHandler(db *gorm.DB) *SDPivotDocumentHandler {
+	uploadDir := os.Getenv("SDP_UPLOAD_DIR")
 	if uploadDir == "" {
-		uploadDir = "/tmp/smartknora-uploads"
+		uploadDir = os.Getenv("UPLOAD_DIR")
+	}
+	if uploadDir == "" {
+		uploadDir = "/tmp/sdpivot-uploads"
 	}
 	os.MkdirAll(uploadDir, 0755)
-	return &SmartKnoraDocumentHandler{db: db, uploadDir: uploadDir}
+	return &SDPivotDocumentHandler{db: db, uploadDir: uploadDir}
 }
 
 // RegisterRoutes registers document management routes.
-func (h *SmartKnoraDocumentHandler) RegisterRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotDocumentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	docs := rg.Group("/documents")
 	{
 		docs.POST("/upload", h.UploadDocument)
@@ -75,7 +78,7 @@ func (h *SmartKnoraDocumentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 // UploadDocument handles file upload.
-func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
+func (h *SDPivotDocumentHandler) UploadDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	// Limit upload size to 50MB
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 50<<20)
@@ -111,7 +114,7 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 	contentHash := hex.EncodeToString(hasher.Sum(nil))
 
 	// Check duplicate
-	var existing types.SmartKnoraDocument
+	var existing types.SDPivotDocument
 	if err := tenantDB.Where("content_hash = ? AND space_id = ? AND deleted_at IS NULL", contentHash, spaceID).First(&existing).Error; err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "document already exists", "document_id": existing.ID})
 		return
@@ -153,7 +156,7 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 	}
 
 	now := time.Now()
-	doc := types.SmartKnoraDocument{
+	doc := types.SDPivotDocument{
 		ID:              docID,
 		TenantID:        tenantID,
 		SpaceID:         spaceID,
@@ -171,7 +174,7 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	version := types.SmartKnoraDocumentVersion{
+	version := types.SDPivotDocumentVersion{
 		ID:         uuid.New().String(),
 		DocumentID: docID,
 		TenantID:   tenantID,
@@ -181,7 +184,7 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 		CreatedAt:  now,
 		CreatedBy:  userID,
 	}
-	if err := createSmartKnoraDocumentWithVersion(tenantDB, &doc, &version); err != nil {
+	if err := createSDPivotDocumentWithVersion(tenantDB, &doc, &version); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document record and version"})
 		return
 	}
@@ -199,7 +202,7 @@ func (h *SmartKnoraDocumentHandler) UploadDocument(c *gin.Context) {
 }
 
 // ListDocuments lists documents in a knowledge space.
-func (h *SmartKnoraDocumentHandler) ListDocuments(c *gin.Context) {
+func (h *SDPivotDocumentHandler) ListDocuments(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
@@ -209,7 +212,7 @@ func (h *SmartKnoraDocumentHandler) ListDocuments(c *gin.Context) {
 		return
 	}
 
-	db := tenantDB.Model(&types.SmartKnoraDocument{}).Where("tenant_id = ?", tenantID)
+	db := tenantDB.Model(&types.SDPivotDocument{}).Where("tenant_id = ?", tenantID)
 
 	if query.SpaceID != "" {
 		if _, ok := authorizeSpace(c, tenantDB, query.SpaceID, spaceAccessView); !ok {
@@ -239,7 +242,7 @@ func (h *SmartKnoraDocumentHandler) ListDocuments(c *gin.Context) {
 	var total int64
 	db.Count(&total)
 
-	var docs []types.SmartKnoraDocument
+	var docs []types.SDPivotDocument
 	db.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&docs)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -251,12 +254,12 @@ func (h *SmartKnoraDocumentHandler) ListDocuments(c *gin.Context) {
 }
 
 // GetDocument gets a specific document.
-func (h *SmartKnoraDocumentHandler) GetDocument(c *gin.Context) {
+func (h *SDPivotDocumentHandler) GetDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
-	var doc types.SmartKnoraDocument
+	var doc types.SDPivotDocument
 	if err := tenantDB.Where("id = ? AND tenant_id = ?", docID, tenantID).First(&doc).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
 		return
@@ -270,7 +273,7 @@ func (h *SmartKnoraDocumentHandler) GetDocument(c *gin.Context) {
 }
 
 // GetDocumentChunks gets chunks of a document.
-func (h *SmartKnoraDocumentHandler) GetDocumentChunks(c *gin.Context) {
+func (h *SDPivotDocumentHandler) GetDocumentChunks(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
@@ -280,7 +283,7 @@ func (h *SmartKnoraDocumentHandler) GetDocumentChunks(c *gin.Context) {
 		return
 	}
 
-	var chunks []types.SmartKnoraDocumentChunk
+	var chunks []types.SDPivotDocumentChunk
 	if err := tenantDB.Where("document_id = ? AND tenant_id = ?", doc.ID, tenantID).Order("chunk_index").Find(&chunks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list document chunks"})
 		return
@@ -290,7 +293,7 @@ func (h *SmartKnoraDocumentHandler) GetDocumentChunks(c *gin.Context) {
 }
 
 // GetDocumentVersions gets version history of a document.
-func (h *SmartKnoraDocumentHandler) GetDocumentVersions(c *gin.Context) {
+func (h *SDPivotDocumentHandler) GetDocumentVersions(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
@@ -300,7 +303,7 @@ func (h *SmartKnoraDocumentHandler) GetDocumentVersions(c *gin.Context) {
 		return
 	}
 
-	var versions []types.SmartKnoraDocumentVersion
+	var versions []types.SDPivotDocumentVersion
 	if err := tenantDB.Where("document_id = ? AND tenant_id = ?", doc.ID, tenantID).Order("version DESC").Find(&versions).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list document versions"})
 		return
@@ -310,7 +313,7 @@ func (h *SmartKnoraDocumentHandler) GetDocumentVersions(c *gin.Context) {
 }
 
 // DeleteDocument soft-deletes a document.
-func (h *SmartKnoraDocumentHandler) DeleteDocument(c *gin.Context) {
+func (h *SDPivotDocumentHandler) DeleteDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
@@ -319,11 +322,11 @@ func (h *SmartKnoraDocumentHandler) DeleteDocument(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := tenantDB.Where("id = ? AND tenant_id = ?", doc.ID, tenantID).Delete(&types.SmartKnoraDocument{}).Error; err != nil {
+	if err := tenantDB.Where("id = ? AND tenant_id = ?", doc.ID, tenantID).Delete(&types.SDPivotDocument{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete document"})
 		return
 	}
-	if err := tenantDB.Where("document_id = ? AND tenant_id = ?", doc.ID, tenantID).Delete(&types.SmartKnoraDocumentChunk{}).Error; err != nil {
+	if err := tenantDB.Where("document_id = ? AND tenant_id = ?", doc.ID, tenantID).Delete(&types.SDPivotDocumentChunk{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete document chunks"})
 		return
 	}
@@ -332,7 +335,7 @@ func (h *SmartKnoraDocumentHandler) DeleteDocument(c *gin.Context) {
 }
 
 // ReparseDocument triggers re-parsing of a document.
-func (h *SmartKnoraDocumentHandler) ReparseDocument(c *gin.Context) {
+func (h *SDPivotDocumentHandler) ReparseDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	docID := c.Param("id")
 
@@ -360,7 +363,7 @@ func (h *SmartKnoraDocumentHandler) ReparseDocument(c *gin.Context) {
 }
 
 // GetChunk gets a specific chunk.
-func (h *SmartKnoraDocumentHandler) GetChunk(c *gin.Context) {
+func (h *SDPivotDocumentHandler) GetChunk(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	chunkID := c.Param("id")
 
@@ -373,7 +376,7 @@ func (h *SmartKnoraDocumentHandler) GetChunk(c *gin.Context) {
 }
 
 // UpdateChunk updates a chunk's content.
-func (h *SmartKnoraDocumentHandler) UpdateChunk(c *gin.Context) {
+func (h *SDPivotDocumentHandler) UpdateChunk(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	chunkID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
@@ -390,7 +393,7 @@ func (h *SmartKnoraDocumentHandler) UpdateChunk(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := tenantDB.Model(&types.SmartKnoraDocumentChunk{}).Where("id = ? AND tenant_id = ?", chunk.ID, tenantID).Update("content", req.Content).Error; err != nil {
+	if err := tenantDB.Model(&types.SDPivotDocumentChunk{}).Where("id = ? AND tenant_id = ?", chunk.ID, tenantID).Update("content", req.Content).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update chunk"})
 		return
 	}
@@ -399,7 +402,7 @@ func (h *SmartKnoraDocumentHandler) UpdateChunk(c *gin.Context) {
 }
 
 // CreateStrategy creates a chunking strategy.
-func (h *SmartKnoraDocumentHandler) CreateStrategy(c *gin.Context) {
+func (h *SDPivotDocumentHandler) CreateStrategy(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
@@ -416,7 +419,7 @@ func (h *SmartKnoraDocumentHandler) CreateStrategy(c *gin.Context) {
 		req.ChunkOverlap = 50
 	}
 
-	strategy := types.SmartKnoraChunkStrategy{
+	strategy := types.SDPivotChunkStrategy{
 		ID:           uuid.New().String(),
 		TenantID:     tenantID,
 		SpaceID:      req.SpaceID,
@@ -435,18 +438,18 @@ func (h *SmartKnoraDocumentHandler) CreateStrategy(c *gin.Context) {
 }
 
 // ListStrategies lists chunking strategies.
-func (h *SmartKnoraDocumentHandler) ListStrategies(c *gin.Context) {
+func (h *SDPivotDocumentHandler) ListStrategies(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
-	var strategies []types.SmartKnoraChunkStrategy
+	var strategies []types.SDPivotChunkStrategy
 	tenantDB.Where("tenant_id = ?", tenantID).Order("created_at DESC").Find(&strategies)
 
 	c.JSON(http.StatusOK, gin.H{"strategies": strategies})
 }
 
 // UpdateStrategy updates a chunking strategy.
-func (h *SmartKnoraDocumentHandler) UpdateStrategy(c *gin.Context) {
+func (h *SDPivotDocumentHandler) UpdateStrategy(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	strategyID := c.Param("id")
 
@@ -467,20 +470,20 @@ func (h *SmartKnoraDocumentHandler) UpdateStrategy(c *gin.Context) {
 		updates["chunk_overlap"] = req.ChunkOverlap
 	}
 
-	tenantDB.Model(&types.SmartKnoraChunkStrategy{}).Where("id = ?", strategyID).Updates(updates)
+	tenantDB.Model(&types.SDPivotChunkStrategy{}).Where("id = ?", strategyID).Updates(updates)
 	c.JSON(http.StatusOK, gin.H{"message": "strategy updated"})
 }
 
 // DeleteStrategy deletes a chunking strategy.
-func (h *SmartKnoraDocumentHandler) DeleteStrategy(c *gin.Context) {
+func (h *SDPivotDocumentHandler) DeleteStrategy(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	strategyID := c.Param("id")
-	tenantDB.Where("id = ?", strategyID).Delete(&types.SmartKnoraChunkStrategy{})
+	tenantDB.Where("id = ?", strategyID).Delete(&types.SDPivotChunkStrategy{})
 	c.JSON(http.StatusOK, gin.H{"message": "strategy deleted"})
 }
 
 // SearchDocuments performs semantic search across documents.
-func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
+func (h *SDPivotDocumentHandler) SearchDocuments(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 
@@ -495,7 +498,7 @@ func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
 	}
 
 	search := strings.ReplaceAll(strings.ReplaceAll(req.Query, "%", "\\%"), "_", "\\_")
-	db := tenantDB.Model(&types.SmartKnoraDocumentChunk{}).
+	db := tenantDB.Model(&types.SDPivotDocumentChunk{}).
 		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
 		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
 
@@ -508,15 +511,15 @@ func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
 		db = db.Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, middleware.GetUserID(c)))
 	}
 
-	var chunks []types.SmartKnoraDocumentChunk
+	var chunks []types.SDPivotDocumentChunk
 	if err := db.Order("document_chunks.created_at DESC").Limit(req.TopK).Find(&chunks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search documents", "detail": err.Error()})
 		return
 	}
 
-	results := make([]types.SmartKnoraSearchResult, len(chunks))
+	results := make([]types.SDPivotSearchResult, len(chunks))
 	for i, chunk := range chunks {
-		results[i] = types.SmartKnoraSearchResult{
+		results[i] = types.SDPivotSearchResult{
 			DocumentID: chunk.DocumentID,
 			ChunkID:    chunk.ID,
 			Content:    chunk.Content,
@@ -530,9 +533,9 @@ func (h *SmartKnoraDocumentHandler) SearchDocuments(c *gin.Context) {
 var htmlBlockRE = regexp.MustCompile(`(?is)<(script|style)[^>]*>.*?</(script|style)>`)
 var htmlTagRE = regexp.MustCompile(`(?s)<[^>]+>`)
 
-func (h *SmartKnoraDocumentHandler) loadDocumentContent(ctx context.Context, doc *types.SmartKnoraDocument) ([]byte, error) {
+func (h *SDPivotDocumentHandler) loadDocumentContent(ctx context.Context, doc *types.SDPivotDocument) ([]byte, error) {
 	if strings.HasPrefix(doc.FilePath, "http://") || strings.HasPrefix(doc.FilePath, "https://") {
-		content, _, _, err := fetchSmartKnoraURLDocument(ctx, doc.FilePath)
+		content, _, _, err := fetchSDPivotURLDocument(ctx, doc.FilePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch document URL")
 		}
@@ -544,7 +547,7 @@ func (h *SmartKnoraDocumentHandler) loadDocumentContent(ctx context.Context, doc
 	return os.ReadFile(doc.FilePath)
 }
 
-func (h *SmartKnoraDocumentHandler) parseAndStoreDocument(tenantDB *gorm.DB, doc *types.SmartKnoraDocument, content []byte) error {
+func (h *SDPivotDocumentHandler) parseAndStoreDocument(tenantDB *gorm.DB, doc *types.SDPivotDocument, content []byte) error {
 	now := time.Now()
 	tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "parsing", "updated_at": now})
 
@@ -560,11 +563,11 @@ func (h *SmartKnoraDocumentHandler) parseAndStoreDocument(tenantDB *gorm.DB, doc
 	}
 
 	err = tenantDB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("document_id = ? AND tenant_id = ?", doc.ID, doc.TenantID).Delete(&types.SmartKnoraDocumentChunk{}).Error; err != nil {
+		if err := tx.Where("document_id = ? AND tenant_id = ?", doc.ID, doc.TenantID).Delete(&types.SDPivotDocumentChunk{}).Error; err != nil {
 			return err
 		}
 		for i, part := range chunks {
-			chunk := types.SmartKnoraDocumentChunk{ID: uuid.New().String(), DocumentID: doc.ID, TenantID: doc.TenantID, ChunkIndex: i, Content: part, TokenCount: estimateTokenCount(part), Metadata: "{}", CreatedAt: now}
+			chunk := types.SDPivotDocumentChunk{ID: uuid.New().String(), DocumentID: doc.ID, TenantID: doc.TenantID, ChunkIndex: i, Content: part, TokenCount: estimateTokenCount(part), Metadata: "{}", CreatedAt: now}
 			if err := tx.Create(&chunk).Error; err != nil {
 				return err
 			}
@@ -648,7 +651,7 @@ func tenantIDStr(tenantID uint64) string {
 	return strconv.FormatUint(tenantID, 10)
 }
 
-func createSmartKnoraDocumentWithVersion(tenantDB *gorm.DB, doc *types.SmartKnoraDocument, version *types.SmartKnoraDocumentVersion) error {
+func createSDPivotDocumentWithVersion(tenantDB *gorm.DB, doc *types.SDPivotDocument, version *types.SDPivotDocumentVersion) error {
 	return tenantDB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(doc).Error; err != nil {
 			return fmt.Errorf("create document: %w", err)
@@ -661,7 +664,7 @@ func createSmartKnoraDocumentWithVersion(tenantDB *gorm.DB, doc *types.SmartKnor
 }
 
 // UploadManualDocument handles manual text/markdown input.
-func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
+func (h *SDPivotDocumentHandler) UploadManualDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
@@ -688,7 +691,7 @@ func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 	hasher.Write([]byte(req.Content))
 	contentHash := hex.EncodeToString(hasher.Sum(nil))
 
-	doc := types.SmartKnoraDocument{
+	doc := types.SDPivotDocument{
 		ID:              docID,
 		TenantID:        tenantID,
 		SpaceID:         req.SpaceID,
@@ -707,7 +710,7 @@ func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 		UpdatedAt:       now,
 	}
 
-	version := types.SmartKnoraDocumentVersion{
+	version := types.SDPivotDocumentVersion{
 		ID:         uuid.New().String(),
 		DocumentID: docID,
 		TenantID:   tenantID,
@@ -716,7 +719,7 @@ func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 		CreatedAt:  now,
 		CreatedBy:  userID,
 	}
-	if err := createSmartKnoraDocumentWithVersion(tenantDB, &doc, &version); err != nil {
+	if err := createSDPivotDocumentWithVersion(tenantDB, &doc, &version); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document and version"})
 		return
 	}
@@ -733,7 +736,7 @@ func (h *SmartKnoraDocumentHandler) UploadManualDocument(c *gin.Context) {
 }
 
 // UploadFromURL handles web page URL import.
-func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
+func (h *SDPivotDocumentHandler) UploadFromURL(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
@@ -752,7 +755,7 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 	}
 
 	// Fetch URL content with SSRF protection, bounded time, and bounded size.
-	body, finalURL, status, err := fetchSmartKnoraURLDocument(c.Request.Context(), req.URL)
+	body, finalURL, status, err := fetchSDPivotURLDocument(c.Request.Context(), req.URL)
 	if err != nil {
 		switch status {
 		case http.StatusRequestEntityTooLarge:
@@ -780,7 +783,7 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		domain = finalURL.Host
 	}
 
-	doc := types.SmartKnoraDocument{
+	doc := types.SDPivotDocument{
 		ID:              docID,
 		TenantID:        tenantID,
 		SpaceID:         req.SpaceID,
@@ -799,7 +802,7 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		UpdatedAt:       now,
 	}
 
-	version := types.SmartKnoraDocumentVersion{
+	version := types.SDPivotDocumentVersion{
 		ID:         uuid.New().String(),
 		DocumentID: docID,
 		TenantID:   tenantID,
@@ -809,7 +812,7 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 		CreatedAt:  now,
 		CreatedBy:  userID,
 	}
-	if err := createSmartKnoraDocumentWithVersion(tenantDB, &doc, &version); err != nil {
+	if err := createSDPivotDocumentWithVersion(tenantDB, &doc, &version); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document and version"})
 		return
 	}
@@ -825,8 +828,8 @@ func (h *SmartKnoraDocumentHandler) UploadFromURL(c *gin.Context) {
 	})
 }
 
-func (h *SmartKnoraDocumentHandler) authorizeDocument(c *gin.Context, db *gorm.DB, docID string, level spaceAccessLevel) (*types.SmartKnoraDocument, bool) {
-	var doc types.SmartKnoraDocument
+func (h *SDPivotDocumentHandler) authorizeDocument(c *gin.Context, db *gorm.DB, docID string, level spaceAccessLevel) (*types.SDPivotDocument, bool) {
+	var doc types.SDPivotDocument
 	if err := db.Where("id = ? AND tenant_id = ?", docID, middleware.GetTenantID(c)).First(&doc).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
 		return nil, false
@@ -837,8 +840,8 @@ func (h *SmartKnoraDocumentHandler) authorizeDocument(c *gin.Context, db *gorm.D
 	return &doc, true
 }
 
-func (h *SmartKnoraDocumentHandler) authorizeChunk(c *gin.Context, db *gorm.DB, chunkID string, level spaceAccessLevel) (*types.SmartKnoraDocumentChunk, bool) {
-	var chunk types.SmartKnoraDocumentChunk
+func (h *SDPivotDocumentHandler) authorizeChunk(c *gin.Context, db *gorm.DB, chunkID string, level spaceAccessLevel) (*types.SDPivotDocumentChunk, bool) {
+	var chunk types.SDPivotDocumentChunk
 	if err := db.Where("id = ? AND tenant_id = ?", chunkID, middleware.GetTenantID(c)).First(&chunk).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "chunk not found"})
 		return nil, false

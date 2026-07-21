@@ -58,7 +58,7 @@ func TestGetSpaceRejectsPrivateSpaceNonMember(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSpaceAccessTestDB(t)
 	seedSpaceAccess(t, db)
-	h := NewSmartKnoraSpaceHandler(db)
+	h := NewSDPivotSpaceHandler(db)
 	c, w := spaceTestContext(http.MethodGet, "/spaces/private", "member", 1, nil)
 	c.Params = gin.Params{{Key: "id", Value: "private"}}
 
@@ -71,7 +71,7 @@ func TestAddSpaceMemberRequiresOwner(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSpaceAccessTestDB(t)
 	seedSpaceAccess(t, db)
-	h := NewSmartKnoraSpaceHandler(db)
+	h := NewSDPivotSpaceHandler(db)
 	c, w := spaceTestContext(http.MethodPost, "/spaces/private/members", "viewer", 1, map[string]string{"user_id": "member", "role": "owner"})
 	c.Params = gin.Params{{Key: "id", Value: "private"}}
 
@@ -87,7 +87,7 @@ func TestOwnerAddsViewer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSpaceAccessTestDB(t)
 	seedSpaceAccess(t, db)
-	h := NewSmartKnoraSpaceHandler(db)
+	h := NewSDPivotSpaceHandler(db)
 	c, w := spaceTestContext(http.MethodPost, "/spaces/private/members", "owner", 1, map[string]string{"user_id": "member", "role": "viewer"})
 	c.Params = gin.Params{{Key: "id", Value: "private"}}
 
@@ -103,7 +103,7 @@ func TestOwnerCannotAddCrossTenantUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSpaceAccessTestDB(t)
 	seedSpaceAccess(t, db)
-	h := NewSmartKnoraSpaceHandler(db)
+	h := NewSDPivotSpaceHandler(db)
 	c, w := spaceTestContext(http.MethodPost, "/spaces/private/members", "owner", 1, map[string]string{"user_id": "other-tenant", "role": "viewer"})
 	c.Params = gin.Params{{Key: "id", Value: "private"}}
 
@@ -119,7 +119,7 @@ func TestOwnerCannotRemoveLastOwner(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSpaceAccessTestDB(t)
 	seedSpaceAccess(t, db)
-	h := NewSmartKnoraSpaceHandler(db)
+	h := NewSDPivotSpaceHandler(db)
 	c, w := spaceTestContext(http.MethodDelete, "/spaces/private/members/owner", "owner", 1, nil)
 	c.Params = gin.Params{{Key: "id", Value: "private"}, {Key: "userId", Value: "owner"}}
 
@@ -135,7 +135,7 @@ func TestOwnerCannotDemoteLastOwner(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSpaceAccessTestDB(t)
 	seedSpaceAccess(t, db)
-	h := NewSmartKnoraSpaceHandler(db)
+	h := NewSDPivotSpaceHandler(db)
 	c, w := spaceTestContext(http.MethodPut, "/spaces/private/members/owner", "owner", 1, map[string]string{"role": "viewer"})
 	c.Params = gin.Params{{Key: "id", Value: "private"}, {Key: "userId", Value: "owner"}}
 
@@ -151,7 +151,7 @@ func TestViewerCannotUpdateSpace(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSpaceAccessTestDB(t)
 	seedSpaceAccess(t, db)
-	h := NewSmartKnoraSpaceHandler(db)
+	h := NewSDPivotSpaceHandler(db)
 	c, w := spaceTestContext(http.MethodPut, "/spaces/private", "viewer", 1, map[string]string{"name": "Changed"})
 	c.Params = gin.Params{{Key: "id", Value: "private"}}
 
@@ -167,7 +167,7 @@ func TestEditorAddsViewer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSpaceAccessTestDB(t)
 	seedSpaceAccess(t, db)
-	h := NewSmartKnoraSpaceHandler(db)
+	h := NewSDPivotSpaceHandler(db)
 	c, w := spaceTestContext(http.MethodPost, "/spaces/private/members", "editor", 1, map[string]string{"user_id": "member", "role": "viewer"})
 	c.Params = gin.Params{{Key: "id", Value: "private"}}
 
@@ -185,7 +185,7 @@ func TestEditorCannotAddPrivilegedMember(t *testing.T) {
 			gin.SetMode(gin.TestMode)
 			db := newSpaceAccessTestDB(t)
 			seedSpaceAccess(t, db)
-			h := NewSmartKnoraSpaceHandler(db)
+			h := NewSDPivotSpaceHandler(db)
 			c, w := spaceTestContext(http.MethodPost, "/spaces/private/members", "editor", 1, map[string]string{"user_id": "member", "role": role})
 			c.Params = gin.Params{{Key: "id", Value: "private"}}
 
@@ -203,7 +203,7 @@ func TestEditorRemovesViewer(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSpaceAccessTestDB(t)
 	seedSpaceAccess(t, db)
-	h := NewSmartKnoraSpaceHandler(db)
+	h := NewSDPivotSpaceHandler(db)
 	c, w := spaceTestContext(http.MethodDelete, "/spaces/private/members/viewer", "editor", 1, nil)
 	c.Params = gin.Params{{Key: "id", Value: "private"}, {Key: "userId", Value: "viewer"}}
 
@@ -221,7 +221,7 @@ func TestEditorCannotRemovePrivilegedMember(t *testing.T) {
 			gin.SetMode(gin.TestMode)
 			db := newSpaceAccessTestDB(t)
 			seedSpaceAccess(t, db)
-			h := NewSmartKnoraSpaceHandler(db)
+			h := NewSDPivotSpaceHandler(db)
 			c, w := spaceTestContext(http.MethodDelete, "/spaces/private/members/"+target, "editor", 1, nil)
 			c.Params = gin.Params{{Key: "id", Value: "private"}, {Key: "userId", Value: target}}
 

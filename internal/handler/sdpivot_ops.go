@@ -15,19 +15,19 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// SmartKnoraOpsHandler handles operations admin authentication (PRD 1.1.4).
-type SmartKnoraOpsHandler struct {
+// SDPivotOpsHandler handles operations admin authentication (PRD 1.1.4).
+type SDPivotOpsHandler struct {
 	db         *gorm.DB
 	jwtManager *auth.JWTManager
 }
 
-// NewSmartKnoraOpsHandler creates a new ops handler.
-func NewSmartKnoraOpsHandler(db *gorm.DB, jwtManager *auth.JWTManager) *SmartKnoraOpsHandler {
-	return &SmartKnoraOpsHandler{db: db, jwtManager: jwtManager}
+// NewSDPivotOpsHandler creates a new ops handler.
+func NewSDPivotOpsHandler(db *gorm.DB, jwtManager *auth.JWTManager) *SDPivotOpsHandler {
+	return &SDPivotOpsHandler{db: db, jwtManager: jwtManager}
 }
 
 // RegisterRoutes registers ops auth routes.
-func (h *SmartKnoraOpsHandler) RegisterPublicRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotOpsHandler) RegisterPublicRoutes(rg *gin.RouterGroup) {
 	ops := rg.Group("/ops")
 	{
 		ops.POST("/login", h.OpsLogin)
@@ -35,7 +35,7 @@ func (h *SmartKnoraOpsHandler) RegisterPublicRoutes(rg *gin.RouterGroup) {
 	}
 }
 
-func (h *SmartKnoraOpsHandler) RegisterProtectedRoutes(rg *gin.RouterGroup) {
+func (h *SDPivotOpsHandler) RegisterProtectedRoutes(rg *gin.RouterGroup) {
 	ops := rg.Group("/ops")
 	{
 		ops.POST("/change-password", h.OpsChangePassword)
@@ -44,7 +44,7 @@ func (h *SmartKnoraOpsHandler) RegisterProtectedRoutes(rg *gin.RouterGroup) {
 }
 
 // OpsLogin handles operations admin login (PRD 1.1.4).
-func (h *SmartKnoraOpsHandler) OpsLogin(c *gin.Context) {
+func (h *SDPivotOpsHandler) OpsLogin(c *gin.Context) {
 	var req struct {
 		Email    string `json:"email" binding:"required"`
 		Password string `json:"password" binding:"required"`
@@ -117,8 +117,8 @@ func (h *SmartKnoraOpsHandler) OpsLogin(c *gin.Context) {
 }
 
 // OpsRefreshToken refreshes operations admin tokens with rotation.
-func (h *SmartKnoraOpsHandler) OpsRefreshToken(c *gin.Context) {
-	var req types.SmartKnoraRefreshRequest
+func (h *SDPivotOpsHandler) OpsRefreshToken(c *gin.Context) {
+	var req types.SDPivotRefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -158,7 +158,7 @@ func (h *SmartKnoraOpsHandler) OpsRefreshToken(c *gin.Context) {
 }
 
 // OpsChangePassword handles forced password change (PRD 1.1.4).
-func (h *SmartKnoraOpsHandler) OpsChangePassword(c *gin.Context) {
+func (h *SDPivotOpsHandler) OpsChangePassword(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	role, _ := c.Get("role")
 	if role != "ops_admin" {
@@ -229,7 +229,7 @@ func (h *SmartKnoraOpsHandler) OpsChangePassword(c *gin.Context) {
 }
 
 // CheckFirstLogin checks if ops admin needs to change password.
-func (h *SmartKnoraOpsHandler) CheckFirstLogin(c *gin.Context) {
+func (h *SDPivotOpsHandler) CheckFirstLogin(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	role, _ := c.Get("role")
 	if role != "ops_admin" {
