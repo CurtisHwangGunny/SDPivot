@@ -5,7 +5,8 @@
 
 DO $$
 DECLARE
-    missing_columns TEXT;
+    incompatible_columns TEXT;
+    missing_unique_keys TEXT;
 BEGIN
     IF to_regclass('public.users') IS NULL THEN
         RAISE EXCEPTION 'SDPivot OP bootstrap requires core table public.users';
@@ -14,31 +15,154 @@ BEGIN
         RAISE EXCEPTION 'SDPivot OP bootstrap requires core table public.organizations';
     END IF;
 
-    SELECT string_agg(format('%I.%I', required.table_name, required.column_name), ', ' ORDER BY required.table_name, required.column_name)
-      INTO missing_columns
+    SELECT string_agg(
+               format('%I.%I expected %s, found %s',
+                   required.table_name,
+                   required.column_name,
+                   array_to_string(required.allowed_types, '/'),
+                   COALESCE(existing.data_type, 'missing')),
+               '; ' ORDER BY required.table_name, required.column_name)
+      INTO incompatible_columns
       FROM (VALUES
-          ('users', 'id'),
-          ('users', 'email'),
-          ('users', 'password_hash'),
-          ('users', 'tenant_id'),
-          ('users', 'is_active'),
-          ('users', 'is_system_admin'),
-          ('organizations', 'id'),
-          ('organizations', 'owner_id'),
-          ('organizations', 'owner_tenant_id')
-      ) AS required(table_name, column_name)
+          ('users', 'id', ARRAY['character varying', 'text']),
+          ('users', 'email', ARRAY['character varying', 'text']),
+          ('users', 'password_hash', ARRAY['character varying', 'text']),
+          ('users', 'tenant_id', ARRAY['bigint']),
+          ('users', 'is_active', ARRAY['boolean']),
+          ('users', 'is_system_admin', ARRAY['boolean']),
+          ('organizations', 'id', ARRAY['character varying', 'text']),
+          ('organizations', 'owner_id', ARRAY['character varying', 'text']),
+          ('organizations', 'owner_tenant_id', ARRAY['bigint'])
+      ) AS required(table_name, column_name, allowed_types)
+      LEFT JOIN information_schema.columns existing
+        ON existing.table_schema = 'public'
+       AND existing.table_name = required.table_name
+       AND existing.column_name = required.column_name
+     WHERE existing.column_name IS NULL
+        OR NOT (existing.data_type = ANY(required.allowed_types));
+
+    IF incompatible_columns IS NOT NULL THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap requires compatible completed core migrations: %', incompatible_columns;
+    END IF;
+
+    SELECT string_agg(format('%I.%I', required.table_name, required.column_name), ', ' ORDER BY required.table_name)
+      INTO missing_unique_keys
+      FROM (VALUES ('users', 'id'), ('organizations', 'id')) AS required(table_name, column_name)
      WHERE NOT EXISTS (
          SELECT 1
-           FROM information_schema.columns existing
-          WHERE existing.table_schema = 'public'
-            AND existing.table_name = required.table_name
-            AND existing.column_name = required.column_name
+           FROM pg_catalog.pg_constraint key_constraint
+           JOIN pg_catalog.pg_class target_table ON target_table.oid = key_constraint.conrelid
+           JOIN pg_catalog.pg_namespace target_schema ON target_schema.oid = target_table.relnamespace
+           JOIN pg_catalog.pg_attribute key_column
+             ON key_column.attrelid = target_table.oid
+            AND key_column.attname = required.column_name
+            AND NOT key_column.attisdropped
+          WHERE target_schema.nspname = 'public'
+            AND target_table.relname = required.table_name
+            AND key_constraint.contype IN ('p', 'u')
+            AND array_length(key_constraint.conkey, 1) = 1
+            AND key_constraint.conkey[1] = key_column.attnum
      );
 
-    IF missing_columns IS NOT NULL THEN
-        RAISE EXCEPTION 'SDPivot OP bootstrap requires completed core migrations; missing columns: %', missing_columns;
+    IF missing_unique_keys IS NOT NULL THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap requires PRIMARY KEY or UNIQUE constraints on: %', missing_unique_keys;
     END IF;
 END $$;
+
+CREATE OR REPLACE FUNCTION sdpivot_op_bootstrap_000012_assert_schema(p_require_all BOOLEAN)
+RETURNS void AS $$
+DECLARE
+    incompatible_columns TEXT;
+BEGIN
+    SELECT string_agg(
+               format('%I.%I expected %s, found %s',
+                   required.table_name,
+                   required.column_name,
+                   array_to_string(required.allowed_types, '/'),
+                   COALESCE(existing.data_type, 'missing')),
+               '; ' ORDER BY required.table_name, required.column_name)
+      INTO incompatible_columns
+      FROM (VALUES
+          ('org_ext', 'org_id', ARRAY['character varying']),
+          ('org_ext', 'tenant_id', ARRAY['bigint']),
+          ('org_members', 'id', ARRAY['character varying']),
+          ('org_members', 'org_id', ARRAY['character varying']),
+          ('org_members', 'user_id', ARRAY['character varying']),
+          ('smartknora_user_profiles', 'id', ARRAY['character varying']),
+          ('smartknora_user_profiles', 'user_id', ARRAY['character varying']),
+          ('refresh_tokens', 'id', ARRAY['character varying']),
+          ('refresh_tokens', 'user_id', ARRAY['character varying']),
+          ('token_usage', 'id', ARRAY['character varying']),
+          ('token_usage', 'tenant_id', ARRAY['bigint']),
+          ('knowledge_spaces', 'id', ARRAY['character varying']),
+          ('knowledge_spaces', 'tenant_id', ARRAY['bigint']),
+          ('knowledge_spaces', 'org_id', ARRAY['character varying']),
+          ('space_members', 'id', ARRAY['character varying']),
+          ('space_members', 'space_id', ARRAY['character varying']),
+          ('space_members', 'user_id', ARRAY['character varying']),
+          ('space_categories', 'id', ARRAY['character varying']),
+          ('space_categories', 'tenant_id', ARRAY['bigint']),
+          ('documents', 'id', ARRAY['character varying']),
+          ('documents', 'tenant_id', ARRAY['bigint']),
+          ('documents', 'space_id', ARRAY['character varying']),
+          ('document_chunks', 'id', ARRAY['character varying']),
+          ('document_chunks', 'document_id', ARRAY['character varying']),
+          ('document_chunks', 'tenant_id', ARRAY['bigint']),
+          ('document_versions', 'id', ARRAY['character varying']),
+          ('document_versions', 'document_id', ARRAY['character varying']),
+          ('document_versions', 'tenant_id', ARRAY['bigint']),
+          ('chunk_strategies', 'id', ARRAY['character varying']),
+          ('chunk_strategies', 'tenant_id', ARRAY['bigint']),
+          ('qa_sessions', 'id', ARRAY['character varying']),
+          ('qa_sessions', 'tenant_id', ARRAY['bigint']),
+          ('qa_messages', 'id', ARRAY['character varying']),
+          ('qa_messages', 'session_id', ARRAY['character varying']),
+          ('qa_messages', 'tenant_id', ARRAY['bigint']),
+          ('writing_drafts', 'id', ARRAY['character varying']),
+          ('writing_drafts', 'tenant_id', ARRAY['bigint']),
+          ('write_category_config', 'id', ARRAY['character varying']),
+          ('write_category_config', 'tenant_id', ARRAY['bigint']),
+          ('announcements', 'id', ARRAY['character varying']),
+          ('announcements', 'tenant_id', ARRAY['bigint']),
+          ('audit_logs', 'id', ARRAY['bigint']),
+          ('audit_logs', 'tenant_id', ARRAY['bigint'])
+      ) AS required(table_name, column_name, allowed_types)
+      LEFT JOIN information_schema.columns existing
+        ON existing.table_schema = 'public'
+       AND existing.table_name = required.table_name
+       AND existing.column_name = required.column_name
+     WHERE (existing.column_name IS NULL
+            AND (p_require_all OR to_regclass(format('public.%I', required.table_name)) IS NOT NULL))
+        OR (existing.column_name IS NOT NULL
+            AND NOT (existing.data_type = ANY(required.allowed_types)));
+
+    IF incompatible_columns IS NOT NULL THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap schema compatibility check failed: %', incompatible_columns;
+    END IF;
+
+    IF to_regclass('public.knowledge_spaces') IS NOT NULL AND NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_constraint key_constraint
+          JOIN pg_catalog.pg_class target_table ON target_table.oid = key_constraint.conrelid
+          JOIN pg_catalog.pg_namespace target_schema ON target_schema.oid = target_table.relnamespace
+         WHERE target_schema.nspname = 'public'
+           AND target_table.relname = 'knowledge_spaces'
+           AND key_constraint.contype IN ('p', 'u')
+           AND array_length(key_constraint.conkey, 1) = 1
+           AND key_constraint.conkey[1] = (
+               SELECT key_column.attnum
+                 FROM pg_catalog.pg_attribute key_column
+                WHERE key_column.attrelid = target_table.oid
+                  AND key_column.attname = 'id'
+                  AND NOT key_column.attisdropped
+           )
+    ) THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap requires PRIMARY KEY or UNIQUE constraint on knowledge_spaces.id';
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY INVOKER;
+
+SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE);
 
 -- Shared core table extensions from the final historical SDPivot schema.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_ops_admin BOOLEAN NOT NULL DEFAULT FALSE;
@@ -372,6 +496,9 @@ CREATE TABLE IF NOT EXISTS invoices (
 CREATE INDEX IF NOT EXISTS idx_inv_org ON invoices (org_id);
 CREATE INDEX IF NOT EXISTS idx_inv_status ON invoices (status);
 CREATE INDEX IF NOT EXISTS idx_inv_period ON invoices (period_start, period_end);
+
+SELECT sdpivot_op_bootstrap_000012_assert_schema(TRUE);
+DROP FUNCTION sdpivot_op_bootstrap_000012_assert_schema(BOOLEAN);
 
 -- Historical tenant helpers, made safe when application GUCs are unset or empty.
 CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, _p_is_ops_admin BOOLEAN DEFAULT FALSE)

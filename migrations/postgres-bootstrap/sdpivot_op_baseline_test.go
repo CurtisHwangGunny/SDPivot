@@ -53,14 +53,21 @@ func TestBaselineFailsClosedWithoutVersionedCore(t *testing.T) {
 		"to_regclass('public.users') IS NULL",
 		"to_regclass('public.organizations') IS NULL",
 		"information_schema.columns",
-		"('users', 'id')",
-		"('users', 'email')",
-		"('users', 'password_hash')",
-		"('users', 'tenant_id')",
-		"('organizations', 'id')",
-		"('organizations', 'owner_id')",
-		"('organizations', 'owner_tenant_id')",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap requires completed core migrations",
+		"('users', 'id', ARRAY['character varying', 'text'])",
+		"('users', 'email', ARRAY['character varying', 'text'])",
+		"('users', 'password_hash', ARRAY['character varying', 'text'])",
+		"('users', 'tenant_id', ARRAY['bigint'])",
+		"('users', 'is_active', ARRAY['boolean'])",
+		"('users', 'is_system_admin', ARRAY['boolean'])",
+		"('organizations', 'id', ARRAY['character varying', 'text'])",
+		"('organizations', 'owner_id', ARRAY['character varying', 'text'])",
+		"('organizations', 'owner_tenant_id', ARRAY['bigint'])",
+		"existing.data_type = ANY(required.allowed_types)",
+		"pg_catalog.pg_constraint",
+		"key_constraint.contype IN ('p', 'u')",
+		"array_length(key_constraint.conkey, 1) = 1",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires compatible completed core migrations",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires PRIMARY KEY or UNIQUE constraints",
 	)
 
 	if regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?(users|organizations)\b`).MatchString(sql) {
@@ -71,6 +78,62 @@ func TestBaselineFailsClosedWithoutVersionedCore(t *testing.T) {
 		"ALTER TABLE users ADD COLUMN IF NOT EXISTS is_ops_admin",
 		"CREATE TABLE IF NOT EXISTS org_ext",
 	)
+}
+
+func TestBaselineChecksExistingTableCompatibilityBeforeHelpersAndPolicies(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	requireFragments(t, sql,
+		"CREATE OR REPLACE FUNCTION sdpivot_op_bootstrap_000012_assert_schema(p_require_all BOOLEAN)",
+		"SDPivot OP bootstrap schema compatibility check failed",
+		"p_require_all OR to_regclass(format('public.%I', required.table_name)) IS NOT NULL",
+		"SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE)",
+		"SELECT sdpivot_op_bootstrap_000012_assert_schema(TRUE)",
+		"DROP FUNCTION sdpivot_op_bootstrap_000012_assert_schema(BOOLEAN)",
+		"('org_ext', 'org_id', ARRAY['character varying'])",
+		"('org_ext', 'tenant_id', ARRAY['bigint'])",
+		"('org_members', 'org_id', ARRAY['character varying'])",
+		"('smartknora_user_profiles', 'user_id', ARRAY['character varying'])",
+		"('refresh_tokens', 'user_id', ARRAY['character varying'])",
+		"('knowledge_spaces', 'id', ARRAY['character varying'])",
+		"('knowledge_spaces', 'tenant_id', ARRAY['bigint'])",
+		"('space_members', 'space_id', ARRAY['character varying'])",
+		"('documents', 'id', ARRAY['character varying'])",
+		"('documents', 'tenant_id', ARRAY['bigint'])",
+		"('document_chunks', 'document_id', ARRAY['character varying'])",
+		"('document_chunks', 'tenant_id', ARRAY['bigint'])",
+		"('qa_messages', 'session_id', ARRAY['character varying'])",
+		"('audit_logs', 'tenant_id', ARRAY['bigint'])",
+	)
+	requireOrder(t, sql,
+		"CREATE OR REPLACE FUNCTION sdpivot_op_bootstrap_000012_assert_schema",
+		"SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE)",
+		"CREATE TABLE IF NOT EXISTS org_ext",
+		"CREATE TABLE IF NOT EXISTS invoices",
+		"SELECT sdpivot_op_bootstrap_000012_assert_schema(TRUE)",
+		"DROP FUNCTION sdpivot_op_bootstrap_000012_assert_schema(BOOLEAN)",
+		"CREATE OR REPLACE FUNCTION set_tenant_context",
+		"CREATE POLICY sdpivot_op_bootstrap_000012_organizations",
+	)
+}
+
+func TestBaselinePreservesTenantIsolationSafetyContract(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	requireFragments(t, sql,
+		"CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, _p_is_ops_admin BOOLEAN DEFAULT FALSE)",
+		"PERFORM set_config('app.is_ops_admin', 'false', false)",
+		"LANGUAGE plpgsql SECURITY INVOKER",
+		"CREATE OR REPLACE FUNCTION is_ops_admin_context() RETURNS BOOLEAN AS $$ SELECT FALSE; $$ LANGUAGE sql STABLE SECURITY INVOKER",
+		"USING (owner_tenant_id = get_current_tenant_id())",
+		"WITH CHECK (owner_tenant_id = get_current_tenant_id())",
+		"ALTER TABLE document_chunks FORCE ROW LEVEL SECURITY",
+	)
+	policyStart := strings.Index(sql, "-- bootstrap policies")
+	if policyStart < 0 {
+		t.Fatal("bootstrap policy section missing")
+	}
+	if strings.Contains(sql[policyStart:], "is_ops_admin_context()") {
+		t.Error("schema compatibility changes must not restore the operations bypass")
+	}
 }
 
 func TestBaselineCreatesObjectsBeforePolicies(t *testing.T) {
