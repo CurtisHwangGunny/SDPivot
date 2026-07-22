@@ -67,6 +67,17 @@ func TestSDPivotTenantFallbackContextIsTransactionLocalAndNeverElevated(t *testi
 	}
 }
 
+func TestConfigureSDPivotTenantContextSavepointCreationFailure(t *testing.T) {
+	db, mock := newTenantContextMock(t)
+	expectExec(mock, savepointSQL).WillReturnError(errors.New(databaseErrMsg))
+
+	err := configureSDPivotTenantContext(db, 42, true)
+	if err == nil || !strings.Contains(err.Error(), "create tenant context savepoint") {
+		t.Fatalf("savepoint creation error = %v", err)
+	}
+	requireMockExpectations(t, mock)
+}
+
 func TestConfigureSDPivotTenantContextPrimarySuccess(t *testing.T) {
 	db, mock := newTenantContextMock(t)
 	expectExec(mock, savepointSQL).WillReturnResult(sqlmock.NewResult(0, 0))
