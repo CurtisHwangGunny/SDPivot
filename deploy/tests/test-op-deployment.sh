@@ -68,8 +68,22 @@ expect_fail() {
 }
 
 /bin/bash -n "$ROOT/deploy/validate-op-deployment.sh"
-/bin/bash -n "$ROOT/deploy/op-deploy.sh"
+/usr/bin/python3 -m py_compile "$ROOT/deploy/op-deploy.sh"
+/usr/bin/python3 - "$ROOT/deploy/op-deploy.sh" <<'PY'
+import runpy
+import signal
+import sys
+
+module = runpy.run_path(sys.argv[1])
+assert module["FORWARDED_SIGNALS"] == (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+PY
 pass syntax
+
+payload="$TMP_ROOT/bash-env-payload"
+printf 'touch %q\n' "$TMP_ROOT/bash-env-executed" > "$payload"
+expect_fail bash_env_ignored /usr/bin/env BASH_ENV="$payload" \
+    "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" rejected-action
+[[ ! -e "$TMP_ROOT/bash-env-executed" ]] || { printf 'FAIL BASH_ENV executed before launcher isolation\n' >&2; exit 1; }
 
 "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate >/dev/null
 pass compliant_validate
@@ -111,6 +125,58 @@ for tool in dirname readlink realpath stat docker env flock sha256sum; do
     [[ ! -e "$TMP_ROOT/hijacked-$tool" ]] || { printf 'FAIL PATH hijack %s\n' "$tool" >&2; exit 1; }
 done
 pass path_hijack_absent
+
+# The launcher must retain its lock until a signalled child process group is fully reaped.
+/usr/bin/cp -- "$ROOT/deploy/op-deploy.sh" "$TMP_ROOT/op-deploy.original"
+fake_docker="$TMP_ROOT/fake-docker"
+/usr/bin/python3 - "$fake_docker" "$TMP_ROOT/fake-docker.pid" "$TMP_ROOT/fake-docker-signalled" <<'PY'
+from pathlib import Path
+import shlex
+import sys
+
+script, pid_file, signal_file = map(Path, sys.argv[1:])
+script.write_text(
+    "#!/bin/bash\n"
+    f"printf '%s\\n' \"$$\" > {shlex.quote(str(pid_file))}\n"
+    f"trap 'touch {shlex.quote(str(signal_file))}; /bin/sleep 2; exit 143' TERM INT HUP\n"
+    "while :; do /bin/sleep 1; done\n"
+)
+script.chmod(0o700)
+PY
+/usr/bin/python3 - "$ROOT/deploy/op-deploy.sh" "$fake_docker" <<'PY'
+from pathlib import Path
+import sys
+
+launcher = Path(sys.argv[1])
+source = launcher.read_text()
+old = '/usr/bin/docker'
+assert source.count(old) == 1
+launcher.write_text(source.replace(old, sys.argv[2]))
+PY
+"$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" config > "$TMP_ROOT/signal.out" 2> "$TMP_ROOT/signal.err" &
+launcher_pid=$!
+for _ in $(/usr/bin/seq 1 50); do
+    [[ -s "$TMP_ROOT/fake-docker.pid" ]] && break
+    /bin/sleep 0.1
+done
+[[ -s "$TMP_ROOT/fake-docker.pid" ]] || { printf 'FAIL signal child did not start\n' >&2; /bin/kill -KILL "$launcher_pid" 2>/dev/null || :; exit 1; }
+child_pid="$(/bin/cat "$TMP_ROOT/fake-docker.pid")"
+/bin/kill -TERM "$launcher_pid"
+for _ in $(/usr/bin/seq 1 50); do
+    [[ -e "$TMP_ROOT/fake-docker-signalled" ]] && break
+    /bin/sleep 0.1
+done
+[[ -e "$TMP_ROOT/fake-docker-signalled" ]] || { printf 'FAIL signal was not forwarded to child group\n' >&2; exit 1; }
+expect_fail signal_lock_held_until_child_exit "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate
+/bin/kill -0 "$launcher_pid" 2>/dev/null || { printf 'FAIL launcher exited before child completed\n' >&2; exit 1; }
+if wait "$launcher_pid"; then
+    printf 'FAIL signalled launcher unexpectedly succeeded\n' >&2
+    exit 1
+fi
+/bin/kill -0 "$child_pid" 2>/dev/null && { printf 'FAIL signalled child remains alive\n' >&2; exit 1; }
+/usr/bin/cp -- "$TMP_ROOT/op-deploy.original" "$ROOT/deploy/op-deploy.sh"
+"$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate >/dev/null
+pass signal_child_reaped_and_lock_released
 
 # Ambient OP_* values must not override the validated snapshot.
 OP_DB_PASSWORD=password OP_APP_IMAGE=registry.invalid/app:latest \
