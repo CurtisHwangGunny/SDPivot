@@ -118,10 +118,10 @@ BEGIN
           ('document_chunks', 'id', ARRAY['character varying', 'uuid']),
           ('document_chunks', 'document_id', ARRAY['character varying']),
           ('document_chunks', 'tenant_id', ARRAY['bigint']),
-          ('document_versions', 'id', ARRAY['character varying']),
+          ('document_versions', 'id', ARRAY['character varying', 'uuid']),
           ('document_versions', 'document_id', ARRAY['character varying']),
           ('document_versions', 'tenant_id', ARRAY['bigint']),
-          ('chunk_strategies', 'id', ARRAY['character varying']),
+          ('chunk_strategies', 'id', ARRAY['character varying', 'uuid']),
           ('chunk_strategies', 'tenant_id', ARRAY['bigint']),
           ('qa_sessions', 'id', ARRAY['character varying']),
           ('qa_sessions', 'user_id', ARRAY['character varying']),
@@ -176,7 +176,9 @@ BEGIN
         max(data_type) FILTER (WHERE table_name = 'org_ext' AND column_name = 'org_id') AS org_ext_id,
         max(data_type) FILTER (WHERE table_name = 'knowledge_spaces' AND column_name = 'id') AS space_id,
         max(data_type) FILTER (WHERE table_name = 'documents' AND column_name = 'id') AS document_id,
-        max(data_type) FILTER (WHERE table_name = 'document_chunks' AND column_name = 'id') AS chunk_id
+        max(data_type) FILTER (WHERE table_name = 'document_chunks' AND column_name = 'id') AS chunk_id,
+        max(data_type) FILTER (WHERE table_name = 'document_versions' AND column_name = 'id') AS version_id,
+        max(data_type) FILTER (WHERE table_name = 'chunk_strategies' AND column_name = 'id') AS strategy_id
       INTO id_type_profile
       FROM information_schema.columns
      WHERE table_schema = 'public'
@@ -184,23 +186,31 @@ BEGIN
            ('org_ext', 'org_id'),
            ('knowledge_spaces', 'id'),
            ('documents', 'id'),
-           ('document_chunks', 'id')
+           ('document_chunks', 'id'),
+           ('document_versions', 'id'),
+           ('chunk_strategies', 'id')
        );
 
     IF id_type_profile.org_ext_id IS NOT NULL
        AND id_type_profile.space_id IS NOT NULL
        AND id_type_profile.document_id IS NOT NULL
        AND id_type_profile.chunk_id IS NOT NULL
+       AND id_type_profile.version_id IS NOT NULL
+       AND id_type_profile.strategy_id IS NOT NULL
        AND NOT (
            (id_type_profile.org_ext_id = 'character varying'
             AND id_type_profile.space_id = 'character varying'
             AND id_type_profile.document_id = 'character varying'
-            AND id_type_profile.chunk_id = 'uuid')
+            AND id_type_profile.chunk_id = 'uuid'
+            AND id_type_profile.version_id = 'uuid'
+            AND id_type_profile.strategy_id = 'uuid')
            OR
            (id_type_profile.org_ext_id = 'character varying'
             AND id_type_profile.space_id = 'character varying'
             AND id_type_profile.document_id = 'character varying'
-            AND id_type_profile.chunk_id = 'character varying')
+            AND id_type_profile.chunk_id = 'character varying'
+            AND id_type_profile.version_id = 'character varying'
+            AND id_type_profile.strategy_id = 'character varying')
        ) THEN
         RAISE EXCEPTION 'SDPivot OP bootstrap schema compatibility check failed: incompatible ID type profile';
     END IF;

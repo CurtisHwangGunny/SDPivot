@@ -314,13 +314,19 @@ sdpivot_v12_fingerprint() {
               AND p.oid = to_regprocedure('public.is_ops_admin_context()')
         ), chunks_policy AS (
             SELECT policy.polcmd,
-                   regexp_replace(
-                       regexp_replace(lower(COALESCE(pg_get_expr(policy.polqual, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
-                       '::text', '', 'g'
+                   replace(
+                       regexp_replace(
+                           regexp_replace(lower(COALESCE(pg_get_expr(policy.polqual, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
+                           '::text', '', 'g'
+                       ),
+                       'public.', ''
                    ) AS using_expression,
-                   regexp_replace(
-                       regexp_replace(lower(COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
-                       '::text', '', 'g'
+                   replace(
+                       regexp_replace(
+                           regexp_replace(lower(COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
+                           '::text', '', 'g'
+                       ),
+                       'public.', ''
                    ) AS check_expression
             FROM pg_catalog.pg_policy policy
             WHERE policy.polrelid = to_regclass('public.document_chunks')
@@ -501,13 +507,19 @@ sdpivot_latest_fingerprint() {
                    policy.polcmd,
                    policy.polpermissive,
                    policy.polroles,
-                   regexp_replace(
-                       regexp_replace(lower(COALESCE(pg_get_expr(policy.polqual, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
-                       '::text', '', 'g'
+                   replace(
+                       regexp_replace(
+                           regexp_replace(lower(COALESCE(pg_get_expr(policy.polqual, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
+                           '::text', '', 'g'
+                       ),
+                       'public.', ''
                    ) AS using_expression,
-                   regexp_replace(
-                       regexp_replace(lower(COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
-                       '::text', '', 'g'
+                   replace(
+                       regexp_replace(
+                           regexp_replace(lower(COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
+                           '::text', '', 'g'
+                       ),
+                       'public.', ''
                    ) AS check_expression
             FROM pg_catalog.pg_policy policy
             WHERE policy.polrelid IN (SELECT relation_id FROM target_relations WHERE relation_id IS NOT NULL)
@@ -528,22 +540,8 @@ sdpivot_latest_fingerprint() {
                )
                OR (
                    target.is_chunk_policy
-                   AND (policy.using_expression NOT LIKE '%d.id=document_chunks.document_id%'
-                        OR policy.using_expression NOT LIKE '%d.tenant_id=document_chunks.tenant_id%'
-                        OR policy.using_expression NOT LIKE '%d.tenant_id=get_current_tenant_id%'
-                        OR policy.using_expression LIKE '%is_ops_admin_context%'
-                        OR policy.using_expression LIKE '%or%'
-                        OR policy.using_expression LIKE '%true%'
-                        OR policy.using_expression LIKE '%case%'
-                        OR policy.using_expression LIKE '%coalesce%'
-                        OR policy.check_expression NOT LIKE '%d.id=document_chunks.document_id%'
-                        OR policy.check_expression NOT LIKE '%d.tenant_id=document_chunks.tenant_id%'
-                        OR policy.check_expression NOT LIKE '%d.tenant_id=get_current_tenant_id%'
-                        OR policy.check_expression LIKE '%is_ops_admin_context%'
-                        OR policy.check_expression LIKE '%or%'
-                        OR policy.check_expression LIKE '%true%'
-                        OR policy.check_expression LIKE '%case%'
-                        OR policy.check_expression LIKE '%coalesce%')
+                   AND (policy.using_expression <> 'existsselect1fromdocumentsdwhered.id=document_chunks.document_idandd.tenant_id=document_chunks.tenant_idandd.tenant_id=get_current_tenant_id'
+                        OR policy.check_expression <> 'existsselect1fromdocumentsdwhered.id=document_chunks.document_idandd.tenant_id=document_chunks.tenant_idandd.tenant_id=get_current_tenant_id')
                )
         ), extra_permissive_policies AS (
             SELECT 1
@@ -554,14 +552,17 @@ sdpivot_latest_fingerprint() {
         ), tenant_function AS (
             SELECT p.prorettype = 'void'::regtype
                    AND NOT p.prosecdef
-                   AND pg_get_functiondef(p.oid) ILIKE '%set_config(''app.is_ops_admin'', ''false'', true)%'
+                   AND p.proconfig = ARRAY['search_path=pg_catalog, public']
+                   AND regexp_replace(lower(p.prosrc), '[[:space:]]', '', 'g') =
+                       'beginperformpg_catalog.set_config(''app.current_tenant_id'',p_tenant_id::text,true);performpg_catalog.set_config(''app.is_ops_admin'',''false'',true);end;'
                    AS valid
             FROM pg_catalog.pg_proc p
             WHERE p.oid = to_regprocedure('public.set_tenant_context(bigint,boolean)')
         ), ops_function AS (
             SELECT p.prorettype = 'boolean'::regtype
                    AND NOT p.prosecdef
-                   AND regexp_replace(lower(pg_get_functiondef(p.oid)), '[[:space:];]', '', 'g') LIKE '%selectfalse%'
+                   AND p.proconfig = ARRAY['search_path=pg_catalog, public']
+                   AND regexp_replace(lower(p.prosrc), '[[:space:]]', '', 'g') = 'selectfalse;'
                    AS valid
             FROM pg_catalog.pg_proc p
             WHERE p.oid = to_regprocedure('public.is_ops_admin_context()')
@@ -595,6 +596,22 @@ require_command "$PSQL_BIN"
     "OP_DATABASE_URL must use the postgres or postgresql scheme"
 
 readonly SDPIVOT_DATABASE_URL="$(with_migrations_table sdpivot_schema_migrations)"
+
+log "prechecking SDPivot migration state"
+if ! initial_sdpivot_state="$(migration_state sdpivot_schema_migrations)"; then
+    fail "failed to inspect sdpivot_schema_migrations before migration"
+fi
+if [[ "$initial_sdpivot_state" != "absent" ]]; then
+    [[ "$initial_sdpivot_state" == *:* ]] || fail "sdpivot_schema_migrations has an invalid or empty state"
+    initial_sdpivot_version="${initial_sdpivot_state%%:*}"
+    initial_sdpivot_dirty="${initial_sdpivot_state##*:}"
+    [[ "$initial_sdpivot_dirty" == "f" ]] || fail "sdpivot_schema_migrations is dirty; automatic force is forbidden"
+    [[ "$initial_sdpivot_version" =~ ^[0-9]+$ ]] || fail "sdpivot_schema_migrations version is invalid"
+    (( initial_sdpivot_version >= SDPIVOT_BASELINE_VERSION )) || fail \
+        "sdpivot_schema_migrations version ${initial_sdpivot_version} is older than supported ${SDPIVOT_BASELINE_VERSION}"
+    (( initial_sdpivot_version <= SDPIVOT_LATEST_VERSION )) || fail \
+        "sdpivot_schema_migrations version ${initial_sdpivot_version} is newer than supported ${SDPIVOT_LATEST_VERSION}"
+fi
 
 log "checking core migration state"
 if ! core_state="$(migration_state schema_migrations)"; then

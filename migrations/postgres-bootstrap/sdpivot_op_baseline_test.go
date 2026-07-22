@@ -100,6 +100,8 @@ func TestBaselineChecksExistingTableCompatibilityBeforeHelpersAndPolicies(t *tes
 		"('documents', 'id', ARRAY['character varying'])",
 		"('documents', 'tenant_id', ARRAY['bigint'])",
 		"('document_chunks', 'id', ARRAY['character varying', 'uuid'])",
+		"('document_versions', 'id', ARRAY['character varying', 'uuid'])",
+		"('chunk_strategies', 'id', ARRAY['character varying', 'uuid'])",
 		"('document_chunks', 'document_id', ARRAY['character varying'])",
 		"('document_chunks', 'tenant_id', ARRAY['bigint'])",
 		"('qa_messages', 'session_id', ARRAY['character varying'])",
@@ -124,15 +126,21 @@ func TestBaselineAcceptsOnlyCompleteHistoricalOrBootstrapIDProfiles(t *testing.T
 		"max(data_type) FILTER (WHERE table_name = 'knowledge_spaces' AND column_name = 'id') AS space_id",
 		"max(data_type) FILTER (WHERE table_name = 'documents' AND column_name = 'id') AS document_id",
 		"max(data_type) FILTER (WHERE table_name = 'document_chunks' AND column_name = 'id') AS chunk_id",
+		"max(data_type) FILTER (WHERE table_name = 'document_versions' AND column_name = 'id') AS version_id",
+		"max(data_type) FILTER (WHERE table_name = 'chunk_strategies' AND column_name = 'id') AS strategy_id",
 		"id_type_profile.org_ext_id = 'character varying'",
 		"id_type_profile.space_id = 'character varying'",
 		"id_type_profile.document_id = 'character varying'",
 		"id_type_profile.chunk_id = 'uuid'",
+		"id_type_profile.version_id = 'uuid'",
+		"id_type_profile.strategy_id = 'uuid'",
 		"id_type_profile.chunk_id = 'character varying'",
+		"id_type_profile.version_id = 'character varying'",
+		"id_type_profile.strategy_id = 'character varying'",
 		"RAISE EXCEPTION 'SDPivot OP bootstrap schema compatibility check failed: incompatible ID type profile'",
 	)
 
-	profileCheck := regexp.MustCompile(`(?s)and\s+not\s*\(\s*\(.*?org_ext_id\s*=\s*'character varying'.*?space_id\s*=\s*'character varying'.*?document_id\s*=\s*'character varying'.*?chunk_id\s*=\s*'uuid'\s*\)\s*or\s*\(.*?org_ext_id\s*=\s*'character varying'.*?space_id\s*=\s*'character varying'.*?document_id\s*=\s*'character varying'.*?chunk_id\s*=\s*'character varying'\s*\)\s*\)`).FindString(sql)
+	profileCheck := regexp.MustCompile(`(?s)and\s+not\s*\(\s*\(.*?org_ext_id\s*=\s*'character varying'.*?space_id\s*=\s*'character varying'.*?document_id\s*=\s*'character varying'.*?chunk_id\s*=\s*'uuid'.*?version_id\s*=\s*'uuid'.*?strategy_id\s*=\s*'uuid'\s*\)\s*or\s*\(.*?org_ext_id\s*=\s*'character varying'.*?space_id\s*=\s*'character varying'.*?document_id\s*=\s*'character varying'.*?chunk_id\s*=\s*'character varying'.*?version_id\s*=\s*'character varying'.*?strategy_id\s*=\s*'character varying'\s*\)\s*\)`).FindString(sql)
 	if profileCheck == "" {
 		t.Fatal("bootstrap compatibility assertion must accept exactly the historical and Bootstrap ID profiles and reject mixed profiles")
 	}

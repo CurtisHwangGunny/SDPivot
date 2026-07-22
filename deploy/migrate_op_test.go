@@ -202,6 +202,14 @@ func assertCalls(t *testing.T, got, want []string) {
 	}
 }
 
+func expectedCallsWithInitialSDPivotInspection(scenario migrationScenario, calls []string) []string {
+	initial := []string{"psql:sdp-exists"}
+	if scenario.sdpivotState != "absent" {
+		initial = append(initial, "psql:sdp-state")
+	}
+	return append(initial, calls...)
+}
+
 func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 	tests := []migrationScenario{
 		{
@@ -282,7 +290,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, calls := runMigrationScenario(t, test)
-			assertCalls(t, calls, test.wantCalls)
+			assertCalls(t, calls, expectedCallsWithInitialSDPivotInspection(test, test.wantCalls))
 		})
 	}
 }
@@ -290,7 +298,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 func TestMigrationStateMachineFailsClosedForUnsafeStates(t *testing.T) {
 	tests := []migrationScenario{
 		{name: "core dirty", coreState: "12:t", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "empty", wantCalls: []string{"psql:core-exists", "psql:core-state"}},
-		{name: "sdpivot dirty", coreState: "63:f", sdpivotState: "12:t", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-state"}},
+		{name: "sdpivot dirty", coreState: "63:f", sdpivotState: "12:t", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{}},
 		{name: "default ledger v12 ownership ambiguous", coreState: "12:f", sdpivotState: "absent", coreFingerprint: "invalid", sdpFingerprint: "complete", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-fingerprint"}},
 		{name: "core incomplete with sdpivot markers", coreState: "12:f", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "partial", sdpMarkers: "1", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-fingerprint", "psql:sdp-exists", "psql:sdp-flags"}},
 		{name: "partial table set", coreState: "63:f", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "partial"},
@@ -298,7 +306,8 @@ func TestMigrationStateMachineFailsClosedForUnsafeStates(t *testing.T) {
 		{name: "function missing or mismatched", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
 		{name: "target rls missing", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
 		{name: "document chunks not force or lacks dual tenant policy", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
-		{name: "future sdpivot version", coreState: "63:f", sdpivotState: "15:f", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-state"}},
+		{name: "future sdpivot version", coreState: "63:f", sdpivotState: "15:f", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{}},
+		{name: "future sdpivot version before core migration", coreState: "absent", sdpivotState: "15:f", publicTables: "0", coreFingerprint: "complete", sdpFingerprint: "empty", wantCalls: []string{}},
 		{name: "v13 empty state table", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
 		{name: "v13 wrong state table structure", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
 		{name: "v13 known legacy hash still active", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Account: "partial"},
@@ -312,7 +321,7 @@ func TestMigrationStateMachineFailsClosedForUnsafeStates(t *testing.T) {
 			test.wantSuccess = false
 			_, calls := runMigrationScenario(t, test)
 			if test.wantCalls != nil {
-				assertCalls(t, calls, test.wantCalls)
+				assertCalls(t, calls, expectedCallsWithInitialSDPivotInspection(test, test.wantCalls))
 			}
 			for _, call := range calls {
 				if call == "migrate:bootstrap" || call == "migrate:sdpivot" {
@@ -336,7 +345,7 @@ func TestMigrationStateMachineStopsImmediatelyWhenCommandFails(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			test.wantSuccess = false
 			_, calls := runMigrationScenario(t, test)
-			assertCalls(t, calls, test.wantCalls)
+			assertCalls(t, calls, expectedCallsWithInitialSDPivotInspection(test, test.wantCalls))
 		})
 	}
 }
@@ -351,8 +360,9 @@ func TestMigrationFingerprintCoversVersion13AndLatestContracts(t *testing.T) {
 		"!sdpivot-disabled-legacy-ops-admin:", "target.is_active is distinct from false",
 		"target.must_change_password is distinct from true", "expected_policies(table_name, policy_name, is_chunk_policy)",
 		"sdpivot_secure_000014_document_chunks", "policy.polcmd", "policy.polpermissive", "policy.polroles",
-		"pg_get_expr(policy.polqual", "pg_get_expr(policy.polwithcheck", "'::text', '', 'g'", "extra_permissive_policies",
-		"policy.using_expression like '%or%'", "policy.check_expression like '%true%'",
+		"pg_get_expr(policy.polqual", "pg_get_expr(policy.polwithcheck", "'::text', '', 'g'", "'public.', ''", "extra_permissive_policies",
+		"policy.using_expression <> 'existsselect1fromdocumentsdwhered.id=document_chunks.document_idandd.tenant_id=document_chunks.tenant_idandd.tenant_id=get_current_tenant_id'",
+		"p.proconfig = array['search_path=pg_catalog, public']", "regexp_replace(lower(p.prosrc)",
 		"sdpivot_schema_migrations version ${sdpivot_version} is newer than supported",
 	} {
 		if !strings.Contains(script, fragment) {
