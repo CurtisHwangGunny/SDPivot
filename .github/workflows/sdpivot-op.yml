@@ -12,6 +12,9 @@ on:
       - 'internal/middleware/**'
       - 'frontend/sdpivot/**'
       - 'deploy/**'
+      - 'migrations/versioned/**'
+      - 'migrations/postgres-bootstrap/**'
+      - 'migrations/postgres/**'
       - 'config/config.yaml'
       - 'go.mod'
       - 'go.sum'
@@ -24,6 +27,9 @@ on:
       - 'internal/middleware/**'
       - 'frontend/sdpivot/**'
       - 'deploy/**'
+      - 'migrations/versioned/**'
+      - 'migrations/postgres-bootstrap/**'
+      - 'migrations/postgres/**'
       - 'config/config.yaml'
       - 'go.mod'
       - 'go.sum'
@@ -147,6 +153,12 @@ jobs:
 
       - name: Run focused Go tests
         run: go test -count=1 ./internal/config ./internal/router ./internal/middleware ./cmd/sdp-server
+
+      - name: Run migration and deployment contract tests
+        run: go test -count=1 ./deploy ./migrations/postgres-bootstrap ./migrations/postgres
+
+      - name: Check migration orchestration syntax
+        run: bash -n deploy/migrate-op.sh
 
       - name: Run focused Go vet
         run: go vet ./internal/config ./internal/router ./internal/middleware ./cmd/sdp-server
