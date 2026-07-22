@@ -96,11 +96,36 @@ func TestLoadDBPoolConfig(t *testing.T) {
 	}
 }
 
+func TestLoadReadyTimeout(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		t.Setenv("SDP_READY_TIMEOUT", "")
+		timeout, err := loadReadyTimeout()
+		if err != nil || timeout != 3*time.Second {
+			t.Fatalf("timeout=%v err=%v", timeout, err)
+		}
+	})
+	t.Run("override", func(t *testing.T) {
+		t.Setenv("SDP_READY_TIMEOUT", "750ms")
+		timeout, err := loadReadyTimeout()
+		if err != nil || timeout != 750*time.Millisecond {
+			t.Fatalf("timeout=%v err=%v", timeout, err)
+		}
+	})
+	for _, value := range []string{"invalid", "0s", "-1s"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("SDP_READY_TIMEOUT", value)
+			if _, err := loadReadyTimeout(); err == nil {
+				t.Fatal("expected readiness timeout error")
+			}
+		})
+	}
+}
+
 func TestTopLevelHealthAndReadiness(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	internalError := "password=super-secret internal connection failure"
 	r := gin.New()
-	registerTopLevelHealth(r, func(context.Context) error {
+	registerTopLevelHealth(r, time.Second, func(context.Context) error {
 		return errors.New(internalError)
 	})
 
@@ -120,10 +145,103 @@ func TestTopLevelHealthAndReadiness(t *testing.T) {
 	}
 }
 
+func TestTopLevelReadinessUsesTimeout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	registerTopLevelHealth(r, 20*time.Millisecond, func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+
+	response := httptest.NewRecorder()
+	r.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/ready", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readiness status = %d", response.Code)
+	}
+}
+
+func TestReadinessDependencyOrderAndShortCircuit(t *testing.T) {
+	var calls []string
+	check := newReadinessCheck(
+		func(context.Context) error {
+			calls = append(calls, "db")
+			return nil
+		},
+		func(context.Context) error {
+			calls = append(calls, "redis")
+			return nil
+		},
+	)
+	if err := check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(calls, ",") != "db,redis" {
+		t.Fatalf("unexpected readiness order: %v", calls)
+	}
+
+	calls = nil
+	check = newReadinessCheck(
+		func(context.Context) error {
+			calls = append(calls, "db")
+			return errors.New("database unavailable")
+		},
+		func(context.Context) error {
+			calls = append(calls, "redis")
+			return nil
+		},
+	)
+	if err := check(context.Background()); err == nil {
+		t.Fatal("expected database readiness error")
+	}
+	if strings.Join(calls, ",") != "db" {
+		t.Fatalf("redis should not be called after database failure: %v", calls)
+	}
+}
+
+func TestRedisReadinessFailureIsSanitized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	internalError := "redis password=super-secret unavailable"
+	r := gin.New()
+	registerTopLevelHealth(r, time.Second, newReadinessCheck(
+		func(context.Context) error { return nil },
+		func(context.Context) error { return errors.New(internalError) },
+	))
+
+	response := httptest.NewRecorder()
+	r.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/ready", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readiness status = %d", response.Code)
+	}
+	if strings.Contains(response.Body.String(), internalError) || strings.Contains(response.Body.String(), "super-secret") {
+		t.Fatalf("readiness response leaked redis error: %s", response.Body.String())
+	}
+}
+
+type closeRecorder struct {
+	calls *[]string
+	name  string
+}
+
+func (c closeRecorder) Close() error {
+	*c.calls = append(*c.calls, c.name)
+	return nil
+}
+
+func TestCloseDependenciesClosesRedisAndDatabase(t *testing.T) {
+	var calls []string
+	closeDependencies(closeRecorder{calls: &calls, name: "db"}, func() error {
+		calls = append(calls, "redis")
+		return nil
+	})
+	if strings.Join(calls, ",") != "redis,db" {
+		t.Fatalf("unexpected cleanup calls: %v", calls)
+	}
+}
+
 func TestTopLevelReadinessSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	registerTopLevelHealth(r, func(context.Context) error { return nil })
+	registerTopLevelHealth(r, time.Second, func(context.Context) error { return nil })
 
 	response := httptest.NewRecorder()
 	r.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/ready", nil))

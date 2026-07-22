@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -45,6 +46,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Invalid database pool configuration: %v", err)
 	}
+	readyTimeout, err := loadReadyTimeout()
+	if err != nil {
+		log.Fatalf("Invalid readiness configuration: %v", err)
+	}
 
 	// ── Database ───────────────────────────────────────────────
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=Asia/Shanghai",
@@ -60,22 +65,18 @@ func main() {
 	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
-	defer func() {
-		if err := sqlDB.Close(); err != nil {
-			log.Printf("[DB] Close warning: %v", err)
+	var redisClient *redis.Client
+	defer closeDependencies(sqlDB, func() error {
+		if redisClient == nil {
+			return nil
 		}
-	}()
+		return redisClient.Close()
+	})
 	log.Printf("[DB] Connected to PostgreSQL %s:%s/%s", dbHost, dbPort, dbName)
 
 	// ── Redis (optional) ───────────────────────────────────────
-	var redisClient *redis.Client
 	if redisAddr != "" {
 		redisClient = redis.NewClient(&redis.Options{Addr: redisAddr, Password: redisPassword})
-		defer func() {
-			if err := redisClient.Close(); err != nil {
-				log.Printf("[Redis] Close warning: %v", err)
-			}
-		}()
 		if err := redisClient.Ping(context.Background()).Err(); err != nil {
 			log.Printf("[Redis] Warning: %v", err)
 		} else {
@@ -97,15 +98,15 @@ func main() {
 	}))
 
 	// ── Health checks ──────────────────────────────────────────
-	registerTopLevelHealth(r, func(ctx context.Context) error {
-		if err := sqlDB.PingContext(ctx); err != nil {
-			return err
-		}
-		if redisClient != nil {
+	registerTopLevelHealth(r, readyTimeout, newReadinessCheck(
+		sqlDB.PingContext,
+		func(ctx context.Context) error {
+			if redisClient == nil {
+				return nil
+			}
 			return redisClient.Ping(ctx).Err()
-		}
-		return nil
-	})
+		},
+	))
 
 	router.NewSDPivotRouter(router.SDPivotRouterParams{
 		DB:          db,
@@ -115,22 +116,29 @@ func main() {
 
 	// ── Start Server ───────────────────────────────────────────
 	srv := &http.Server{Addr: ":" + port, Handler: r}
-
+	serveErr := make(chan error, 1)
 	go func() {
 		log.Printf("[Server] SDPivot v2.0.0 starting on :%s", port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
-		}
+		serveErr <- srv.ListenAndServe()
 	}()
 
-	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	select {
+	case <-quit:
+		log.Println("[Server] Shutdown signal received")
+	case err := <-serveErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("[Server] Listen failed: %v", err)
+		}
+	}
+
 	log.Println("[Server] Shutting down...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	srv.Shutdown(ctx)
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("[Server] Shutdown warning: %v", err)
+	}
 	log.Println("[Server] Stopped")
 }
 
@@ -185,12 +193,57 @@ func parseEnvInt(name string, defaultValue int, allowZero bool) (int, error) {
 	return parsed, nil
 }
 
-func registerTopLevelHealth(r *gin.Engine, readinessCheck func(context.Context) error) {
+func loadReadyTimeout() (time.Duration, error) {
+	value := strings.TrimSpace(getEnv("SDP_READY_TIMEOUT", "3s"))
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 {
+		return 0, fmt.Errorf("SDP_READY_TIMEOUT must be a positive duration")
+	}
+	return timeout, nil
+}
+
+func newReadinessCheck(
+	pingDB func(context.Context) error,
+	pingRedis func(context.Context) error,
+) func(context.Context) error {
+	return func(ctx context.Context) error {
+		if pingDB != nil {
+			if err := pingDB(ctx); err != nil {
+				return err
+			}
+		}
+		if pingRedis != nil {
+			return pingRedis(ctx)
+		}
+		return nil
+	}
+}
+
+func closeDependencies(db interface{ Close() error }, closeRedis func() error) {
+	if closeRedis != nil {
+		if err := closeRedis(); err != nil {
+			log.Printf("[Redis] Close warning: %v", err)
+		}
+	}
+	if db != nil {
+		if err := db.Close(); err != nil {
+			log.Printf("[DB] Close warning: %v", err)
+		}
+	}
+}
+
+func registerTopLevelHealth(
+	r *gin.Engine,
+	readyTimeout time.Duration,
+	readinessCheck func(context.Context) error,
+) {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "sdp", "version": "2.0.0"})
 	})
 	r.GET("/ready", func(c *gin.Context) {
-		if readinessCheck != nil && readinessCheck(c.Request.Context()) != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), readyTimeout)
+		defer cancel()
+		if readinessCheck != nil && readinessCheck(ctx) != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable"})
 			return
 		}
