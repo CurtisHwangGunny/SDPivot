@@ -34,7 +34,7 @@ SDP 是面向企业与团队的 **AI 知识库 / 文档智能问答平台**，�
 | remote | 地址 | 用途 |
 |--------|------|------|
 | `sdp` | `CurtisHwangGunny/SDP-OP`（私有，主仓库） | **SDP 产品代码主远端**，日常推送目标 |
-| `fork` | `CurtisHwangGunny/SDP-OPivot` | 旧 fork（SmartKnora 改名前的仓库），保留不动 |
+| `fork` | `CurtisHwangGunny/SDPivot` | 旧 fork（SmartKnora 改名前的仓库），保留不动 |
 | `origin` | `Tencent/WeKnora` | 上游开源项目，只读参考 |
 | `github` | `CurtisHwangGunny/smartKnora` | 旧仓库，保留不动 |
 
