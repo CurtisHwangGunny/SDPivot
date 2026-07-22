@@ -1,0 +1,165 @@
+package postgresbootstrap
+
+import (
+	"os"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+func readBaselineSQL(t *testing.T, name string) string {
+	t.Helper()
+	content, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatalf("read %s: %v", name, err)
+	}
+	return strings.ToLower(string(content))
+}
+
+func normalizeSQL(sql string) string {
+	return strings.Join(strings.Fields(strings.ToLower(sql)), " ")
+}
+
+func requireFragments(t *testing.T, sql string, fragments ...string) {
+	t.Helper()
+	normalized := normalizeSQL(sql)
+	for _, fragment := range fragments {
+		if !strings.Contains(normalized, normalizeSQL(fragment)) {
+			t.Errorf("migration missing %q", fragment)
+		}
+	}
+}
+
+func requireOrder(t *testing.T, sql string, steps ...string) {
+	t.Helper()
+	normalized := normalizeSQL(sql)
+	previous := -1
+	for _, step := range steps {
+		position := strings.Index(normalized, normalizeSQL(step))
+		if position < 0 {
+			t.Fatalf("migration missing ordered step %q", step)
+		}
+		if position <= previous {
+			t.Fatalf("migration step %q is out of order", step)
+		}
+		previous = position
+	}
+}
+
+func TestBaselineFailsClosedWithoutVersionedCore(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	requireFragments(t, sql,
+		"PRECONDITION: migrations/versioned",
+		"to_regclass('public.users') IS NULL",
+		"to_regclass('public.organizations') IS NULL",
+		"information_schema.columns",
+		"('users', 'id')",
+		"('users', 'email')",
+		"('users', 'password_hash')",
+		"('users', 'tenant_id')",
+		"('organizations', 'id')",
+		"('organizations', 'owner_id')",
+		"('organizations', 'owner_tenant_id')",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires completed core migrations",
+	)
+
+	if regexp.MustCompile(`create\s+table\s+(if\s+not\s+exists\s+)?(users|organizations)\b`).MatchString(sql) {
+		t.Error("bootstrap must not create shared core tables")
+	}
+	requireOrder(t, sql,
+		"to_regclass('public.users') IS NULL",
+		"ALTER TABLE users ADD COLUMN IF NOT EXISTS is_ops_admin",
+		"CREATE TABLE IF NOT EXISTS org_ext",
+	)
+}
+
+func TestBaselineCreatesObjectsBeforePolicies(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	for _, table := range []string{
+		"org_ext", "org_members", "smartknora_user_profiles", "refresh_tokens", "token_usage",
+		"knowledge_spaces", "space_members", "space_categories", "documents", "document_chunks",
+		"document_versions", "chunk_strategies", "qa_sessions", "qa_messages", "writing_drafts",
+		"write_category_config", "announcements", "audit_logs", "sensitive_words", "billing_plans",
+		"enterprise_subscriptions", "invoices",
+	} {
+		requireFragments(t, sql, "CREATE TABLE IF NOT EXISTS "+table)
+	}
+
+	requireOrder(t, sql,
+		"CREATE TABLE IF NOT EXISTS space_categories",
+		"ALTER TABLE space_categories ENABLE ROW LEVEL SECURITY",
+		"CREATE POLICY sdpivot_op_bootstrap_000012_space_categories ON space_categories",
+	)
+	requireOrder(t, sql,
+		"CREATE TABLE IF NOT EXISTS documents",
+		"CREATE TABLE IF NOT EXISTS document_chunks",
+		"ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY",
+		"CREATE POLICY sdpivot_op_bootstrap_000012_document_chunks ON document_chunks",
+	)
+
+	policies := regexp.MustCompile(`create\s+policy\s+(sdpivot_op_bootstrap_000012_[a-z0-9_]+)\s+on\s+([a-z0-9_]+)`).FindAllStringSubmatch(sql, -1)
+	if len(policies) < 10 {
+		t.Fatalf("expected identifiable bootstrap policies, found %d", len(policies))
+	}
+	seen := make(map[string]bool)
+	for _, policy := range policies {
+		if seen[policy[1]] {
+			t.Errorf("duplicate bootstrap policy name %s", policy[1])
+		}
+		seen[policy[1]] = true
+	}
+}
+
+func TestBaselineContainsNoFixedAccountRoleOrSeedData(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	for _, forbidden := range []string{
+		"admin@smartknora.com",
+		"$2a$10$l4fdcgy48s7whdmzzqaaf.sql5nna1.0uewfbbvzvasmsv0qyugs2",
+		"smartknora@2026",
+		"insert into users",
+		"create role ops_admin",
+		"create role app_user",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Errorf("bootstrap contains forbidden account/role fragment %q", forbidden)
+		}
+	}
+
+	if regexp.MustCompile(`\binsert\s+into\s+(announcements|sensitive_words|billing_plans|enterprise_subscriptions|invoices)\b`).MatchString(sql) {
+		t.Error("bootstrap must not seed retired SaaS operations data")
+	}
+}
+
+func TestBaselineRLSAndSafeTenantContext(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	requireFragments(t, sql,
+		"current_setting('app.current_tenant_id', true)",
+		"current_setting('app.is_ops_admin', true)",
+		"ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY",
+		"ALTER TABLE document_chunks FORCE ROW LEVEL SECURITY",
+		"CREATE POLICY sdpivot_op_bootstrap_000012_document_chunks ON document_chunks",
+		"FROM documents d",
+		"d.id = document_chunks.document_id",
+		"d.tenant_id = document_chunks.tenant_id",
+		"d.tenant_id = get_current_tenant_id()",
+	)
+
+	chunkPolicy := regexp.MustCompile(`(?s)create\s+policy\s+sdpivot_op_bootstrap_000012_document_chunks.*?using\s*\(.*?d\.tenant_id\s*=\s*document_chunks\.tenant_id.*?d\.tenant_id\s*=\s*get_current_tenant_id\(\).*?with\s+check\s*\(.*?d\.tenant_id\s*=\s*document_chunks\.tenant_id.*?d\.tenant_id\s*=\s*get_current_tenant_id\(\)`).FindString(sql)
+	if chunkPolicy == "" {
+		t.Error("document_chunks USING and WITH CHECK must both bind chunk tenant to its document and current tenant")
+	}
+}
+
+func TestBaselineDownIsConservative(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.down.sql")
+	requireFragments(t, sql,
+		"to_regclass('public.' || target.table_name) IS NOT NULL",
+		"DROP POLICY IF EXISTS %I ON %I",
+		"sdpivot_op_bootstrap_000012_document_chunks",
+	)
+
+	forbidden := regexp.MustCompile(`\b(drop\s+table|drop\s+column|delete\s+from|truncate\b|alter\s+table\s+\S+\s+disable\s+row\s+level\s+security|no\s+force\s+row\s+level\s+security)`).FindString(sql)
+	if forbidden != "" {
+		t.Errorf("down migration contains destructive operation %q", forbidden)
+	}
+}
