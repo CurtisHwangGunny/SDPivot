@@ -1,71 +1,28 @@
-# 忽略所有隐藏文件和目录
-.*
-# 但不忽略特定隐藏文件和目录
-!.env.example
-!.gitignore
-!.github/
+# ===== SDP 构建产物（go build 在部署时生成，禁止入库；勿误伤 cmd/sdp-server 源码目录）=====
+frontend/**/sdp-server
+frontend/**/smartknora-server
+/smartknora-server
 
-# 敏感文件
-*.pem
-*_key
-*_secret
-*.key
-*.crt
+# ===== 本地环境变量 / 密钥 =====
+.env
+deploy/.env
+deploy/.env.test
 
-# IDE和编辑器文件
+# ===== 前端依赖与构建缓存 =====
+**/node_modules/
+**/dist/
+frontend/sdpivot/node_modules/
+
+# ===== Go 构建缓存 =====
+*.exe
+*.test
+*.out
+/go-build*/
+
+# ===== 编辑器 / OS / 日志 =====
+.idea/
+.vscode/
+.DS_Store
 *.swp
-*.swo
-
-# 构建和依赖文件
-node_modules/
-/dist/
-/build/
 *.log
-
-# 临时文件
-tmp/
-temp/
 logs/
-*.pid
-
-WeKnora
-WeKnora-lite
-cmd/desktop/build/bin/
-/models/
-test/data/mswag.txt
-data/files/
-/data/sdpivot-uploads/
-data/weknora.db
-data/weknora.db-wal
-data/weknora.db-shm
-skills-lock.json
-
-web/
-
-**/__pycache__
-/scripts/scale_dev_jobs.sh
-/server
-frontend/.vite
-frontend/chrome-extension/
-WeKnora-Chrome-Extension
-packages/protoc-3.19.4-linux-x86_64.zip
-
-Claude.md
-
-# 本地测试脚本
-configure-ollama.sh
-fix-docker.sh
-
-# WeChat Mini Program local/private configuration
-miniprogram/project.private.config.json
-*.bak
-smartknora-server
-sdp-server
-
-# Public OP frontend environment
-!frontend/sdpivot/.env.op
-
-# Playwright artifacts
-playwright-report/
-test-results/
-blob-report/
