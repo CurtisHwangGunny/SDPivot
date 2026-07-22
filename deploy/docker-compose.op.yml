@@ -75,7 +75,7 @@ services:
 
   docreader:
     <<: *runtime-defaults
-    image: ${OP_DOCREADER_IMAGE:-wechatopenai/weknora-docreader:latest}
+    image: ${OP_DOCREADER_IMAGE:?OP_DOCREADER_IMAGE is required - use an immutable tag or digest}
     build:
       context: ..
       dockerfile: docker/Dockerfile.docreader
@@ -103,7 +103,7 @@ services:
 
   app:
     <<: *runtime-defaults
-    image: ${OP_APP_IMAGE:-wechatopenai/weknora-app:latest}
+    image: ${OP_APP_IMAGE:?OP_APP_IMAGE is required - use an immutable tag or digest}
     build:
       context: ..
       dockerfile: docker/Dockerfile.app
