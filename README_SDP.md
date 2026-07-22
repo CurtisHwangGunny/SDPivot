@@ -33,8 +33,8 @@ SDP 是面向企业与团队的 **AI 知识库 / 文档智能问答平台**，�
 
 | remote | 地址 | 用途 |
 |--------|------|------|
-| `sdp` | `CurtisHwangGunny/SDP`（私有，主仓库） | **SDP 产品代码主远端**，日常推送目标 |
-| `fork` | `CurtisHwangGunny/SDPivot` | 旧 fork（SmartKnora 改名前的仓库），保留不动 |
+| `sdp` | `CurtisHwangGunny/SDP-OP`（私有，主仓库） | **SDP 产品代码主远端**，日常推送目标 |
+| `fork` | `CurtisHwangGunny/SDP-OPivot` | 旧 fork（SmartKnora 改名前的仓库），保留不动 |
 | `origin` | `Tencent/WeKnora` | 上游开源项目，只读参考 |
 | `github` | `CurtisHwangGunny/smartKnora` | 旧仓库，保留不动 |
 
@@ -42,11 +42,11 @@ SDP 是面向企业与团队的 **AI 知识库 / 文档智能问答平台**，�
 
 ```bash
 # 1. 克隆主仓库
-git clone https://github.com/CurtisHwangGunny/SDP.git
-cd SDP
+git clone https://github.com/CurtisHwangGunny/SDP-OP.git
+cd SDP-OP
 
 # 2. 确认主远端为 sdp
-git remote -v   # 应能看到 sdp -> CurtisHwangGunny/SDP
+git remote -v   # 应能看到 sdp -> CurtisHwangGunny/SDP-OP
 
 # 3. 基于默认开发分支建立特性分支
 git switch -c feat/your-feature sdp/feature/op-phase0
