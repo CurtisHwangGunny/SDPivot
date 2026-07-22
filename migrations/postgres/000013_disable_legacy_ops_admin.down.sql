@@ -18,6 +18,8 @@ BEGIN
         FROM sdpivot_disable_legacy_ops_admin_000013_state AS state
         WHERE target.id = state.user_id
           AND target.email = state.email
+          AND state.disabled_password_hash =
+              '!sdpivot-disabled-legacy-ops-admin:' || state.user_id
           AND target.password_hash = state.disabled_password_hash
           AND target.is_active = FALSE
           AND target.must_change_password = TRUE

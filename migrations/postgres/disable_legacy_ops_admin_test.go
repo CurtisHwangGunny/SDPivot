@@ -30,6 +30,23 @@ func requireSQLFragments(t *testing.T, sql string, fragments ...string) {
 	}
 }
 
+func requireSQLOrder(t *testing.T, sql string, steps ...string) {
+	t.Helper()
+	normalizedSQL := strings.Join(strings.Fields(sql), " ")
+	previous := -1
+	for _, step := range steps {
+		normalizedStep := strings.Join(strings.Fields(strings.ToLower(step)), " ")
+		position := strings.Index(normalizedSQL, normalizedStep)
+		if position < 0 {
+			t.Fatalf("migration missing ordered step %q", step)
+		}
+		if position <= previous {
+			t.Fatalf("migration step %q is out of order", step)
+		}
+		previous = position
+	}
+}
+
 func TestDisableLegacyOpsAdminUpIsStrictAndAuditable(t *testing.T) {
 	sql := readSQL(t, "000013_disable_legacy_ops_admin.up.sql")
 	requireSQLFragments(t, sql,
@@ -61,6 +78,48 @@ func TestDisableLegacyOpsAdminUpIsStrictAndAuditable(t *testing.T) {
 	}
 }
 
+func TestDisableLegacyOpsAdminUpRearmsRestoredStateBeforeNeutralizing(t *testing.T) {
+	sql := readSQL(t, "000013_disable_legacy_ops_admin.up.sql")
+	rearm := `
+		UPDATE sdpivot_disable_legacy_ops_admin_000013_state AS state
+		SET original_password_hash = target.password_hash,
+		    original_is_active = target.is_active,
+		    original_must_change_password = target.must_change_password,
+		    original_is_ops_admin = target.is_ops_admin,
+		    original_is_system_admin = target.is_system_admin,
+		    disabled_at = NOW(),
+		    restored_at = NULL
+		FROM users AS target
+		WHERE state.user_id = target.id
+		  AND state.email = target.email
+		  AND target.email = 'admin@smartknora.com'
+		  AND target.password_hash = '` + legacyOpsHash + `'
+		  AND state.original_password_hash = '` + legacyOpsHash + `'
+		  AND state.disabled_password_hash = '!sdpivot-disabled-legacy-ops-admin:' || state.user_id
+		  AND state.restored_at IS NOT NULL`
+	neutralize := `
+		UPDATE users AS target
+		SET password_hash = state.disabled_password_hash,
+		    is_active = FALSE,
+		    must_change_password = TRUE,
+		    updated_at = NOW()
+		FROM sdpivot_disable_legacy_ops_admin_000013_state AS state
+		WHERE target.id = state.user_id
+		  AND target.email = state.email
+		  AND target.email = 'admin@smartknora.com'
+		  AND target.password_hash = '` + legacyOpsHash + `'
+		  AND state.original_password_hash = '` + legacyOpsHash + `'
+		  AND state.disabled_password_hash = '!sdpivot-disabled-legacy-ops-admin:' || state.user_id
+		  AND state.restored_at IS NULL`
+
+	requireSQLFragments(t, sql, rearm, neutralize)
+	requireSQLOrder(t, sql,
+		"INSERT INTO sdpivot_disable_legacy_ops_admin_000013_state",
+		rearm,
+		neutralize,
+	)
+}
+
 func TestDisableLegacyOpsAdminDownIsGuardedAndRetainsEvidence(t *testing.T) {
 	sql := readSQL(t, "000013_disable_legacy_ops_admin.down.sql")
 	requireSQLFragments(t, sql,
@@ -68,6 +127,7 @@ func TestDisableLegacyOpsAdminDownIsGuardedAndRetainsEvidence(t *testing.T) {
 		"FROM sdpivot_disable_legacy_ops_admin_000013_state AS state",
 		"target.id = state.user_id",
 		"target.email = state.email",
+		"state.disabled_password_hash = '!sdpivot-disabled-legacy-ops-admin:' || state.user_id",
 		"target.password_hash = state.disabled_password_hash",
 		"target.is_active = FALSE",
 		"target.must_change_password = TRUE",
