@@ -130,11 +130,52 @@ func TestBaselineContainsNoFixedAccountRoleOrSeedData(t *testing.T) {
 	}
 }
 
+func TestBaselineUsesQuotedStringDefaults(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	requireFragments(t, sql,
+		"role VARCHAR(20) NOT NULL DEFAULT 'member'",
+		"status VARCHAR(20) NOT NULL DEFAULT 'active'",
+		"visibility VARCHAR(20) DEFAULT 'private'",
+		"strategy_type VARCHAR(50) NOT NULL DEFAULT 'fixed_size'",
+		"source_type VARCHAR(30) NOT NULL DEFAULT 'knowledge_base'",
+	)
+
+	unquoted := regexp.MustCompile(`(?m)\bdefault\s+(member|active|trial|free|private|viewer|pending|draft|general|fixed_size|knowledge_base)\b`).FindString(sql)
+	if unquoted != "" {
+		t.Errorf("string default must be quoted: %q", unquoted)
+	}
+}
+
+func TestBaselineHasNoOpsAdminRLSBypass(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	requireFragments(t, sql,
+		"CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, _p_is_ops_admin BOOLEAN DEFAULT FALSE)",
+		"PERFORM set_config('app.current_tenant_id', p_tenant_id::TEXT, false)",
+		"PERFORM set_config('app.is_ops_admin', 'false', false)",
+		"LANGUAGE plpgsql SECURITY INVOKER",
+		"CREATE OR REPLACE FUNCTION is_ops_admin_context() RETURNS BOOLEAN AS $$ SELECT FALSE; $$ LANGUAGE sql STABLE SECURITY INVOKER",
+	)
+	if strings.Contains(sql, "security definer") {
+		t.Error("bootstrap must not create SECURITY DEFINER functions")
+	}
+	if strings.Contains(sql, "current_setting('app.is_ops_admin'") {
+		t.Error("bootstrap must not read the operations-admin GUC")
+	}
+
+	policyStart := strings.Index(sql, "-- bootstrap policies")
+	if policyStart < 0 {
+		t.Fatal("bootstrap policy section missing")
+	}
+	policySQL := sql[policyStart:]
+	if strings.Contains(policySQL, "is_ops_admin_context()") || strings.Contains(policySQL, "app.is_ops_admin") {
+		t.Error("bootstrap policies must contain only tenant isolation checks")
+	}
+}
+
 func TestBaselineRLSAndSafeTenantContext(t *testing.T) {
 	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
 	requireFragments(t, sql,
 		"current_setting('app.current_tenant_id', true)",
-		"current_setting('app.is_ops_admin', true)",
 		"ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY",
 		"ALTER TABLE document_chunks FORCE ROW LEVEL SECURITY",
 		"CREATE POLICY sdpivot_op_bootstrap_000012_document_chunks ON document_chunks",

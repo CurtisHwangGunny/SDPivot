@@ -79,8 +79,8 @@ CREATE TABLE IF NOT EXISTS org_members (
     id         VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     org_id     VARCHAR(36) NOT NULL REFERENCES organizations(id),
     user_id    VARCHAR(36) NOT NULL REFERENCES users(id),
-    role       VARCHAR(20) NOT NULL DEFAULT member,
-    status     VARCHAR(20) NOT NULL DEFAULT active,
+    role       VARCHAR(20) NOT NULL DEFAULT 'member',
+    status     VARCHAR(20) NOT NULL DEFAULT 'active',
     joined_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -374,13 +374,13 @@ CREATE INDEX IF NOT EXISTS idx_inv_status ON invoices (status);
 CREATE INDEX IF NOT EXISTS idx_inv_period ON invoices (period_start, period_end);
 
 -- Historical tenant helpers, made safe when application GUCs are unset or empty.
-CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, p_is_ops_admin BOOLEAN DEFAULT FALSE)
+CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, _p_is_ops_admin BOOLEAN DEFAULT FALSE)
 RETURNS void AS $$
 BEGIN
     PERFORM set_config('app.current_tenant_id', p_tenant_id::TEXT, false);
-    PERFORM set_config('app.is_ops_admin', CASE WHEN p_is_ops_admin THEN 'true' ELSE 'false' END, false);
+    PERFORM set_config('app.is_ops_admin', 'false', false);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY INVOKER;
 
 CREATE OR REPLACE FUNCTION get_current_tenant_id()
 RETURNS BIGINT AS $$
@@ -393,31 +393,31 @@ $$ LANGUAGE sql STABLE;
 
 CREATE OR REPLACE FUNCTION is_ops_admin_context()
 RETURNS BOOLEAN AS $$
-    SELECT LOWER(COALESCE(current_setting('app.is_ops_admin', true), '')) IN ('true', 'on', '1');
-$$ LANGUAGE sql STABLE;
+    SELECT FALSE;
+$$ LANGUAGE sql STABLE SECURITY INVOKER;
 
 -- Bootstrap policies are uniquely named and created only after their tables exist.
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_organizations ON organizations;
 CREATE POLICY sdpivot_op_bootstrap_000012_organizations ON organizations
     FOR ALL
-    USING (is_ops_admin_context() OR owner_tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR owner_tenant_id = get_current_tenant_id());
+    USING (owner_tenant_id = get_current_tenant_id())
+    WITH CHECK (owner_tenant_id = get_current_tenant_id());
 
 ALTER TABLE org_ext ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_org_ext ON org_ext;
 CREATE POLICY sdpivot_op_bootstrap_000012_org_ext ON org_ext
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE org_members ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_org_members ON org_members;
 CREATE POLICY sdpivot_op_bootstrap_000012_org_members ON org_members
     FOR ALL
-    USING (is_ops_admin_context() OR EXISTS (
+    USING (EXISTS (
         SELECT 1 FROM org_ext oe WHERE oe.org_id = org_members.org_id AND oe.tenant_id = get_current_tenant_id()
     ))
-    WITH CHECK (is_ops_admin_context() OR EXISTS (
+    WITH CHECK (EXISTS (
         SELECT 1 FROM org_ext oe WHERE oe.org_id = org_members.org_id AND oe.tenant_id = get_current_tenant_id()
     ));
 
@@ -425,10 +425,10 @@ ALTER TABLE smartknora_user_profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_user_profiles ON smartknora_user_profiles;
 CREATE POLICY sdpivot_op_bootstrap_000012_user_profiles ON smartknora_user_profiles
     FOR ALL
-    USING (is_ops_admin_context() OR EXISTS (
+    USING (EXISTS (
         SELECT 1 FROM users u WHERE u.id = smartknora_user_profiles.user_id AND u.tenant_id = get_current_tenant_id()
     ))
-    WITH CHECK (is_ops_admin_context() OR EXISTS (
+    WITH CHECK (EXISTS (
         SELECT 1 FROM users u WHERE u.id = smartknora_user_profiles.user_id AND u.tenant_id = get_current_tenant_id()
     ));
 
@@ -436,47 +436,47 @@ ALTER TABLE refresh_tokens ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_refresh_tokens ON refresh_tokens;
 CREATE POLICY sdpivot_op_bootstrap_000012_refresh_tokens ON refresh_tokens
     FOR ALL
-    USING (is_ops_admin_context() OR EXISTS (
+    USING (EXISTS (
         SELECT 1 FROM users u WHERE u.id = refresh_tokens.user_id AND u.tenant_id = get_current_tenant_id()
     ))
-    WITH CHECK (is_ops_admin_context() OR EXISTS (
+    WITH CHECK (EXISTS (
         SELECT 1 FROM users u WHERE u.id = refresh_tokens.user_id AND u.tenant_id = get_current_tenant_id()
     ));
 
 ALTER TABLE token_usage ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_token_usage ON token_usage;
 CREATE POLICY sdpivot_op_bootstrap_000012_token_usage ON token_usage
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE knowledge_spaces ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_knowledge_spaces ON knowledge_spaces;
 CREATE POLICY sdpivot_op_bootstrap_000012_knowledge_spaces ON knowledge_spaces
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE space_members ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_space_members ON space_members;
 CREATE POLICY sdpivot_op_bootstrap_000012_space_members ON space_members
     FOR ALL
-    USING (is_ops_admin_context() OR EXISTS (
+    USING (EXISTS (
         SELECT 1 FROM knowledge_spaces ks WHERE ks.id = space_members.space_id AND ks.tenant_id = get_current_tenant_id()
     ))
-    WITH CHECK (is_ops_admin_context() OR EXISTS (
+    WITH CHECK (EXISTS (
         SELECT 1 FROM knowledge_spaces ks WHERE ks.id = space_members.space_id AND ks.tenant_id = get_current_tenant_id()
     ));
 
 ALTER TABLE space_categories ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_space_categories ON space_categories;
 CREATE POLICY sdpivot_op_bootstrap_000012_space_categories ON space_categories
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_documents ON documents;
 CREATE POLICY sdpivot_op_bootstrap_000012_documents ON documents
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_chunks FORCE ROW LEVEL SECURITY;
@@ -484,8 +484,7 @@ DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_document_chunks ON document_ch
 CREATE POLICY sdpivot_op_bootstrap_000012_document_chunks ON document_chunks
     FOR ALL
     USING (
-        is_ops_admin_context()
-        OR EXISTS (
+        EXISTS (
             SELECT 1
               FROM documents d
              WHERE d.id = document_chunks.document_id
@@ -494,8 +493,7 @@ CREATE POLICY sdpivot_op_bootstrap_000012_document_chunks ON document_chunks
         )
     )
     WITH CHECK (
-        is_ops_admin_context()
-        OR EXISTS (
+        EXISTS (
             SELECT 1
               FROM documents d
              WHERE d.id = document_chunks.document_id
@@ -507,47 +505,47 @@ CREATE POLICY sdpivot_op_bootstrap_000012_document_chunks ON document_chunks
 ALTER TABLE document_versions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_document_versions ON document_versions;
 CREATE POLICY sdpivot_op_bootstrap_000012_document_versions ON document_versions
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE chunk_strategies ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_chunk_strategies ON chunk_strategies;
 CREATE POLICY sdpivot_op_bootstrap_000012_chunk_strategies ON chunk_strategies
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE qa_sessions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_qa_sessions ON qa_sessions;
 CREATE POLICY sdpivot_op_bootstrap_000012_qa_sessions ON qa_sessions
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE qa_messages ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_qa_messages ON qa_messages;
 CREATE POLICY sdpivot_op_bootstrap_000012_qa_messages ON qa_messages
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE writing_drafts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_writing_drafts ON writing_drafts;
 CREATE POLICY sdpivot_op_bootstrap_000012_writing_drafts ON writing_drafts
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE write_category_config ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_write_category_config ON write_category_config;
 CREATE POLICY sdpivot_op_bootstrap_000012_write_category_config ON write_category_config
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_announcements ON announcements;
 CREATE POLICY sdpivot_op_bootstrap_000012_announcements ON announcements
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
 
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000012_audit_logs ON audit_logs;
 CREATE POLICY sdpivot_op_bootstrap_000012_audit_logs ON audit_logs
-    FOR ALL USING (is_ops_admin_context() OR tenant_id = get_current_tenant_id())
-    WITH CHECK (is_ops_admin_context() OR tenant_id = get_current_tenant_id());
+    FOR ALL USING (tenant_id = get_current_tenant_id())
+    WITH CHECK (tenant_id = get_current_tenant_id());
