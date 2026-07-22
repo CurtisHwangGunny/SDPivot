@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readdir, readFile, rm, stat, symlink } from 'node:fs/promises'
+import { lstat, mkdtemp, mkdir, readdir, readFile, rm, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url'
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 
 async function files(directory, prefix = '') {
+  if ((await lstat(directory)).isSymbolicLink()) {
+    throw new Error(`symbolic link is not allowed: ${prefix || path.basename(directory)}`)
+  }
   const entries = await readdir(directory, { withFileTypes: true })
   const nested = await Promise.all(entries.map(async (entry) => {
     const relative = path.posix.join(prefix, entry.name)
@@ -23,12 +26,20 @@ test('OP artifact scanner rejects symbolic links', async () => {
   const fixture = await mkdtemp(path.join(tmpdir(), 'op-artifact-'))
   try {
     const target = path.join(fixture, 'target')
+    const scanRoot = path.join(fixture, 'scan-root')
+    const linkedRoot = path.join(fixture, 'linked-root')
     await mkdir(target)
-    await symlink(target, path.join(fixture, 'linked-directory'))
+    await mkdir(scanRoot)
+    await symlink(target, path.join(scanRoot, 'linked-directory'))
+    await symlink(target, linkedRoot)
 
     await assert.rejects(
-      files(fixture),
+      files(scanRoot),
       /symbolic link is not allowed: linked-directory/,
+    )
+    await assert.rejects(
+      files(linkedRoot),
+      /symbolic link is not allowed: linked-root/,
     )
   } finally {
     await rm(fixture, { recursive: true, force: true })
