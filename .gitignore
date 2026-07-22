@@ -26,3 +26,10 @@ frontend/sdpivot/node_modules/
 *.swp
 *.log
 logs/
+
+# ===== 凭证 / 包缓存 / 测试产物 / 运行时数据 =====
+.git-credentials
+**/.pnpm-store/
+**/playwright-report/
+**/test-results/
+data/sdpivot-uploads/
