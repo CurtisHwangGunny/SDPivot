@@ -45,9 +45,9 @@
             <template #icon><t-icon name="setting-1" /></template>
             管理后台
           </t-menu-item>
-          <t-menu-item value="ops">
+          <t-menu-item v-if="operationsUi" :value="operationsUi.menuValue">
             <template #icon><t-icon name="control-platform" /></template>
-            运营管理
+            {{ operationsUi.label }}
           </t-menu-item>
           <t-menu-item value="org">
             <template #icon><t-icon name="building" /></template>
@@ -72,7 +72,7 @@
             </div>
             <div class="user-meta">
               <span class="user-name">{{ authStore.user?.nickname || authStore.user?.username || '当前用户' }}</span>
-              <span class="user-role">{{ isOpsRoute ? '运营身份' : '企业身份' }}</span>
+              <span class="user-role">{{ isOpsRoute && operationsUi ? operationsUi.roleLabel : '企业身份' }}</span>
             </div>
             <t-icon name="chevron-up-down" size="16px" />
           </button>
@@ -96,12 +96,25 @@ import { logout } from '@/api/auth'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useTheme } from '@/composables/useTheme'
 
+const isOpBuild = import.meta.env.MODE === 'op'
+const operationsUi = isOpBuild
+  ? null
+  : {
+      menuValue: 'ops',
+      label: '运营管理',
+      roleLabel: '运营身份',
+      settingsLabel: '运营设置',
+      logoutLabel: '退出运营登录',
+      loginPath: '/ops-login',
+      rootPath: '/ops',
+    }
+
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const { themeMode, currentThemeLabel, setTheme } = useTheme()
 
-const isOpsRoute = computed(() => route.path.startsWith('/ops'))
+const isOpsRoute = computed(() => operationsUi !== null && route.path.startsWith(operationsUi.rootPath))
 
 const activeMenu = computed(() => {
   const path = route.path
@@ -109,7 +122,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/qa')) return 'qa'
   if (path.startsWith('/writing')) return 'writing'
   if (path.startsWith('/admin')) return 'admin'
-  if (path.startsWith('/ops')) return 'ops'
+  if (operationsUi !== null && path.startsWith(operationsUi.rootPath)) return operationsUi.menuValue
   if (path.startsWith('/org')) return 'org'
   if (path.startsWith('/usage')) return 'usage'
   if (path.startsWith('/settings')) return 'settings'
@@ -122,8 +135,8 @@ const userInitial = computed(() => {
 })
 
 const userMenuOptions = computed(() => [
-  { content: isOpsRoute.value ? '运营设置' : '个人设置', value: 'settings' },
-  { content: isOpsRoute.value ? '退出运营登录' : '退出登录', value: 'logout', theme: 'error' as const },
+  { content: isOpsRoute.value && operationsUi ? operationsUi.settingsLabel : '个人设置', value: 'settings' },
+  { content: isOpsRoute.value && operationsUi ? operationsUi.logoutLabel : '退出登录', value: 'logout', theme: 'error' as const },
 ])
 
 function onMenuChange(val: string) {
@@ -132,10 +145,10 @@ function onMenuChange(val: string) {
 
 async function onUserMenuClick(val: string) {
   if (val === 'logout') {
-    if (isOpsRoute.value) {
+    if (isOpsRoute.value && operationsUi) {
       authStore.clearOpsAuth()
-      MessagePlugin.success('已退出运营登录')
-      router.push('/ops-login')
+      MessagePlugin.success(operationsUi.logoutLabel)
+      router.push(operationsUi.loginPath)
       return
     }
     try {
@@ -145,7 +158,7 @@ async function onUserMenuClick(val: string) {
     MessagePlugin.success('已退出登录')
     router.push('/login')
   } else if (val === 'settings') {
-    router.push(isOpsRoute.value ? '/ops' : '/settings')
+    router.push(isOpsRoute.value && operationsUi ? operationsUi.rootPath : '/settings')
   }
 }
 </script>
