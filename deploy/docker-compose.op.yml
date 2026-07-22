@@ -10,7 +10,7 @@ x-runtime-defaults: &runtime-defaults
 services:
   postgres:
     <<: *runtime-defaults
-    image: ${OP_POSTGRES_IMAGE:-paradedb/paradedb:v0.22.2-pg17}
+    image: ${OP_POSTGRES_IMAGE:?OP_POSTGRES_IMAGE is required}
     environment:
       POSTGRES_USER: ${OP_DB_USER:?OP_DB_USER is required}
       POSTGRES_PASSWORD: ${OP_DB_PASSWORD:?OP_DB_PASSWORD is required}
@@ -32,7 +32,7 @@ services:
 
   redis:
     <<: *runtime-defaults
-    image: ${OP_REDIS_IMAGE:-redis:7.0-alpine}
+    image: ${OP_REDIS_IMAGE:?OP_REDIS_IMAGE is required}
     environment:
       REDIS_PASSWORD: ${OP_REDIS_PASSWORD:?OP_REDIS_PASSWORD is required}
     command:
@@ -54,7 +54,7 @@ services:
     mem_reservation: 64m
 
   migration:
-    image: ${OP_MIGRATION_IMAGE:-sdpivot-op-migration:local}
+    image: ${OP_MIGRATION_IMAGE:?OP_MIGRATION_IMAGE is required}
     build:
       context: ..
       dockerfile: deploy/migration/Dockerfile
@@ -162,7 +162,7 @@ services:
     <<: *runtime-defaults
     # Build requires the executable frontend/sdpivot/sdp-server artifact.
     # Generate it with: go build -trimpath -buildvcs=false -o frontend/sdpivot/sdp-server ./cmd/sdp-server
-    image: ${OP_SDP_BACKEND_IMAGE:-sdpivot-op-backend:local}
+    image: ${OP_SDP_BACKEND_IMAGE:?OP_SDP_BACKEND_IMAGE is required}
     build:
       context: ../frontend/sdpivot
       dockerfile: Dockerfile.backend
@@ -209,7 +209,7 @@ services:
     <<: *runtime-defaults
     # Build requires an OP-only frontend/sdpivot/dist artifact produced by `npm run build:op`.
     # The artifact must contain index.html and must not contain ops.html.
-    image: ${OP_SDP_FRONTEND_IMAGE:-sdpivot-op-frontend:local}
+    image: ${OP_SDP_FRONTEND_IMAGE:?OP_SDP_FRONTEND_IMAGE is required}
     build:
       context: ../frontend/sdpivot
       dockerfile: Dockerfile.frontend
