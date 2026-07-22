@@ -2,12 +2,17 @@ package middleware
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 const sdPivotTenantDBKey = "sdpivot_tenant_db"
+
+func sdPivotTenantFallbackContext(tenantID uint64) (string, []interface{}) {
+	return "SELECT set_config('app.current_tenant_id', ?, true), set_config('app.is_ops_admin', 'false', true)", []interface{}{fmt.Sprintf("%d", tenantID)}
+}
 
 // SDPivotTenantContext creates a middleware that binds a request-scoped
 // database transaction to the current request and sets PostgreSQL tenant
@@ -29,13 +34,11 @@ func SDPivotTenantContext(baseDB *gorm.DB) gin.HandlerFunc {
 		}
 
 		if err := tx.Exec("SELECT set_tenant_context(?, ?)", tenantID, isOpsAdmin).Error; err != nil {
-			if fallbackErr := tx.Exec(
-				"SELECT set_config('app.current_tenant_id', ?, false), set_config('app.is_ops_admin', ?, false)",
-				fmt.Sprintf("%d", tenantID),
-				fmt.Sprintf("%t", isOpsAdmin),
-			).Error; fallbackErr != nil {
+			fallbackSQL, fallbackArgs := sdPivotTenantFallbackContext(tenantID)
+			if fallbackErr := tx.Exec(fallbackSQL, fallbackArgs...).Error; fallbackErr != nil {
 				_ = tx.Rollback().Error
-				c.JSON(500, gin.H{"error": "failed to set tenant database context", "detail": fallbackErr.Error()})
+				log.Printf("failed to set tenant database context: %v", fallbackErr)
+				c.JSON(500, gin.H{"error": "failed to set tenant database context"})
 				c.Abort()
 				return
 			}
