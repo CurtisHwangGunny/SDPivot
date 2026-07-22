@@ -1,10 +1,53 @@
 package middleware
 
 import (
+	"errors"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
+
+const (
+	savepointSQL   = "SAVEPOINT sdpivot_tenant_context"
+	rollbackToSQL  = "ROLLBACK TO SAVEPOINT sdpivot_tenant_context"
+	releaseSQL     = "RELEASE SAVEPOINT sdpivot_tenant_context"
+	primarySQL     = "SELECT set_tenant_context($1, $2)"
+	fallbackSQL    = "SELECT set_config('app.current_tenant_id', $1, true), set_config('app.is_ops_admin', 'false', true)"
+	databaseErrMsg = "database context failure"
+)
+
+func newTenantContextMock(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
+	t.Helper()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sqlmock: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
+
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm postgres connection: %v", err)
+	}
+	return db, mock
+}
+
+func expectExec(mock sqlmock.Sqlmock, query string) *sqlmock.ExpectedExec {
+	return mock.ExpectExec(regexp.QuoteMeta(query))
+}
+
+func requireMockExpectations(t *testing.T, mock sqlmock.Sqlmock) {
+	t.Helper()
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
 
 func TestSDPivotTenantFallbackContextIsTransactionLocalAndNeverElevated(t *testing.T) {
 	query, args := sdPivotTenantFallbackContext(uint64(42))
@@ -24,24 +67,104 @@ func TestSDPivotTenantFallbackContextIsTransactionLocalAndNeverElevated(t *testi
 	}
 }
 
-func TestSDPivotTenantFallbackFailureRollsBackAndHidesDatabaseDetails(t *testing.T) {
+func TestConfigureSDPivotTenantContextPrimarySuccess(t *testing.T) {
+	db, mock := newTenantContextMock(t)
+	expectExec(mock, savepointSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectExec(mock, primarySQL).WithArgs(uint64(42), true).WillReturnResult(sqlmock.NewResult(0, 1))
+	expectExec(mock, releaseSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+
+	if err := configureSDPivotTenantContext(db, 42, true); err != nil {
+		t.Fatalf("configure primary context: %v", err)
+	}
+	requireMockExpectations(t, mock)
+}
+
+func TestConfigureSDPivotTenantContextRecoversBeforeFallback(t *testing.T) {
+	db, mock := newTenantContextMock(t)
+	expectExec(mock, savepointSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectExec(mock, primarySQL).WithArgs(uint64(42), true).WillReturnError(errors.New(databaseErrMsg))
+	expectExec(mock, rollbackToSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectExec(mock, fallbackSQL).WithArgs("42").WillReturnResult(sqlmock.NewResult(0, 1))
+	expectExec(mock, releaseSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+
+	if err := configureSDPivotTenantContext(db, 42, true); err != nil {
+		t.Fatalf("configure fallback context: %v", err)
+	}
+	requireMockExpectations(t, mock)
+}
+
+func TestConfigureSDPivotTenantContextRollbackToFailure(t *testing.T) {
+	db, mock := newTenantContextMock(t)
+	expectExec(mock, savepointSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectExec(mock, primarySQL).WithArgs(uint64(42), false).WillReturnError(errors.New(databaseErrMsg))
+	expectExec(mock, rollbackToSQL).WillReturnError(errors.New(databaseErrMsg))
+
+	err := configureSDPivotTenantContext(db, 42, false)
+	if err == nil || !strings.Contains(err.Error(), "restore tenant context savepoint") {
+		t.Fatalf("rollback-to error = %v", err)
+	}
+	requireMockExpectations(t, mock)
+}
+
+func TestConfigureSDPivotTenantContextFallbackFailure(t *testing.T) {
+	db, mock := newTenantContextMock(t)
+	expectExec(mock, savepointSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectExec(mock, primarySQL).WithArgs(uint64(42), true).WillReturnError(errors.New(databaseErrMsg))
+	expectExec(mock, rollbackToSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectExec(mock, fallbackSQL).WithArgs("42").WillReturnError(errors.New(databaseErrMsg))
+
+	err := configureSDPivotTenantContext(db, 42, true)
+	if err == nil || !strings.Contains(err.Error(), "set fallback tenant context") {
+		t.Fatalf("fallback error = %v", err)
+	}
+	requireMockExpectations(t, mock)
+}
+
+func TestConfigureSDPivotTenantContextPrimaryReleaseFailure(t *testing.T) {
+	db, mock := newTenantContextMock(t)
+	expectExec(mock, savepointSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectExec(mock, primarySQL).WithArgs(uint64(42), false).WillReturnResult(sqlmock.NewResult(0, 1))
+	expectExec(mock, releaseSQL).WillReturnError(errors.New(databaseErrMsg))
+
+	err := configureSDPivotTenantContext(db, 42, false)
+	if err == nil || !strings.Contains(err.Error(), "release tenant context savepoint") {
+		t.Fatalf("primary release error = %v", err)
+	}
+	requireMockExpectations(t, mock)
+}
+
+func TestConfigureSDPivotTenantContextFallbackReleaseFailure(t *testing.T) {
+	db, mock := newTenantContextMock(t)
+	expectExec(mock, savepointSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectExec(mock, primarySQL).WithArgs(uint64(42), true).WillReturnError(errors.New(databaseErrMsg))
+	expectExec(mock, rollbackToSQL).WillReturnResult(sqlmock.NewResult(0, 0))
+	expectExec(mock, fallbackSQL).WithArgs("42").WillReturnResult(sqlmock.NewResult(0, 1))
+	expectExec(mock, releaseSQL).WillReturnError(errors.New(databaseErrMsg))
+
+	err := configureSDPivotTenantContext(db, 42, true)
+	if err == nil || !strings.Contains(err.Error(), "release fallback tenant context savepoint") {
+		t.Fatalf("fallback release error = %v", err)
+	}
+	requireMockExpectations(t, mock)
+}
+
+func TestSDPivotTenantContextConfigurationFailureRollsBackAndHidesDetails(t *testing.T) {
 	content, err := os.ReadFile("sdpivot_tenant.go")
 	if err != nil {
 		t.Fatalf("read tenant middleware: %v", err)
 	}
 	source := strings.Join(strings.Fields(string(content)), " ")
-
-	failureFlow := `if fallbackErr := tx.Exec(fallbackSQL, fallbackArgs...).Error; fallbackErr != nil {
+	failureFlow := `if err := configureSDPivotTenantContext(tx, tenantID, isOpsAdmin); err != nil {
 		_ = tx.Rollback().Error
-		log.Printf("failed to set tenant database context: %v", fallbackErr)
+		log.Printf("failed to set tenant database context: %v", err)
 		c.JSON(500, gin.H{"error": "failed to set tenant database context"})
 		c.Abort()
 		return
 	}`
 	if !strings.Contains(source, strings.Join(strings.Fields(failureFlow), " ")) {
-		t.Fatal("fallback failure must roll back before returning the generic client error")
+		t.Fatal("configuration failure must roll back before returning the generic client error")
 	}
-	if strings.Contains(source, `"detail": fallbackErr.Error()`) {
-		t.Fatal("fallback failure must not expose database details to clients")
+	if strings.Contains(source, `"detail"`) {
+		t.Fatal("tenant context failures must not expose database details to clients")
 	}
 }

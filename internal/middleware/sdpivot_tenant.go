@@ -8,10 +8,39 @@ import (
 	"gorm.io/gorm"
 )
 
-const sdPivotTenantDBKey = "sdpivot_tenant_db"
+const (
+	sdPivotTenantDBKey     = "sdpivot_tenant_db"
+	sdPivotTenantSavepoint = "sdpivot_tenant_context"
+)
 
 func sdPivotTenantFallbackContext(tenantID uint64) (string, []interface{}) {
 	return "SELECT set_config('app.current_tenant_id', ?, true), set_config('app.is_ops_admin', 'false', true)", []interface{}{fmt.Sprintf("%d", tenantID)}
+}
+
+func configureSDPivotTenantContext(tx *gorm.DB, tenantID uint64, isOpsAdmin bool) error {
+	if err := tx.Exec("SAVEPOINT " + sdPivotTenantSavepoint).Error; err != nil {
+		return fmt.Errorf("create tenant context savepoint: %w", err)
+	}
+
+	if err := tx.Exec("SELECT set_tenant_context(?, ?)", tenantID, isOpsAdmin).Error; err == nil {
+		if releaseErr := tx.Exec("RELEASE SAVEPOINT " + sdPivotTenantSavepoint).Error; releaseErr != nil {
+			return fmt.Errorf("release tenant context savepoint: %w", releaseErr)
+		}
+		return nil
+	}
+
+	if err := tx.Exec("ROLLBACK TO SAVEPOINT " + sdPivotTenantSavepoint).Error; err != nil {
+		return fmt.Errorf("restore tenant context savepoint: %w", err)
+	}
+
+	fallbackSQL, fallbackArgs := sdPivotTenantFallbackContext(tenantID)
+	if err := tx.Exec(fallbackSQL, fallbackArgs...).Error; err != nil {
+		return fmt.Errorf("set fallback tenant context: %w", err)
+	}
+	if err := tx.Exec("RELEASE SAVEPOINT " + sdPivotTenantSavepoint).Error; err != nil {
+		return fmt.Errorf("release fallback tenant context savepoint: %w", err)
+	}
+	return nil
 }
 
 // SDPivotTenantContext creates a middleware that binds a request-scoped
@@ -33,15 +62,12 @@ func SDPivotTenantContext(baseDB *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		if err := tx.Exec("SELECT set_tenant_context(?, ?)", tenantID, isOpsAdmin).Error; err != nil {
-			fallbackSQL, fallbackArgs := sdPivotTenantFallbackContext(tenantID)
-			if fallbackErr := tx.Exec(fallbackSQL, fallbackArgs...).Error; fallbackErr != nil {
-				_ = tx.Rollback().Error
-				log.Printf("failed to set tenant database context: %v", fallbackErr)
-				c.JSON(500, gin.H{"error": "failed to set tenant database context"})
-				c.Abort()
-				return
-			}
+		if err := configureSDPivotTenantContext(tx, tenantID, isOpsAdmin); err != nil {
+			_ = tx.Rollback().Error
+			log.Printf("failed to set tenant database context: %v", err)
+			c.JSON(500, gin.H{"error": "failed to set tenant database context"})
+			c.Abort()
+			return
 		}
 
 		c.Set(sdPivotTenantDBKey, tx)
