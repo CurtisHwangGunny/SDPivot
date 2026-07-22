@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +38,13 @@ func main() {
 	if err := config.ApplyProductEnvOverrides(product); err != nil {
 		log.Fatalf("Invalid product configuration: %v", err)
 	}
+	if err := validateStandaloneConfig(product); err != nil {
+		log.Fatalf("Invalid standalone configuration: %v", err)
+	}
+	poolConfig, err := loadDBPoolConfig()
+	if err != nil {
+		log.Fatalf("Invalid database pool configuration: %v", err)
+	}
 
 	// ── Database ───────────────────────────────────────────────
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=Asia/Shanghai",
@@ -49,14 +57,25 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to get underlying DB: %v", err)
 	}
-	sqlDB.SetMaxOpenConns(25)
-	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
+	defer func() {
+		if err := sqlDB.Close(); err != nil {
+			log.Printf("[DB] Close warning: %v", err)
+		}
+	}()
 	log.Printf("[DB] Connected to PostgreSQL %s:%s/%s", dbHost, dbPort, dbName)
 
 	// ── Redis (optional) ───────────────────────────────────────
 	var redisClient *redis.Client
 	if redisAddr != "" {
 		redisClient = redis.NewClient(&redis.Options{Addr: redisAddr, Password: redisPassword})
+		defer func() {
+			if err := redisClient.Close(); err != nil {
+				log.Printf("[Redis] Close warning: %v", err)
+			}
+		}()
 		if err := redisClient.Ping(context.Background()).Err(); err != nil {
 			log.Printf("[Redis] Warning: %v", err)
 		} else {
@@ -77,8 +96,16 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// ── Health check ───────────────────────────────────────────
-	registerTopLevelHealth(r)
+	// ── Health checks ──────────────────────────────────────────
+	registerTopLevelHealth(r, func(ctx context.Context) error {
+		if err := sqlDB.PingContext(ctx); err != nil {
+			return err
+		}
+		if redisClient != nil {
+			return redisClient.Ping(ctx).Err()
+		}
+		return nil
+	})
 
 	router.NewSDPivotRouter(router.SDPivotRouterParams{
 		DB:          db,
@@ -107,9 +134,67 @@ func main() {
 	log.Println("[Server] Stopped")
 }
 
-func registerTopLevelHealth(r *gin.Engine) {
+type dbPoolConfig struct {
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+}
+
+func validateStandaloneConfig(product *config.ProductConfig) error {
+	if product == nil || !product.OPMode {
+		return nil
+	}
+	if strings.TrimSpace(getEnvFallback("SDP_JWT_SECRET", "SMARTKNORA_JWT_SECRET", "")) == "" {
+		return fmt.Errorf("OP mode requires SDP_JWT_SECRET or SMARTKNORA_JWT_SECRET")
+	}
+	if strings.TrimSpace(getEnvFallback("SDP_DB_PASSWORD", "SMART_DB_PASSWORD", "")) == "" {
+		return fmt.Errorf("OP mode requires SDP_DB_PASSWORD or SMART_DB_PASSWORD")
+	}
+	return nil
+}
+
+func loadDBPoolConfig() (dbPoolConfig, error) {
+	maxOpen, err := parseEnvInt("SDP_DB_MAX_OPEN_CONNS", 10, false)
+	if err != nil {
+		return dbPoolConfig{}, err
+	}
+	maxIdle, err := parseEnvInt("SDP_DB_MAX_IDLE_CONNS", 5, true)
+	if err != nil {
+		return dbPoolConfig{}, err
+	}
+	if maxIdle > maxOpen {
+		return dbPoolConfig{}, fmt.Errorf("SDP_DB_MAX_IDLE_CONNS must not exceed SDP_DB_MAX_OPEN_CONNS")
+	}
+	lifetimeValue := strings.TrimSpace(getEnv("SDP_DB_CONN_MAX_LIFETIME", "10m"))
+	lifetime, err := time.ParseDuration(lifetimeValue)
+	if err != nil || lifetime <= 0 {
+		return dbPoolConfig{}, fmt.Errorf("SDP_DB_CONN_MAX_LIFETIME must be a positive duration")
+	}
+	return dbPoolConfig{MaxOpenConns: maxOpen, MaxIdleConns: maxIdle, ConnMaxLifetime: lifetime}, nil
+}
+
+func parseEnvInt(name string, defaultValue int, allowZero bool) (int, error) {
+	value := strings.TrimSpace(getEnv(name, strconv.Itoa(defaultValue)))
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 || (!allowZero && parsed == 0) {
+		if allowZero {
+			return 0, fmt.Errorf("%s must be an integer greater than or equal to zero", name)
+		}
+		return 0, fmt.Errorf("%s must be a positive integer", name)
+	}
+	return parsed, nil
+}
+
+func registerTopLevelHealth(r *gin.Engine, readinessCheck func(context.Context) error) {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "sdp", "version": "2.0.0"})
+	})
+	r.GET("/ready", func(c *gin.Context) {
+		if readinessCheck != nil && readinessCheck(c.Request.Context()) != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 }
 
