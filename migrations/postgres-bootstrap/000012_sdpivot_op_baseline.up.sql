@@ -73,6 +73,7 @@ CREATE OR REPLACE FUNCTION sdpivot_op_bootstrap_000012_assert_schema(p_require_a
 RETURNS void AS $$
 DECLARE
     incompatible_columns TEXT;
+    id_type_profile RECORD;
 BEGIN
     SELECT string_agg(
                format('%I.%I expected %s, found %s',
@@ -114,7 +115,7 @@ BEGIN
           ('documents', 'space_id', ARRAY['character varying']),
           ('documents', 'parse_status', ARRAY['character varying']),
           ('documents', 'content_hash', ARRAY['character varying']),
-          ('document_chunks', 'id', ARRAY['character varying']),
+          ('document_chunks', 'id', ARRAY['character varying', 'uuid']),
           ('document_chunks', 'document_id', ARRAY['character varying']),
           ('document_chunks', 'tenant_id', ARRAY['bigint']),
           ('document_versions', 'id', ARRAY['character varying']),
@@ -169,6 +170,39 @@ BEGIN
 
     IF incompatible_columns IS NOT NULL THEN
         RAISE EXCEPTION 'SDPivot OP bootstrap schema compatibility check failed: %', incompatible_columns;
+    END IF;
+
+    SELECT
+        max(data_type) FILTER (WHERE table_name = 'org_ext' AND column_name = 'org_id') AS org_ext_id,
+        max(data_type) FILTER (WHERE table_name = 'knowledge_spaces' AND column_name = 'id') AS space_id,
+        max(data_type) FILTER (WHERE table_name = 'documents' AND column_name = 'id') AS document_id,
+        max(data_type) FILTER (WHERE table_name = 'document_chunks' AND column_name = 'id') AS chunk_id
+      INTO id_type_profile
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND (table_name, column_name) IN (
+           ('org_ext', 'org_id'),
+           ('knowledge_spaces', 'id'),
+           ('documents', 'id'),
+           ('document_chunks', 'id')
+       );
+
+    IF id_type_profile.org_ext_id IS NOT NULL
+       AND id_type_profile.space_id IS NOT NULL
+       AND id_type_profile.document_id IS NOT NULL
+       AND id_type_profile.chunk_id IS NOT NULL
+       AND NOT (
+           (id_type_profile.org_ext_id = 'character varying'
+            AND id_type_profile.space_id = 'character varying'
+            AND id_type_profile.document_id = 'character varying'
+            AND id_type_profile.chunk_id = 'uuid')
+           OR
+           (id_type_profile.org_ext_id = 'character varying'
+            AND id_type_profile.space_id = 'character varying'
+            AND id_type_profile.document_id = 'character varying'
+            AND id_type_profile.chunk_id = 'character varying')
+       ) THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap schema compatibility check failed: incompatible ID type profile';
     END IF;
 
     IF to_regclass('public.knowledge_spaces') IS NOT NULL AND NOT EXISTS (

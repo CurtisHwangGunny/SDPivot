@@ -314,8 +314,14 @@ sdpivot_v12_fingerprint() {
               AND p.oid = to_regprocedure('public.is_ops_admin_context()')
         ), chunks_policy AS (
             SELECT policy.polcmd,
-                   regexp_replace(lower(COALESCE(pg_get_expr(policy.polqual, policy.polrelid), '')), '[[:space:]()]', '', 'g') AS using_expression,
-                   regexp_replace(lower(COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')), '[[:space:]()]', '', 'g') AS check_expression
+                   regexp_replace(
+                       regexp_replace(lower(COALESCE(pg_get_expr(policy.polqual, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
+                       '::text', '', 'g'
+                   ) AS using_expression,
+                   regexp_replace(
+                       regexp_replace(lower(COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
+                       '::text', '', 'g'
+                   ) AS check_expression
             FROM pg_catalog.pg_policy policy
             WHERE policy.polrelid = to_regclass('public.document_chunks')
         )
@@ -357,7 +363,8 @@ sdpivot_v12_fingerprint() {
 
 sdpivot_v13_fingerprint() {
     local baseline
-    local state_table
+    local state_schema
+    local account_state
 
     if ! baseline="$(sdpivot_v12_fingerprint)"; then
         return 1
@@ -366,15 +373,88 @@ sdpivot_v13_fingerprint() {
         printf '%s\n' "$baseline"
         return 0
     }
-    if ! state_table="$(sql_scalar "
-        /* op-probe:sdpivot-v13 */
+    if ! state_schema="$(sql_scalar "
+        /* op-probe:sdpivot-v13-schema */
+        WITH required_columns(column_name, data_type, is_nullable) AS (
+            VALUES
+                ('user_id', 'character varying', 'NO'),
+                ('email', 'character varying', 'NO'),
+                ('original_password_hash', 'character varying', 'NO'),
+                ('original_is_active', 'boolean', 'YES'),
+                ('original_must_change_password', 'boolean', 'YES'),
+                ('original_is_ops_admin', 'boolean', 'YES'),
+                ('original_is_system_admin', 'boolean', 'YES'),
+                ('disabled_password_hash', 'character varying', 'NO'),
+                ('disabled_at', 'timestamp with time zone', 'NO'),
+                ('restored_at', 'timestamp with time zone', 'YES')
+        ), invalid_columns AS (
+            SELECT 1
+            FROM required_columns required
+            LEFT JOIN information_schema.columns existing
+              ON existing.table_schema = 'public'
+             AND existing.table_name = 'sdpivot_disable_legacy_ops_admin_000013_state'
+             AND existing.column_name = required.column_name
+            WHERE existing.column_name IS NULL
+               OR existing.data_type <> required.data_type
+               OR existing.is_nullable <> required.is_nullable
+        ), invalid_primary_key AS (
+            SELECT 1
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_constraint key_constraint
+                JOIN pg_catalog.pg_class target_table ON target_table.oid = key_constraint.conrelid
+                JOIN pg_catalog.pg_namespace target_schema ON target_schema.oid = target_table.relnamespace
+                JOIN pg_catalog.pg_attribute key_column
+                  ON key_column.attrelid = target_table.oid
+                 AND key_column.attname = 'user_id'
+                 AND NOT key_column.attisdropped
+                WHERE target_schema.nspname = 'public'
+                  AND target_table.relname = 'sdpivot_disable_legacy_ops_admin_000013_state'
+                  AND key_constraint.contype = 'p'
+                  AND key_constraint.conkey = ARRAY[key_column.attnum]::smallint[]
+            )
+        )
         SELECT CASE
             WHEN to_regclass('public.sdpivot_disable_legacy_ops_admin_000013_state') IS NULL
-            THEN 'missing' ELSE 'present' END
+              OR EXISTS (SELECT 1 FROM invalid_columns)
+              OR EXISTS (SELECT 1 FROM invalid_primary_key)
+            THEN 'partial' ELSE 'complete' END
     ")"; then
         return 1
     fi
-    [[ "$state_table" == "present" ]] && printf 'complete\n' || printf 'partial\n'
+    [[ "$state_schema" == "complete" ]] || {
+        printf '%s\n' "$state_schema"
+        return 0
+    }
+    if ! account_state="$(sql_scalar "
+        /* op-probe:sdpivot-v13-account */
+        WITH remaining_legacy_credential AS (
+            SELECT 1
+            FROM public.users target
+            WHERE target.email = 'admin@smartknora.com'
+              AND target.password_hash = '\$2a\$10\$L4fDCGy48S7wHDmzZqAAf.sql5NnA1.0uEwfbbVzvAsMSV0qyUGS2'
+        ), invalid_state_rows AS (
+            SELECT 1
+            FROM public.sdpivot_disable_legacy_ops_admin_000013_state state
+            LEFT JOIN public.users target ON target.id = state.user_id
+            WHERE state.email <> 'admin@smartknora.com'
+               OR state.original_password_hash <> '\$2a\$10\$L4fDCGy48S7wHDmzZqAAf.sql5NnA1.0uEwfbbVzvAsMSV0qyUGS2'
+               OR state.disabled_password_hash <> '!sdpivot-disabled-legacy-ops-admin:' || state.user_id
+               OR state.restored_at IS NOT NULL
+               OR target.id IS NULL
+               OR target.email <> state.email
+               OR target.password_hash <> state.disabled_password_hash
+               OR target.is_active IS DISTINCT FROM FALSE
+               OR target.must_change_password IS DISTINCT FROM TRUE
+        )
+        SELECT CASE
+            WHEN EXISTS (SELECT 1 FROM remaining_legacy_credential)
+              OR EXISTS (SELECT 1 FROM invalid_state_rows)
+            THEN 'partial' ELSE 'complete' END
+    ")"; then
+        return 1
+    fi
+    printf '%s\n' "$account_state"
 }
 
 sdpivot_latest_fingerprint() {
@@ -390,17 +470,87 @@ sdpivot_latest_fingerprint() {
     }
     if ! latest="$(sql_scalar "
         /* op-probe:sdpivot-latest */
-        WITH target_tables(table_name) AS (
+        WITH expected_policies(table_name, policy_name, is_chunk_policy) AS (
             VALUES
-                ('write_category_config'), ('knowledge_spaces'), ('documents'),
-                ('qa_sessions'), ('qa_messages'), ('writing_drafts'),
-                ('announcements'), ('token_usage'), ('document_chunks')
+                ('write_category_config', 'sdpivot_secure_000014_write_category_config', FALSE),
+                ('knowledge_spaces', 'sdpivot_secure_000014_knowledge_spaces', FALSE),
+                ('documents', 'sdpivot_secure_000014_documents', FALSE),
+                ('qa_sessions', 'sdpivot_secure_000014_qa_sessions', FALSE),
+                ('qa_messages', 'sdpivot_secure_000014_qa_messages', FALSE),
+                ('writing_drafts', 'sdpivot_secure_000014_writing_drafts', FALSE),
+                ('announcements', 'sdpivot_secure_000014_announcements', FALSE),
+                ('token_usage', 'sdpivot_secure_000014_token_usage', FALSE),
+                ('document_chunks', 'sdpivot_secure_000014_document_chunks', TRUE)
+        ), target_relations AS (
+            SELECT expected.*,
+                   relation.oid AS relation_id,
+                   relation.relrowsecurity,
+                   relation.relforcerowsecurity
+            FROM expected_policies expected
+            LEFT JOIN pg_catalog.pg_class relation
+              ON relation.oid = to_regclass(format('public.%I', expected.table_name))
         ), invalid_rls AS (
             SELECT 1
-            FROM target_tables target
-            LEFT JOIN pg_catalog.pg_class relation
-              ON relation.oid = to_regclass(format('public.%I', target.table_name))
-            WHERE relation.oid IS NULL OR NOT relation.relrowsecurity
+            FROM target_relations
+            WHERE relation_id IS NULL
+               OR NOT relrowsecurity
+               OR (is_chunk_policy AND NOT relforcerowsecurity)
+        ), normalized_policies AS (
+            SELECT policy.polrelid,
+                   policy.polname,
+                   policy.polcmd,
+                   policy.polpermissive,
+                   policy.polroles,
+                   regexp_replace(
+                       regexp_replace(lower(COALESCE(pg_get_expr(policy.polqual, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
+                       '::text', '', 'g'
+                   ) AS using_expression,
+                   regexp_replace(
+                       regexp_replace(lower(COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')), '[[:space:]()]', '', 'g'),
+                       '::text', '', 'g'
+                   ) AS check_expression
+            FROM pg_catalog.pg_policy policy
+            WHERE policy.polrelid IN (SELECT relation_id FROM target_relations WHERE relation_id IS NOT NULL)
+        ), invalid_expected_policies AS (
+            SELECT 1
+            FROM target_relations target
+            LEFT JOIN normalized_policies policy
+              ON policy.polrelid = target.relation_id
+             AND policy.polname = target.policy_name
+            WHERE policy.polname IS NULL
+               OR policy.polcmd <> '*'
+               OR NOT policy.polpermissive
+               OR policy.polroles <> ARRAY[0::oid]
+               OR (
+                   NOT target.is_chunk_policy
+                   AND (policy.using_expression <> 'tenant_id=get_current_tenant_id'
+                        OR policy.check_expression <> 'tenant_id=get_current_tenant_id')
+               )
+               OR (
+                   target.is_chunk_policy
+                   AND (policy.using_expression NOT LIKE '%d.id=document_chunks.document_id%'
+                        OR policy.using_expression NOT LIKE '%d.tenant_id=document_chunks.tenant_id%'
+                        OR policy.using_expression NOT LIKE '%d.tenant_id=get_current_tenant_id%'
+                        OR policy.using_expression LIKE '%is_ops_admin_context%'
+                        OR policy.using_expression LIKE '%or%'
+                        OR policy.using_expression LIKE '%true%'
+                        OR policy.using_expression LIKE '%case%'
+                        OR policy.using_expression LIKE '%coalesce%'
+                        OR policy.check_expression NOT LIKE '%d.id=document_chunks.document_id%'
+                        OR policy.check_expression NOT LIKE '%d.tenant_id=document_chunks.tenant_id%'
+                        OR policy.check_expression NOT LIKE '%d.tenant_id=get_current_tenant_id%'
+                        OR policy.check_expression LIKE '%is_ops_admin_context%'
+                        OR policy.check_expression LIKE '%or%'
+                        OR policy.check_expression LIKE '%true%'
+                        OR policy.check_expression LIKE '%case%'
+                        OR policy.check_expression LIKE '%coalesce%')
+               )
+        ), extra_permissive_policies AS (
+            SELECT 1
+            FROM normalized_policies policy
+            JOIN target_relations target ON target.relation_id = policy.polrelid
+            WHERE policy.polpermissive
+              AND policy.polname <> target.policy_name
         ), tenant_function AS (
             SELECT p.prorettype = 'void'::regtype
                    AND NOT p.prosecdef
@@ -411,38 +561,17 @@ sdpivot_latest_fingerprint() {
         ), ops_function AS (
             SELECT p.prorettype = 'boolean'::regtype
                    AND NOT p.prosecdef
-                   AND pg_get_functiondef(p.oid) ILIKE '%select false%'
+                   AND regexp_replace(lower(pg_get_functiondef(p.oid)), '[[:space:];]', '', 'g') LIKE '%selectfalse%'
                    AS valid
             FROM pg_catalog.pg_proc p
             WHERE p.oid = to_regprocedure('public.is_ops_admin_context()')
-        ), chunks_policy AS (
-            SELECT
-                regexp_replace(lower(COALESCE(pg_get_expr(policy.polqual, policy.polrelid), '')), '[[:space:]()]', '', 'g') AS using_expression,
-                regexp_replace(lower(COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')), '[[:space:]()]', '', 'g') AS check_expression
-            FROM pg_catalog.pg_policy policy
-            WHERE policy.polrelid = to_regclass('public.document_chunks')
-              AND policy.polcmd = '*'
         )
         SELECT CASE
             WHEN EXISTS (SELECT 1 FROM invalid_rls)
+              OR EXISTS (SELECT 1 FROM invalid_expected_policies)
+              OR EXISTS (SELECT 1 FROM extra_permissive_policies)
               OR NOT EXISTS (SELECT 1 FROM tenant_function WHERE valid)
               OR NOT EXISTS (SELECT 1 FROM ops_function WHERE valid)
-              OR NOT EXISTS (
-                    SELECT 1 FROM pg_catalog.pg_class
-                    WHERE oid = to_regclass('public.document_chunks')
-                      AND relrowsecurity AND relforcerowsecurity
-                 )
-              OR NOT EXISTS (
-                    SELECT 1 FROM chunks_policy
-                    WHERE using_expression LIKE '%d.id=document_chunks.document_id%'
-                      AND using_expression LIKE '%d.tenant_id=document_chunks.tenant_id%'
-                      AND using_expression LIKE '%d.tenant_id=get_current_tenant_id%'
-                      AND using_expression NOT LIKE '%is_ops_admin_context%'
-                      AND check_expression LIKE '%d.id=document_chunks.document_id%'
-                      AND check_expression LIKE '%d.tenant_id=document_chunks.tenant_id%'
-                      AND check_expression LIKE '%d.tenant_id=get_current_tenant_id%'
-                      AND check_expression NOT LIKE '%is_ops_admin_context%'
-                 )
             THEN 'partial' ELSE 'complete' END
     ")"; then
         return 1
@@ -531,6 +660,8 @@ if [[ "$sdpivot_state" != "absent" ]]; then
     [[ "$sdpivot_version" =~ ^[0-9]+$ ]] || fail "sdpivot_schema_migrations version is invalid"
     (( sdpivot_version >= SDPIVOT_BASELINE_VERSION )) || fail \
         "sdpivot_schema_migrations version ${sdpivot_version} is older than supported ${SDPIVOT_BASELINE_VERSION}"
+    (( sdpivot_version <= SDPIVOT_LATEST_VERSION )) || fail \
+        "sdpivot_schema_migrations version ${sdpivot_version} is newer than supported ${SDPIVOT_LATEST_VERSION}"
 fi
 
 if [[ "$sdpivot_state" == "absent" ]]; then

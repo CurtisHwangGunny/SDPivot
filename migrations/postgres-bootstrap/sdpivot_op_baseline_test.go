@@ -99,6 +99,7 @@ func TestBaselineChecksExistingTableCompatibilityBeforeHelpersAndPolicies(t *tes
 		"('space_members', 'space_id', ARRAY['character varying'])",
 		"('documents', 'id', ARRAY['character varying'])",
 		"('documents', 'tenant_id', ARRAY['bigint'])",
+		"('document_chunks', 'id', ARRAY['character varying', 'uuid'])",
 		"('document_chunks', 'document_id', ARRAY['character varying'])",
 		"('document_chunks', 'tenant_id', ARRAY['bigint'])",
 		"('qa_messages', 'session_id', ARRAY['character varying'])",
@@ -114,6 +115,27 @@ func TestBaselineChecksExistingTableCompatibilityBeforeHelpersAndPolicies(t *tes
 		"CREATE OR REPLACE FUNCTION set_tenant_context",
 		"CREATE POLICY sdpivot_op_bootstrap_000012_organizations",
 	)
+}
+
+func TestBaselineAcceptsOnlyCompleteHistoricalOrBootstrapIDProfiles(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	requireFragments(t, sql,
+		"max(data_type) FILTER (WHERE table_name = 'org_ext' AND column_name = 'org_id') AS org_ext_id",
+		"max(data_type) FILTER (WHERE table_name = 'knowledge_spaces' AND column_name = 'id') AS space_id",
+		"max(data_type) FILTER (WHERE table_name = 'documents' AND column_name = 'id') AS document_id",
+		"max(data_type) FILTER (WHERE table_name = 'document_chunks' AND column_name = 'id') AS chunk_id",
+		"id_type_profile.org_ext_id = 'character varying'",
+		"id_type_profile.space_id = 'character varying'",
+		"id_type_profile.document_id = 'character varying'",
+		"id_type_profile.chunk_id = 'uuid'",
+		"id_type_profile.chunk_id = 'character varying'",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap schema compatibility check failed: incompatible ID type profile'",
+	)
+
+	profileCheck := regexp.MustCompile(`(?s)and\s+not\s*\(\s*\(.*?org_ext_id\s*=\s*'character varying'.*?space_id\s*=\s*'character varying'.*?document_id\s*=\s*'character varying'.*?chunk_id\s*=\s*'uuid'\s*\)\s*or\s*\(.*?org_ext_id\s*=\s*'character varying'.*?space_id\s*=\s*'character varying'.*?document_id\s*=\s*'character varying'.*?chunk_id\s*=\s*'character varying'\s*\)\s*\)`).FindString(sql)
+	if profileCheck == "" {
+		t.Fatal("bootstrap compatibility assertion must accept exactly the historical and Bootstrap ID profiles and reject mixed profiles")
+	}
 }
 
 func TestBaselineIndexedColumnsAreCoveredByCompatibilitySpecs(t *testing.T) {

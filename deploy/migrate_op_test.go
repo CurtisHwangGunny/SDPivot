@@ -31,6 +31,9 @@ type migrationScenario struct {
 	publicTables    string
 	coreFingerprint string
 	sdpFingerprint  string
+	sdpV13Schema    string
+	sdpV13Account   string
+	sdpLatest       string
 	sdpMarkers      string
 	failAt          string
 	wantSuccess     bool
@@ -99,9 +102,13 @@ case "$sql" in
       output="${FAKE_SDP_FINGERPRINT:-complete}"
     fi
     ;;
-  *"op-probe:sdpivot-v13"*)
-    class=sdp-v13
-    output="present"
+  *"op-probe:sdpivot-v13-schema"*)
+    class=sdp-v13-schema
+    output="${FAKE_SDP_V13_SCHEMA:-complete}"
+    ;;
+  *"op-probe:sdpivot-v13-account"*)
+    class=sdp-v13-account
+    output="${FAKE_SDP_V13_ACCOUNT:-complete}"
     ;;
   *"op-probe:sdpivot-latest"*)
     class=sdp-latest
@@ -164,8 +171,10 @@ esac
 		"FAKE_PUBLIC_TABLES="+scenario.publicTables,
 		"FAKE_CORE_FINGERPRINT="+scenario.coreFingerprint,
 		"FAKE_SDP_FINGERPRINT="+scenario.sdpFingerprint,
+		"FAKE_SDP_V13_SCHEMA="+scenario.sdpV13Schema,
+		"FAKE_SDP_V13_ACCOUNT="+scenario.sdpV13Account,
 		"FAKE_SDP_MARKERS="+markers,
-		"FAKE_SDP_LATEST_FINGERPRINT=complete",
+		"FAKE_SDP_LATEST_FINGERPRINT="+scenario.sdpLatest,
 		"FAKE_FAIL_AT="+scenario.failAt,
 	)
 	output, err := cmd.CombinedOutput()
@@ -204,7 +213,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 				"psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-fingerprint",
 				"migrate:bootstrap", "psql:sdp-exists", "psql:sdp-state",
 				"migrate:sdpivot", "psql:sdp-exists", "psql:sdp-state",
-				"psql:sdp-fingerprint", "psql:sdp-v13", "psql:sdp-latest",
+				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
 			},
 		},
 		{
@@ -219,7 +228,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 				"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state",
 				"psql:sdp-exists", "psql:sdp-fingerprint", "migrate:bootstrap",
 				"psql:sdp-exists", "psql:sdp-state", "migrate:sdpivot",
-				"psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "psql:sdp-v13", "psql:sdp-latest",
+				"psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
 			},
 		},
 		{
@@ -229,7 +238,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 			wantCalls: []string{
 				"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-state",
 				"psql:sdp-fingerprint", "migrate:sdpivot", "psql:sdp-exists", "psql:sdp-state",
-				"psql:sdp-fingerprint", "psql:sdp-v13", "psql:sdp-latest",
+				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
 			},
 		},
 		{
@@ -238,9 +247,9 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 			coreFingerprint: "complete", sdpFingerprint: "complete", wantSuccess: true,
 			wantCalls: []string{
 				"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state",
-				"psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "psql:sdp-v13",
+				"psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account",
 				"migrate:sdpivot", "psql:sdp-exists", "psql:sdp-state",
-				"psql:sdp-fingerprint", "psql:sdp-v13", "psql:sdp-latest",
+				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
 			},
 		},
 		{
@@ -253,7 +262,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 				"psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-fingerprint",
 				"migrate:bootstrap", "psql:sdp-exists", "psql:sdp-state",
 				"migrate:sdpivot", "psql:sdp-exists", "psql:sdp-state",
-				"psql:sdp-fingerprint", "psql:sdp-v13", "psql:sdp-latest",
+				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
 			},
 		},
 		{
@@ -263,9 +272,9 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 			wantCalls: []string{
 				"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state",
 				"psql:sdp-exists", "psql:sdp-state",
-				"psql:sdp-fingerprint", "psql:sdp-v13", "psql:sdp-latest",
+				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
 				"psql:sdp-exists", "psql:sdp-state",
-				"psql:sdp-fingerprint", "psql:sdp-v13", "psql:sdp-latest",
+				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
 			},
 		},
 	}
@@ -289,6 +298,13 @@ func TestMigrationStateMachineFailsClosedForUnsafeStates(t *testing.T) {
 		{name: "function missing or mismatched", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
 		{name: "target rls missing", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
 		{name: "document chunks not force or lacks dual tenant policy", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
+		{name: "future sdpivot version", coreState: "63:f", sdpivotState: "15:f", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-state"}},
+		{name: "v13 empty state table", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
+		{name: "v13 wrong state table structure", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
+		{name: "v13 known legacy hash still active", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Account: "partial"},
+		{name: "latest policy missing", coreState: "63:f", sdpivotState: "14:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
+		{name: "latest policy missing with check", coreState: "63:f", sdpivotState: "14:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
+		{name: "latest extra permissive policy", coreState: "63:f", sdpivotState: "14:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
 	}
 
 	for _, test := range tests {
@@ -322,6 +338,26 @@ func TestMigrationStateMachineStopsImmediatelyWhenCommandFails(t *testing.T) {
 			_, calls := runMigrationScenario(t, test)
 			assertCalls(t, calls, test.wantCalls)
 		})
+	}
+}
+
+func TestMigrationFingerprintCoversVersion13AndLatestContracts(t *testing.T) {
+	script := readDeployFile(t, "migrate-op.sh")
+	for _, fragment := range []string{
+		"op-probe:sdpivot-v13-schema", "op-probe:sdpivot-v13-account",
+		"sdpivot_disable_legacy_ops_admin_000013_state", "key_constraint.contype = 'p'",
+		"admin@smartknora.com", `\$2a\$10\$l4fdcgy48s7whdmzzqaaf.sql5nna1.0uewfbbvzvasmsv0qyugs2`,
+		"remaining_legacy_credential", "target.password_hash = '\\$2a\\$10\\$l4fdcgy48s7whdmzzqaaf.sql5nna1.0uewfbbvzvasmsv0qyugs2'",
+		"!sdpivot-disabled-legacy-ops-admin:", "target.is_active is distinct from false",
+		"target.must_change_password is distinct from true", "expected_policies(table_name, policy_name, is_chunk_policy)",
+		"sdpivot_secure_000014_document_chunks", "policy.polcmd", "policy.polpermissive", "policy.polroles",
+		"pg_get_expr(policy.polqual", "pg_get_expr(policy.polwithcheck", "'::text', '', 'g'", "extra_permissive_policies",
+		"policy.using_expression like '%or%'", "policy.check_expression like '%true%'",
+		"sdpivot_schema_migrations version ${sdpivot_version} is newer than supported",
+	} {
+		if !strings.Contains(script, fragment) {
+			t.Errorf("migration fingerprint must contain %q", fragment)
+		}
 	}
 }
 
