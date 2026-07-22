@@ -52,7 +52,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "${values[$key]+set}" ]] || fail "duplicate key $key"
     [[ ! "$value" =~ [[:space:]] ]] || fail "$key must be a whitespace-free literal"
     case "$value" in
-        *'$('*|*'${'*|*'`'*|*';'*|*'&&'*|*'||'*|*'<'*|*'>'*|*"'"*|*'"'*|*'\\'*)
+        *'$'*|*'`'*|*';'*|*'&&'*|*'||'*|*'<'*|*'>'*|*"'"*|*'"'*|*'\\'*)
             fail "$key contains unsupported shell syntax"
             ;;
     esac
@@ -62,7 +62,9 @@ done < "$ENV_FILE"
 readonly REQUIRED_KEYS=(
     OP_DB_USER OP_DB_PASSWORD OP_DB_NAME OP_REDIS_PASSWORD
     OP_JWT_SECRET OP_SDP_JWT_SECRET OP_TENANT_AES_KEY OP_SYSTEM_AES_KEY
-    OP_ALLOWED_ORIGINS OP_APP_IMAGE OP_DOCREADER_IMAGE
+    OP_ALLOWED_ORIGINS
+    OP_POSTGRES_IMAGE OP_REDIS_IMAGE OP_APP_IMAGE OP_DOCREADER_IMAGE
+    OP_MIGRATION_IMAGE OP_SDP_BACKEND_IMAGE OP_SDP_FRONTEND_IMAGE
 )
 for key in "${REQUIRED_KEYS[@]}"; do
     [[ -n "${values[$key]:-}" ]] || fail "required key $key is missing or empty"
@@ -85,8 +87,12 @@ readonly SECRET_KEYS=(
 for key in "${SECRET_KEYS[@]}"; do
     lower="${values[$key],,}"
     case "$lower" in
-        password|password123|admin|postgres|redis|secret|changeme|change_me|test|default|sdpivot)
-            fail "$key uses a known weak value"
+        password|password[0-9]*|passwordpassword*|admin|admin[0-9]*|adminadmin*|\
+        postgres|postgres[0-9]*|postgrespostgres*|redis|redis[0-9]*|redisredis*|\
+        secret|secret[0-9]*|secretsecret*|changeme|change_me|changeme[0-9]*|\
+        test|test[0-9]*|testtest*|default|default[0-9]*|sdpivot|sdpivot[0-9]*|\
+        qwerty|qwerty[0-9]*|letmein|letmein[0-9]*|welcome|welcome[0-9]*|root|root[0-9]*)
+            fail "$key uses a known weak value or pattern"
             ;;
     esac
 done
@@ -123,8 +129,13 @@ validate_image() {
     tag="${last##*:}"
     [[ -n "$tag" && "${tag,,}" != latest ]] || fail "$key must not use latest"
 }
-validate_image OP_APP_IMAGE
-validate_image OP_DOCREADER_IMAGE
+readonly IMAGE_KEYS=(
+    OP_POSTGRES_IMAGE OP_REDIS_IMAGE OP_APP_IMAGE OP_DOCREADER_IMAGE
+    OP_MIGRATION_IMAGE OP_SDP_BACKEND_IMAGE OP_SDP_FRONTEND_IMAGE
+)
+for key in "${IMAGE_KEYS[@]}"; do
+    validate_image "$key"
+done
 
 readonly REQUIRED_FILES=(
     deploy/docker-compose.op.yml
