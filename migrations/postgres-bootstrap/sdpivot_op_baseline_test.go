@@ -85,7 +85,7 @@ func TestBaselineChecksExistingTableCompatibilityBeforeHelpersAndPolicies(t *tes
 	requireFragments(t, sql,
 		"CREATE OR REPLACE FUNCTION sdpivot_op_bootstrap_000012_assert_schema(p_require_all BOOLEAN)",
 		"SDPivot OP bootstrap schema compatibility check failed",
-		"p_require_all OR to_regclass(format('public.%I', required.table_name)) IS NOT NULL",
+		"p_require_all OR (required.table_name <> 'users' AND to_regclass(format('public.%I', required.table_name)) IS NOT NULL)",
 		"SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE)",
 		"SELECT sdpivot_op_bootstrap_000012_assert_schema(TRUE)",
 		"DROP FUNCTION sdpivot_op_bootstrap_000012_assert_schema(BOOLEAN)",
@@ -114,6 +114,38 @@ func TestBaselineChecksExistingTableCompatibilityBeforeHelpersAndPolicies(t *tes
 		"CREATE OR REPLACE FUNCTION set_tenant_context",
 		"CREATE POLICY sdpivot_op_bootstrap_000012_organizations",
 	)
+}
+
+func TestBaselineIndexedColumnsAreCoveredByCompatibilitySpecs(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+
+	assertionEnd := strings.Index(sql, "-- historical tenant helpers")
+	if assertionEnd < 0 {
+		t.Fatal("tenant helper section missing")
+	}
+	assertionSQL := sql[:assertionEnd]
+	covered := make(map[string]bool)
+	for _, match := range regexp.MustCompile(`\('([a-z0-9_]+)',\s*'([a-z0-9_]+)',\s*array\[`).FindAllStringSubmatch(assertionSQL, -1) {
+		covered[match[1]+"."+match[2]] = true
+	}
+
+	indexPattern := regexp.MustCompile(`(?m)create\s+index\s+if\s+not\s+exists\s+[a-z0-9_]+\s+on\s+([a-z0-9_]+)\s*\(([^)]*)\)(?:\s+where\s+[^;]+)?;`)
+	indexes := indexPattern.FindAllStringSubmatch(sql, -1)
+	if len(indexes) == 0 {
+		t.Fatal("no ordinary CREATE INDEX statements found")
+	}
+	for _, index := range indexes {
+		table := index[1]
+		for _, rawColumn := range strings.Split(index[2], ",") {
+			column := strings.TrimSpace(rawColumn)
+			if !regexp.MustCompile(`^[a-z_][a-z0-9_]*$`).MatchString(column) {
+				t.Fatalf("expression index column %q on %s needs explicit test handling", column, table)
+			}
+			if !covered[table+"."+column] {
+				t.Errorf("indexed column %s.%s is missing from compatibility assertion specs", table, column)
+			}
+		}
+	}
 }
 
 func TestBaselinePreservesTenantIsolationSafetyContract(t *testing.T) {

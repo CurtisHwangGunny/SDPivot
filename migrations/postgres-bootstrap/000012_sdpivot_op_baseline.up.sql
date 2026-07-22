@@ -83,17 +83,24 @@ BEGIN
                '; ' ORDER BY required.table_name, required.column_name)
       INTO incompatible_columns
       FROM (VALUES
+          ('users', 'trial_phase', ARRAY['character varying']),
           ('org_ext', 'org_id', ARRAY['character varying']),
+          ('org_ext', 'auth_status', ARRAY['character varying']),
           ('org_ext', 'tenant_id', ARRAY['bigint']),
           ('org_members', 'id', ARRAY['character varying']),
           ('org_members', 'org_id', ARRAY['character varying']),
           ('org_members', 'user_id', ARRAY['character varying']),
           ('smartknora_user_profiles', 'id', ARRAY['character varying']),
           ('smartknora_user_profiles', 'user_id', ARRAY['character varying']),
+          ('smartknora_user_profiles', 'phone', ARRAY['character varying']),
+          ('smartknora_user_profiles', 'status', ARRAY['character varying']),
           ('refresh_tokens', 'id', ARRAY['character varying']),
           ('refresh_tokens', 'user_id', ARRAY['character varying']),
+          ('refresh_tokens', 'expires_at', ARRAY['timestamp with time zone']),
           ('token_usage', 'id', ARRAY['character varying']),
+          ('token_usage', 'user_id', ARRAY['character varying']),
           ('token_usage', 'tenant_id', ARRAY['bigint']),
+          ('token_usage', 'created_at', ARRAY['timestamp with time zone']),
           ('knowledge_spaces', 'id', ARRAY['character varying']),
           ('knowledge_spaces', 'tenant_id', ARRAY['bigint']),
           ('knowledge_spaces', 'org_id', ARRAY['character varying']),
@@ -105,6 +112,8 @@ BEGIN
           ('documents', 'id', ARRAY['character varying']),
           ('documents', 'tenant_id', ARRAY['bigint']),
           ('documents', 'space_id', ARRAY['character varying']),
+          ('documents', 'parse_status', ARRAY['character varying']),
+          ('documents', 'content_hash', ARRAY['character varying']),
           ('document_chunks', 'id', ARRAY['character varying']),
           ('document_chunks', 'document_id', ARRAY['character varying']),
           ('document_chunks', 'tenant_id', ARRAY['bigint']),
@@ -114,25 +123,47 @@ BEGIN
           ('chunk_strategies', 'id', ARRAY['character varying']),
           ('chunk_strategies', 'tenant_id', ARRAY['bigint']),
           ('qa_sessions', 'id', ARRAY['character varying']),
+          ('qa_sessions', 'user_id', ARRAY['character varying']),
           ('qa_sessions', 'tenant_id', ARRAY['bigint']),
           ('qa_messages', 'id', ARRAY['character varying']),
           ('qa_messages', 'session_id', ARRAY['character varying']),
           ('qa_messages', 'tenant_id', ARRAY['bigint']),
           ('writing_drafts', 'id', ARRAY['character varying']),
+          ('writing_drafts', 'user_id', ARRAY['character varying']),
           ('writing_drafts', 'tenant_id', ARRAY['bigint']),
           ('write_category_config', 'id', ARRAY['character varying']),
           ('write_category_config', 'tenant_id', ARRAY['bigint']),
+          ('write_category_config', 'category', ARRAY['character varying']),
           ('announcements', 'id', ARRAY['character varying']),
           ('announcements', 'tenant_id', ARRAY['bigint']),
           ('audit_logs', 'id', ARRAY['bigint']),
-          ('audit_logs', 'tenant_id', ARRAY['bigint'])
+          ('audit_logs', 'tenant_id', ARRAY['bigint']),
+          ('audit_logs', 'user_id', ARRAY['character varying']),
+          ('audit_logs', 'action', ARRAY['character varying']),
+          ('audit_logs', 'created_at', ARRAY['timestamp with time zone']),
+          ('sensitive_words', 'id', ARRAY['character varying']),
+          ('sensitive_words', 'word', ARRAY['character varying']),
+          ('sensitive_words', 'category', ARRAY['character varying']),
+          ('sensitive_words', 'status', ARRAY['character varying']),
+          ('billing_plans', 'id', ARRAY['character varying']),
+          ('billing_plans', 'status', ARRAY['character varying']),
+          ('enterprise_subscriptions', 'id', ARRAY['character varying']),
+          ('enterprise_subscriptions', 'org_id', ARRAY['character varying']),
+          ('enterprise_subscriptions', 'plan_id', ARRAY['character varying']),
+          ('invoices', 'id', ARRAY['character varying']),
+          ('invoices', 'org_id', ARRAY['character varying']),
+          ('invoices', 'status', ARRAY['character varying']),
+          ('invoices', 'period_start', ARRAY['timestamp with time zone']),
+          ('invoices', 'period_end', ARRAY['timestamp with time zone'])
       ) AS required(table_name, column_name, allowed_types)
       LEFT JOIN information_schema.columns existing
         ON existing.table_schema = 'public'
        AND existing.table_name = required.table_name
        AND existing.column_name = required.column_name
      WHERE (existing.column_name IS NULL
-            AND (p_require_all OR to_regclass(format('public.%I', required.table_name)) IS NOT NULL))
+            AND (p_require_all
+                 OR (required.table_name <> 'users'
+                     AND to_regclass(format('public.%I', required.table_name)) IS NOT NULL)))
         OR (existing.column_name IS NOT NULL
             AND NOT (existing.data_type = ANY(required.allowed_types)));
 
@@ -174,6 +205,34 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_phase VARCHAR(20) DEFAULT '30da
 ALTER TABLE users ADD COLUMN IF NOT EXISTS authenticated_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_extended_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+
+DO $$
+DECLARE
+    incompatible_columns TEXT;
+BEGIN
+    SELECT string_agg(
+               format('%I.%I expected %s, found %s',
+                   required.table_name,
+                   required.column_name,
+                   array_to_string(required.allowed_types, '/'),
+                   COALESCE(existing.data_type, 'missing')),
+               '; ' ORDER BY required.table_name, required.column_name)
+      INTO incompatible_columns
+      FROM (VALUES
+          ('users', 'is_ops_admin', ARRAY['boolean']),
+          ('users', 'trial_phase', ARRAY['character varying'])
+      ) AS required(table_name, column_name, allowed_types)
+      LEFT JOIN information_schema.columns existing
+        ON existing.table_schema = 'public'
+       AND existing.table_name = required.table_name
+       AND existing.column_name = required.column_name
+     WHERE existing.column_name IS NULL
+        OR NOT (existing.data_type = ANY(required.allowed_types));
+
+    IF incompatible_columns IS NOT NULL THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap core extension compatibility check failed: %', incompatible_columns;
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_users_ops_admin ON users (is_ops_admin) WHERE is_ops_admin = TRUE;
 CREATE INDEX IF NOT EXISTS idx_users_trial_phase ON users (trial_phase);
