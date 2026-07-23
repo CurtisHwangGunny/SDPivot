@@ -26,6 +26,8 @@ done
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOT/frontend/sdpivot/sdp-server"
 /bin/chmod 700 "$ROOT/frontend/sdpivot/sdp-server"
 printf '<!doctype html>\n' > "$ROOT/frontend/sdpivot/dist/index.html"
+/bin/mkdir -p -- "$ROOT/docs/中文目录"
+printf 'UTF-8 artifact fixture\n' > "$ROOT/docs/中文目录/数据源说明.md"
 
 readonly ENV_FILE="$ROOT/deploy/test.env"
 write_good_env() {
@@ -301,12 +303,61 @@ expect_fail backend_hardlink "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" 
 /bin/ln -s missing-target "$ROOT/frontend/sdpivot/dist/ops.html"
 expect_fail dangling_ops "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate
 /bin/rm "$ROOT/frontend/sdpivot/dist/ops.html"
-manifest="$ROOT/deploy/test.manifest"
+manifest_dir="$TMP_ROOT/manifest-work"
+/bin/mkdir -m 700 "$manifest_dir"
+manifest="$manifest_dir/test.manifest"
 : > "$manifest"
 /bin/chmod 600 "$manifest"
 "$ROOT/deploy/validate-op-deployment.sh" artifacts "$manifest"
+/usr/bin/python3 - "$manifest" <<'PY'
+from pathlib import Path
+import sys
+
+data = Path(sys.argv[1]).read_bytes()
+assert b"docs/\xe4\xb8\xad\xe6\x96\x87\xe7\x9b\xae\xe5\xbd\x95/\xe6\x95\xb0\xe6\x8d\xae\xe6\xba\x90\xe8\xaf\xb4\xe6\x98\x8e.md\n" in data
+assert data.decode("utf-8").encode("utf-8") == data
+PY
+"$ROOT/deploy/validate-op-deployment.sh" compare-artifacts "$manifest"
+pass artifact_utf8_generate_and_compare
+stage_root="$TMP_ROOT/stage"
+/bin/mkdir -m 700 "$stage_root"
+override="$TMP_ROOT/stage.override.yml"
+: > "$override"
+/bin/chmod 600 "$override"
+"$ROOT/deploy/validate-op-deployment.sh" stage "$manifest" "$stage_root" "$override"
+"$ROOT/deploy/validate-op-deployment.sh" compare-stage "$manifest" "$stage_root"
+[[ -f "$stage_root/docs/中文目录/数据源说明.md" ]] || { printf 'FAIL UTF-8 artifact was not staged\n' >&2; exit 1; }
+pass artifact_utf8_stage_and_compare
+/bin/chmod 700 "$stage_root" "$stage_root/docs" "$stage_root/docs/中文目录"
+/bin/chmod 600 "$stage_root/docs/中文目录/数据源说明.md"
+printf 'changed\n' >> "$stage_root/docs/中文目录/数据源说明.md"
+/bin/chmod 400 "$stage_root/docs/中文目录/数据源说明.md"
+/bin/chmod 500 "$stage_root/docs/中文目录" "$stage_root/docs" "$stage_root"
+expect_fail artifact_utf8_staged_content_changed "$ROOT/deploy/validate-op-deployment.sh" compare-stage "$manifest" "$stage_root"
+/usr/bin/python3 - "$stage_root" <<'PY'
+import os
+import sys
+
+for current, dirs, names in os.walk(sys.argv[1]):
+    os.chmod(current, 0o700)
+    for name in names:
+        os.chmod(os.path.join(current, name), 0o600)
+PY
+/bin/rm -rf "$stage_root"
 printf '<!-- changed -->\n' >> "$ROOT/frontend/sdpivot/dist/index.html"
-expect_fail artifact_manifest_changed "$ROOT/deploy/validate-op-deployment.sh" compare-artifacts "$manifest"
+expect_fail artifact_manifest_content_changed "$ROOT/deploy/validate-op-deployment.sh" compare-artifacts "$manifest"
+printf '<!doctype html>\n' > "$ROOT/frontend/sdpivot/dist/index.html"
+/bin/mv "$ROOT/docs/中文目录/数据源说明.md" "$ROOT/docs/中文目录/改名说明.md"
+expect_fail artifact_manifest_path_changed "$ROOT/deploy/validate-op-deployment.sh" compare-artifacts "$manifest"
+/bin/mv "$ROOT/docs/中文目录/改名说明.md" "$ROOT/docs/中文目录/数据源说明.md"
+control_path="$ROOT/docs/control"$'\001'"name.md"
+printf 'unsafe\n' > "$control_path"
+expect_fail artifact_control_path "$ROOT/deploy/validate-op-deployment.sh" compare-artifacts "$manifest"
+/bin/rm -- "$control_path"
+newline_path="$ROOT/docs/newline"$'\n'"name.md"
+printf 'unsafe\n' > "$newline_path"
+expect_fail artifact_newline_path "$ROOT/deploy/validate-op-deployment.sh" compare-artifacts "$manifest"
+/bin/rm -- "$newline_path"
 /bin/rm "$manifest"
 pass artifact_provenance
 

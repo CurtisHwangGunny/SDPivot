@@ -377,6 +377,32 @@ def validate_values(values):
         validate_image(key, values[key])
 
 
+def canonical_manifest_path(path):
+    relative = os.path.relpath(path, REPO_ROOT)
+    if os.sep != "/":
+        relative = relative.replace(os.sep, "/")
+    return relative
+
+
+def validate_manifest_path(relative):
+    if not relative or relative in (".", "..") or relative.startswith("/") or "\\" in relative:
+        fail("artifact manifest contains an unsafe path")
+    try:
+        relative.encode("utf-8")
+    except UnicodeEncodeError:
+        fail("artifact manifest path is not valid UTF-8")
+    if any(ord(ch) < 0x20 or 0x7F <= ord(ch) <= 0x9F for ch in relative):
+        fail("artifact manifest path contains a control character")
+    parts = relative.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        fail("artifact manifest contains an unsafe path")
+    return relative
+
+
+def manifest_sort_key(path):
+    return validate_manifest_path(canonical_manifest_path(path)).encode("utf-8")
+
+
 def secure_file_row(path, label):
     before, real = validate_secure_regular(path, base=REPO_ROOT, label=label)
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
@@ -405,7 +431,7 @@ def secure_file_row(path, label):
             fail(f"{label} changed while it was hashed")
     finally:
         os.close(fd)
-    relative = os.path.relpath(real, REPO_ROOT)
+    relative = validate_manifest_path(canonical_manifest_path(real))
     return f"{digest.hexdigest()}\t{opened.st_dev}\t{opened.st_ino}\t{stat.S_IMODE(opened.st_mode):o}\t{total}\t{opened.st_mtime_ns}\t{relative}\n"
 
 
@@ -456,9 +482,9 @@ def artifact_manifest():
     index = os.path.join(dist, "index.html")
     validate_secure_regular(index, base=REPO_ROOT, label="frontend/sdpivot/dist/index.html")
     rows = []
-    for path in sorted(files):
-        rows.append(secure_file_row(path, os.path.relpath(path, REPO_ROOT)))
-    return "".join(rows).encode("ascii")
+    for path in sorted(files, key=manifest_sort_key):
+        rows.append(secure_file_row(path, canonical_manifest_path(path)))
+    return "".join(rows).encode("utf-8")
 
 
 def load_values_from_snapshot(path):
@@ -513,15 +539,15 @@ def parse_manifest(path):
     rows = {}
     data = secure_manifest_bytes(path)
     try:
-        text = data.decode("ascii")
+        text = data.decode("utf-8")
     except UnicodeDecodeError:
-        fail("artifact manifest is not ASCII")
+        fail("artifact manifest is not valid UTF-8")
     for line in text.splitlines():
         parts = line.split("\t")
         if len(parts) != 7 or not re.fullmatch(r"[0-9a-f]{64}", parts[0]) or not parts[4].isdigit():
             fail("artifact manifest contains an invalid row")
-        relative = parts[6]
-        if relative.startswith("/") or relative in ("", ".") or ".." in Path(relative).parts or relative in rows:
+        relative = validate_manifest_path(parts[6])
+        if relative in rows:
             fail("artifact manifest contains an unsafe path")
         rows[relative] = (parts[0], int(parts[4]), int(parts[3], 8))
     if not rows:
