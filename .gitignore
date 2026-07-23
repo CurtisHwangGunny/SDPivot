@@ -7,6 +7,8 @@ frontend/**/smartknora-server
 .env
 deploy/.env
 deploy/.env.test
+deploy/.env.op
+deploy/.op-build-receipt.json
 
 # ===== 前端依赖与构建缓存 =====
 **/node_modules/
