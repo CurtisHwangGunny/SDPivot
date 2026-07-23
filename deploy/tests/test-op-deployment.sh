@@ -91,6 +91,16 @@ assert module["FORWARDED_SIGNALS"] == (signal.SIGTERM, signal.SIGINT, signal.SIG
 PY
 pass syntax
 
+/usr/bin/python3 - "$ROOT/deploy/docker-compose.op.yml" <<'PY_COMPOSE_HEALTH'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+expected = 'test "$$(cat /proc/1/comm)" = postgres && pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+assert text.count(expected) == 1
+PY_COMPOSE_HEALTH
+pass postgres_health_waits_for_final_pid1
+
 payload="$TMP_ROOT/bash-env-payload"
 printf 'touch %q\n' "$TMP_ROOT/bash-env-executed" > "$payload"
 expect_fail bash_env_ignored /usr/bin/env BASH_ENV="$payload" \
