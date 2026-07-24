@@ -20,6 +20,11 @@ baseline_done = (state / "baseline-done").exists()
 sdp_done = (state / "sdp-done").exists()
 
 if "/* op-probe:core-audit-m44 */" in sql:
+    if os.environ.get("REQUIRE_STRICT_BIGSERIAL") == "1":
+        required = ["a.default_expr IS DISTINCT FROM pg_catalog.format", "p.seqstart = 1", "p.seqincrement = 1", "p.seqmax = 9223372036854775807", "p.seqmin = 1", "p.seqcache = 1", "NOT p.seqcycle"]
+        if any(fragment not in sql for fragment in required):
+            print("invalid")
+            sys.exit(0)
     if baseline_done:
         print("baseline_exact")
     elif core_done:
@@ -97,3 +102,57 @@ run_case core62_exact_allowed 62 migration44_exact allow
 run_case core44_mixed_rejected_before_migrate 44 invalid reject
 run_case core62_mixed_rejected_before_migrate 62 invalid reject
 run_case core63_missing_rejected_before_mutation 63 missing reject
+
+
+if [[ -n "${OP_TEST_PG_CONTAINER:-}" ]]; then
+    export SOURCE_ROOT OP_TEST_PG_CONTAINER
+    python3 - <<'PYPG'
+import os
+from pathlib import Path
+import subprocess
+import time
+
+source_root = Path(os.environ["SOURCE_ROOT"])
+container = os.environ["OP_TEST_PG_CONTAINER"]
+script = (source_root / "deploy/migrate-op.sh").read_text()
+marker = "        /* op-probe:core-audit-m44 */"
+start = script.index(marker)
+end = script.index("\n    \"\n}", start)
+query = "\n".join(line[8:] if line.startswith("        ") else line for line in script[start:end].splitlines()) + ";\n"
+migration = (source_root / "migrations/versioned/000044_audit_log.up.sql").read_text()
+base = ["docker", "exec", "-i", container, "psql", "-U", "test"]
+
+def psql(database, sql, capture=False):
+    args = base + ["-d", database, "-v", "ON_ERROR_STOP=1"] + (["-Atq"] if capture else [])
+    result = subprocess.run(args, input=sql, text=True, capture_output=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr)
+    return result.stdout.strip()
+
+cases = [
+    ("exact", "", "migration44_exact"),
+    ("default_plus_one", "ALTER TABLE audit_logs ALTER COLUMN id SET DEFAULT (nextval(pg_get_serial_sequence('public.audit_logs','id')) + 1);", "invalid"),
+    ("sequence_cycle", "ALTER SEQUENCE audit_logs_id_seq CYCLE;", "invalid"),
+    ("sequence_start", "ALTER SEQUENCE audit_logs_id_seq START WITH 2;", "invalid"),
+    ("sequence_min", "ALTER SEQUENCE audit_logs_id_seq MINVALUE 0;", "invalid"),
+    ("sequence_max", "ALTER SEQUENCE audit_logs_id_seq MAXVALUE 9223372036854775806;", "invalid"),
+    ("sequence_increment", "ALTER SEQUENCE audit_logs_id_seq INCREMENT BY 2;", "invalid"),
+    ("sequence_cache", "ALTER SEQUENCE audit_logs_id_seq CACHE 2;", "invalid"),
+    ("sequence_rename", "ALTER SEQUENCE audit_logs_id_seq RENAME TO audit_logs_serial_custom;", "migration44_exact"),
+]
+
+for number, (name, mutation, expected) in enumerate(cases, 1):
+    database = f"op_m44_catalog_{os.getpid()}_{int(time.time())}_{number}"
+    try:
+        psql("postgres", f"CREATE DATABASE {database};")
+        psql(database, migration)
+        if mutation:
+            psql(database, mutation)
+        actual = psql(database, query, capture=True)
+        if actual != expected:
+            raise RuntimeError(f"{name}: expected {expected}, got {actual}")
+        print(f"PASS pg17_{name}={actual}")
+    finally:
+        subprocess.run(base + ["-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", f"DROP DATABASE IF EXISTS {database} WITH (FORCE);"], text=True, capture_output=True)
+PYPG
+fi

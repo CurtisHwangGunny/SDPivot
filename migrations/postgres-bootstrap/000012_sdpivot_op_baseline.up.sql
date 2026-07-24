@@ -291,6 +291,8 @@ BEGIN
                OR CASE e.default_kind
                     WHEN 'none' THEN a.default_oid IS NOT NULL
                     WHEN 'sequence' THEN a.attidentity <> '' OR t.sequence_oid IS NULL OR a.default_oid IS NULL
+                        OR a.default_expr IS DISTINCT FROM pg_catalog.format(
+                            'nextval(%L::regclass)', t.sequence_oid::regclass::text)
                         OR NOT EXISTS (
                             SELECT 1 FROM pg_catalog.pg_depend dep
                             WHERE dep.classid = 'pg_catalog.pg_attrdef'::regclass
@@ -319,8 +321,11 @@ BEGIN
                OR NOT EXISTS (
                     SELECT 1 FROM pg_catalog.pg_class s
                     JOIN pg_catalog.pg_sequence p ON p.seqrelid = s.oid
-                    WHERE s.oid = t.sequence_oid AND s.relkind = 'S'
-                      AND p.seqtypid = 'bigint'::regtype AND p.seqincrement = 1)
+                    WHERE s.oid = t.sequence_oid AND s.relkind = 'S' AND s.relpersistence = 'p'
+                      AND p.seqtypid = 'bigint'::regtype
+                      AND p.seqstart = 1 AND p.seqincrement = 1
+                      AND p.seqmax = 9223372036854775807 AND p.seqmin = 1
+                      AND p.seqcache = 1 AND NOT p.seqcycle)
                OR NOT EXISTS (
                     SELECT 1 FROM pg_catalog.pg_depend dep
                     WHERE dep.classid = 'pg_catalog.pg_class'::regclass
