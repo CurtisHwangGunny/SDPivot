@@ -107,13 +107,14 @@ COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoin
 
 # Keep application assets immutable while granting appuser the read/execute access it needs.
 RUN chmod +x ./scripts/*.sh && \
-    chmod -R a+rX ./config ./scripts ./migrations ./dataset ./skills /home/appuser/.duckdb && \
+    chgrp -R appuser ./config ./scripts ./migrations ./dataset ./skills && \
+    chmod -R u=rwX,g=rX,o= ./config ./scripts ./migrations ./dataset ./skills && \
     test "$(stat -c '%U:%G' /app)" = "root:root" && \
+    test "$(stat -c '%U:%G' ./scripts/docker-entrypoint.sh)" = "root:appuser" && \
     gosu appuser test -r ./config/config.yaml && \
     gosu appuser test -x ./scripts/docker-entrypoint.sh && \
     gosu appuser test -x ./WeKnora && \
-    ! gosu appuser test -w /app && \
-    ! gosu appuser test -w ./config/config.yaml && \
+    test -z "$(gosu appuser find /app -xdev -writable -print -quit)" && \
     test -z "$(gosu appuser find ./config ./scripts ./migrations ./dataset ./skills /home/appuser/.duckdb \
         -xdev \( -type f -o -type d \) ! -readable -print -quit)"
 

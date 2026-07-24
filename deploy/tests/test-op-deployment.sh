@@ -101,13 +101,14 @@ assert "chown -R appuser:appuser /app /data/files" not in text
 assert "chown -R appuser:appuser /data/files" in text
 assert "COPY --chown=appuser:appuser --from=builder /root/.duckdb /home/appuser/.duckdb" in text
 required = (
-    "chmod -R a+rX ./config ./scripts ./migrations ./dataset ./skills /home/appuser/.duckdb",
+    "chgrp -R appuser ./config ./scripts ./migrations ./dataset ./skills",
+    "chmod -R u=rwX,g=rX,o= ./config ./scripts ./migrations ./dataset ./skills",
     "test \"$(stat -c '%U:%G' /app)\" = \"root:root\"",
+    "test \"$(stat -c '%U:%G' ./scripts/docker-entrypoint.sh)\" = \"root:appuser\"",
     "gosu appuser test -r ./config/config.yaml",
     "gosu appuser test -x ./scripts/docker-entrypoint.sh",
     "gosu appuser test -x ./WeKnora",
-    "! gosu appuser test -w /app",
-    "! gosu appuser test -w ./config/config.yaml",
+    "gosu appuser find /app -xdev -writable -print -quit",
     "! -readable -print -quit",
 )
 for marker in required:
