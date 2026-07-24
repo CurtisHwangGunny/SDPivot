@@ -112,6 +112,157 @@ with_migrations_table() {
     fi
 }
 
+core_audit_m44_fingerprint() {
+    sql_scalar "
+        /* op-probe:core-audit-m44 */
+        WITH target AS (
+            SELECT c.oid AS table_oid, c.relkind, c.relpersistence,
+                   pg_catalog.pg_get_serial_sequence('public.audit_logs', 'id')::regclass AS sequence_oid
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relname = 'audit_logs'
+        ), expected_columns(attname, attnum, atttypid, atttypmod, attnotnull, default_kind) AS (
+            VALUES
+                ('id', 1, 'bigint'::regtype, -1, TRUE, 'sequence'),
+                ('tenant_id', 2, 'bigint'::regtype, -1, TRUE, 'none'),
+                ('actor_user_id', 3, 'character varying'::regtype, 40, TRUE, 'empty_varchar'),
+                ('actor_role', 4, 'character varying'::regtype, 36, TRUE, 'empty_varchar'),
+                ('action', 5, 'character varying'::regtype, 68, TRUE, 'none'),
+                ('target_type', 6, 'character varying'::regtype, 36, TRUE, 'empty_varchar'),
+                ('target_id', 7, 'character varying'::regtype, 68, TRUE, 'empty_varchar'),
+                ('target_user_id', 8, 'character varying'::regtype, 40, TRUE, 'empty_varchar'),
+                ('request_path', 9, 'character varying'::regtype, 516, TRUE, 'empty_varchar'),
+                ('request_method', 10, 'character varying'::regtype, 20, TRUE, 'empty_varchar'),
+                ('outcome', 11, 'character varying'::regtype, 20, TRUE, 'success_varchar'),
+                ('details', 12, 'jsonb'::regtype, -1, TRUE, 'empty_jsonb'),
+                ('created_at', 13, 'timestamp with time zone'::regtype, -1, TRUE, 'current_timestamp')
+        ), expected_projection(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('user_id', 14, 'character varying'::regtype, 40),
+                ('username', 15, 'character varying'::regtype, 104),
+                ('resource', 16, 'character varying'::regtype, 104),
+                ('resource_id', 17, 'character varying'::regtype, 68),
+                ('detail', 18, 'text'::regtype, -1),
+                ('ip', 19, 'character varying'::regtype, 54)
+        ), actual_columns AS (
+            SELECT a.attname, a.attnum, a.atttypid, a.atttypmod, a.attnotnull, a.attidentity,
+                   d.oid AS default_oid, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS default_expr
+            FROM target t
+            JOIN pg_catalog.pg_attribute a ON a.attrelid = t.table_oid
+            LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+            WHERE a.attnum > 0 AND NOT a.attisdropped
+        ), invalid_core_columns AS (
+            SELECT 1
+            FROM expected_columns e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            LEFT JOIN target t ON TRUE
+            WHERE a.attname IS NULL
+               OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid OR a.atttypmod <> e.atttypmod
+               OR a.attnotnull <> e.attnotnull
+               OR CASE e.default_kind
+                    WHEN 'none' THEN a.default_oid IS NOT NULL
+                    WHEN 'sequence' THEN a.attidentity <> '' OR t.sequence_oid IS NULL OR a.default_oid IS NULL
+                        OR NOT EXISTS (
+                            SELECT 1 FROM pg_catalog.pg_depend dep
+                            WHERE dep.classid = 'pg_catalog.pg_attrdef'::regclass
+                              AND dep.objid = a.default_oid AND dep.objsubid = 0
+                              AND dep.refclassid = 'pg_catalog.pg_class'::regclass
+                              AND dep.refobjid = t.sequence_oid AND dep.refobjsubid = 0
+                              AND dep.deptype = 'n')
+                    WHEN 'empty_varchar' THEN a.default_expr IS DISTINCT FROM chr(39) || chr(39) || '::character varying'
+                    WHEN 'success_varchar' THEN a.default_expr IS DISTINCT FROM chr(39) || 'success' || chr(39) || '::character varying'
+                    WHEN 'empty_jsonb' THEN a.default_expr IS DISTINCT FROM '''{}''::jsonb'
+                    WHEN 'current_timestamp' THEN regexp_replace(lower(a.default_expr), '[[:space:]()]', '', 'g')
+                        NOT IN ('current_timestamp', 'now')
+                    ELSE TRUE
+                  END
+        ), invalid_projection_columns AS (
+            SELECT 1
+            FROM expected_projection e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR a.attnotnull OR a.default_oid IS NOT NULL
+        ), invalid_sequence AS (
+            SELECT 1
+            FROM target t
+            LEFT JOIN actual_columns id ON id.attname = 'id'
+            WHERE t.sequence_oid IS NULL OR id.attidentity <> ''
+               OR NOT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_class s
+                    JOIN pg_catalog.pg_sequence p ON p.seqrelid = s.oid
+                    WHERE s.oid = t.sequence_oid AND s.relkind = 'S'
+                      AND p.seqtypid = 'bigint'::regtype AND p.seqincrement = 1)
+               OR NOT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_depend dep
+                    WHERE dep.classid = 'pg_catalog.pg_class'::regclass
+                      AND dep.objid = t.sequence_oid AND dep.objsubid = 0
+                      AND dep.refclassid = 'pg_catalog.pg_class'::regclass
+                      AND dep.refobjid = t.table_oid AND dep.refobjsubid = id.attnum
+                      AND dep.deptype = 'a')
+        ), invalid_primary_key AS (
+            SELECT 1 FROM target t
+            WHERE 1 <> (SELECT count(*) FROM pg_catalog.pg_constraint c WHERE c.conrelid = t.table_oid AND c.contype = 'p')
+               OR NOT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_constraint c
+                    JOIN actual_columns id ON id.attname = 'id'
+                    WHERE c.conrelid = t.table_oid AND c.contype = 'p'
+                      AND c.convalidated AND NOT c.condeferrable AND NOT c.condeferred
+                      AND c.conkey = ARRAY[id.attnum]::smallint[])
+        ), expected_indexes(kind, key_count) AS (
+            VALUES ('tenant_id_id_desc', 2), ('actor_user_id', 1), ('tenant_id_action', 2), ('created_at', 1)
+        ), matching_indexes AS (
+            SELECT e.kind, i.indexrelid
+            FROM expected_indexes e
+            JOIN target t ON TRUE
+            JOIN pg_catalog.pg_index i ON i.indrelid = t.table_oid
+            JOIN pg_catalog.pg_class idx ON idx.oid = i.indexrelid
+            JOIN pg_catalog.pg_am am ON am.oid = idx.relam AND am.amname = 'btree'
+            JOIN actual_columns c1 ON c1.attnum = i.indkey[0]
+            LEFT JOIN actual_columns c2 ON c2.attnum = i.indkey[1]
+            WHERE idx.relkind = 'i' AND i.indisvalid AND i.indisready AND i.indislive
+              AND NOT i.indisunique AND NOT i.indisprimary
+              AND i.indpred IS NULL AND i.indexprs IS NULL
+              AND i.indnkeyatts = e.key_count AND i.indnatts = e.key_count
+              AND pg_catalog.pg_index_column_has_property(i.indexrelid, 1, 'orderable')
+              AND pg_catalog.pg_index_column_has_property(i.indexrelid, 1, 'asc')
+              AND pg_catalog.pg_index_column_has_property(i.indexrelid, 1, 'nulls_last')
+              AND (e.key_count = 1 OR (
+                  pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'orderable')
+                  AND CASE e.kind
+                      WHEN 'tenant_id_id_desc' THEN c2.attname = 'id'
+                          AND pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'desc')
+                          AND pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'nulls_first')
+                      WHEN 'tenant_id_action' THEN c2.attname = 'action'
+                          AND pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'asc')
+                          AND pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'nulls_last')
+                      ELSE FALSE END))
+              AND CASE e.kind
+                  WHEN 'tenant_id_id_desc' THEN c1.attname = 'tenant_id'
+                  WHEN 'actor_user_id' THEN c1.attname = 'actor_user_id'
+                  WHEN 'tenant_id_action' THEN c1.attname = 'tenant_id'
+                  WHEN 'created_at' THEN c1.attname = 'created_at'
+                  ELSE FALSE END
+        ), invalid_indexes AS (
+            SELECT 1 FROM expected_indexes e
+            WHERE NOT EXISTS (SELECT 1 FROM matching_indexes m WHERE m.kind = e.kind)
+        )
+        SELECT CASE
+            WHEN NOT EXISTS (SELECT 1 FROM target) THEN 'missing'
+            WHEN NOT EXISTS (SELECT 1 FROM target WHERE relkind = 'r' AND relpersistence = 'p')
+              OR EXISTS (SELECT 1 FROM invalid_core_columns)
+              OR EXISTS (SELECT 1 FROM invalid_sequence)
+              OR EXISTS (SELECT 1 FROM invalid_primary_key)
+              OR EXISTS (SELECT 1 FROM invalid_indexes)
+              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 19)
+            THEN 'invalid'
+            WHEN (SELECT count(*) FROM actual_columns) = 13 THEN 'migration44_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 19
+              AND NOT EXISTS (SELECT 1 FROM invalid_projection_columns) THEN 'baseline_exact'
+            ELSE 'invalid'
+        END
+    "
+}
+
 sdpivot_marker_count() {
     sql_scalar "
         /* op-probe:sdpivot-flags */
@@ -691,7 +842,16 @@ log "checking core migration state"
 if ! core_state="$(migration_state schema_migrations)"; then
     fail "failed to inspect schema_migrations"
 fi
+if ! core_audit_fingerprint="$(core_audit_m44_fingerprint)"; then
+    fail "failed to inspect the Core migration 44 audit_logs fingerprint"
+fi
+case "$core_audit_fingerprint" in
+    missing|migration44_exact|baseline_exact|invalid) ;;
+    *) fail "Core migration 44 audit_logs fingerprint returned an unknown state" ;;
+esac
 if [[ "$core_state" == "absent" ]]; then
+    [[ "$core_audit_fingerprint" == "missing" ]] || fail \
+        "audit_logs must be missing before Core migration 44"
     if ! existing_public_tables="$(sql_scalar "
         SELECT count(*)
         FROM pg_catalog.pg_class application_object
@@ -726,6 +886,14 @@ else
     (( core_version <= CORE_LATEST_VERSION )) || fail \
         "schema_migrations version ${core_version} is newer than supported ${CORE_LATEST_VERSION}"
 
+    if (( core_version < 44 )); then
+        [[ "$core_audit_fingerprint" == "missing" ]] || fail \
+            "audit_logs must be missing before Core migration 44"
+    elif (( core_version < CORE_LATEST_VERSION )); then
+        [[ "$core_audit_fingerprint" == "migration44_exact" ]] || fail \
+            "Core versions 44-62 require the exact migration 44 audit_logs contract"
+    fi
+
     if (( core_version == CORE_AMBIGUOUS_VERSION )); then
         if ! core_fingerprint="$(core_v12_fingerprint)"; then
             fail "failed to inspect the core version 12 fingerprint"
@@ -750,6 +918,13 @@ else
     fi
 fi
 assert_clean_version schema_migrations "$CORE_LATEST_VERSION"
+if ! current_audit_fingerprint="$(core_audit_m44_fingerprint)"; then
+    fail "failed to inspect the current Core migration 44 audit_logs fingerprint"
+fi
+case "$current_audit_fingerprint" in
+    migration44_exact|baseline_exact) ;;
+    *) fail "current Core migrations require an exact audit_logs contract" ;;
+esac
 
 log "identifying the SDPivot migration path"
 if ! sdpivot_state="$(migration_state sdpivot_schema_migrations)"; then
@@ -773,9 +948,13 @@ if [[ "$sdpivot_state" == "absent" ]]; then
     fi
     case "$sdpivot_fingerprint" in
         empty)
+            [[ "$current_audit_fingerprint" == "migration44_exact" ]] || fail \
+                "greenfield SDPivot baseline requires the exact Core migration 44 audit_logs contract"
             log "recognized a greenfield SDPivot database; applying the secure baseline"
             ;;
         complete)
+            [[ "$current_audit_fingerprint" == "baseline_exact" ]] || fail \
+                "complete SDPivot version 12 objects require the exact baseline audit_logs contract"
             log "recognized complete SDPivot version 12 objects without a dedicated ledger; adopting through the idempotent baseline"
             ;;
         *)
@@ -789,6 +968,8 @@ else
     if ! sdpivot_fingerprint="$(sdpivot_fingerprint_for_version "$sdpivot_version")"; then
         fail "failed to inspect the SDPivot version ${sdpivot_version} structure fingerprint"
     fi
+    [[ "$current_audit_fingerprint" == "baseline_exact" ]] || fail \
+        "existing SDPivot migrations require the exact baseline audit_logs contract"
     [[ "$sdpivot_fingerprint" == "complete" ]] || fail \
         "sdpivot_schema_migrations version ${sdpivot_version} objects are partial or drifted"
     log "recognized an existing SDPivot database at version ${sdpivot_version}"

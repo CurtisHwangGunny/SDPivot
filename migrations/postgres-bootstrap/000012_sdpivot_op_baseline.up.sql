@@ -237,105 +237,166 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
--- Core migration 000044 owns audit_logs. On greenfield OP databases, preserve
--- that exact schema and add only the legacy SDPivot projection columns required
--- by the local administration API. Missing, partial, mixed, or unknown shapes
--- fail closed before any schema change.
-DO $$
+-- Core migration 000044 owns audit_logs. Validate its complete PostgreSQL
+-- catalog contract before adding only the legacy SDPivot projection columns.
+DO $audit_contract$
 DECLARE
-    incompatible_columns TEXT;
-    core_column_count INTEGER;
-    sdpivot_column_count INTEGER;
-    total_column_count INTEGER;
+    audit_fingerprint TEXT;
 BEGIN
-    IF to_regclass('public.audit_logs') IS NULL THEN
-        RAISE EXCEPTION 'SDPivot OP bootstrap requires Core table public.audit_logs';
+    WITH audit_contract AS MATERIALIZED (
+        WITH target AS (
+            SELECT c.oid AS table_oid, c.relkind, c.relpersistence,
+                   pg_catalog.pg_get_serial_sequence('public.audit_logs', 'id')::regclass AS sequence_oid
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relname = 'audit_logs'
+        ), expected_columns(attname, attnum, atttypid, atttypmod, attnotnull, default_kind) AS (
+            VALUES
+                ('id', 1, 'bigint'::regtype, -1, TRUE, 'sequence'),
+                ('tenant_id', 2, 'bigint'::regtype, -1, TRUE, 'none'),
+                ('actor_user_id', 3, 'character varying'::regtype, 40, TRUE, 'empty_varchar'),
+                ('actor_role', 4, 'character varying'::regtype, 36, TRUE, 'empty_varchar'),
+                ('action', 5, 'character varying'::regtype, 68, TRUE, 'none'),
+                ('target_type', 6, 'character varying'::regtype, 36, TRUE, 'empty_varchar'),
+                ('target_id', 7, 'character varying'::regtype, 68, TRUE, 'empty_varchar'),
+                ('target_user_id', 8, 'character varying'::regtype, 40, TRUE, 'empty_varchar'),
+                ('request_path', 9, 'character varying'::regtype, 516, TRUE, 'empty_varchar'),
+                ('request_method', 10, 'character varying'::regtype, 20, TRUE, 'empty_varchar'),
+                ('outcome', 11, 'character varying'::regtype, 20, TRUE, 'success_varchar'),
+                ('details', 12, 'jsonb'::regtype, -1, TRUE, 'empty_jsonb'),
+                ('created_at', 13, 'timestamp with time zone'::regtype, -1, TRUE, 'current_timestamp')
+        ), expected_projection(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('user_id', 14, 'character varying'::regtype, 40),
+                ('username', 15, 'character varying'::regtype, 104),
+                ('resource', 16, 'character varying'::regtype, 104),
+                ('resource_id', 17, 'character varying'::regtype, 68),
+                ('detail', 18, 'text'::regtype, -1),
+                ('ip', 19, 'character varying'::regtype, 54)
+        ), actual_columns AS (
+            SELECT a.attname, a.attnum, a.atttypid, a.atttypmod, a.attnotnull, a.attidentity,
+                   d.oid AS default_oid, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS default_expr
+            FROM target t
+            JOIN pg_catalog.pg_attribute a ON a.attrelid = t.table_oid
+            LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+            WHERE a.attnum > 0 AND NOT a.attisdropped
+        ), invalid_core_columns AS (
+            SELECT 1
+            FROM expected_columns e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            LEFT JOIN target t ON TRUE
+            WHERE a.attname IS NULL
+               OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid OR a.atttypmod <> e.atttypmod
+               OR a.attnotnull <> e.attnotnull
+               OR CASE e.default_kind
+                    WHEN 'none' THEN a.default_oid IS NOT NULL
+                    WHEN 'sequence' THEN a.attidentity <> '' OR t.sequence_oid IS NULL OR a.default_oid IS NULL
+                        OR NOT EXISTS (
+                            SELECT 1 FROM pg_catalog.pg_depend dep
+                            WHERE dep.classid = 'pg_catalog.pg_attrdef'::regclass
+                              AND dep.objid = a.default_oid AND dep.objsubid = 0
+                              AND dep.refclassid = 'pg_catalog.pg_class'::regclass
+                              AND dep.refobjid = t.sequence_oid AND dep.refobjsubid = 0
+                              AND dep.deptype = 'n')
+                    WHEN 'empty_varchar' THEN a.default_expr IS DISTINCT FROM chr(39) || chr(39) || '::character varying'
+                    WHEN 'success_varchar' THEN a.default_expr IS DISTINCT FROM chr(39) || 'success' || chr(39) || '::character varying'
+                    WHEN 'empty_jsonb' THEN a.default_expr IS DISTINCT FROM '''{}''::jsonb'
+                    WHEN 'current_timestamp' THEN regexp_replace(lower(a.default_expr), '[[:space:]()]', '', 'g')
+                        NOT IN ('current_timestamp', 'now')
+                    ELSE TRUE
+                  END
+        ), invalid_projection_columns AS (
+            SELECT 1
+            FROM expected_projection e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR a.attnotnull OR a.default_oid IS NOT NULL
+        ), invalid_sequence AS (
+            SELECT 1
+            FROM target t
+            LEFT JOIN actual_columns id ON id.attname = 'id'
+            WHERE t.sequence_oid IS NULL OR id.attidentity <> ''
+               OR NOT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_class s
+                    JOIN pg_catalog.pg_sequence p ON p.seqrelid = s.oid
+                    WHERE s.oid = t.sequence_oid AND s.relkind = 'S'
+                      AND p.seqtypid = 'bigint'::regtype AND p.seqincrement = 1)
+               OR NOT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_depend dep
+                    WHERE dep.classid = 'pg_catalog.pg_class'::regclass
+                      AND dep.objid = t.sequence_oid AND dep.objsubid = 0
+                      AND dep.refclassid = 'pg_catalog.pg_class'::regclass
+                      AND dep.refobjid = t.table_oid AND dep.refobjsubid = id.attnum
+                      AND dep.deptype = 'a')
+        ), invalid_primary_key AS (
+            SELECT 1 FROM target t
+            WHERE 1 <> (SELECT count(*) FROM pg_catalog.pg_constraint c WHERE c.conrelid = t.table_oid AND c.contype = 'p')
+               OR NOT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_constraint c
+                    JOIN actual_columns id ON id.attname = 'id'
+                    WHERE c.conrelid = t.table_oid AND c.contype = 'p'
+                      AND c.convalidated AND NOT c.condeferrable AND NOT c.condeferred
+                      AND c.conkey = ARRAY[id.attnum]::smallint[])
+        ), expected_indexes(kind, key_count) AS (
+            VALUES ('tenant_id_id_desc', 2), ('actor_user_id', 1), ('tenant_id_action', 2), ('created_at', 1)
+        ), matching_indexes AS (
+            SELECT e.kind, i.indexrelid
+            FROM expected_indexes e
+            JOIN target t ON TRUE
+            JOIN pg_catalog.pg_index i ON i.indrelid = t.table_oid
+            JOIN pg_catalog.pg_class idx ON idx.oid = i.indexrelid
+            JOIN pg_catalog.pg_am am ON am.oid = idx.relam AND am.amname = 'btree'
+            JOIN actual_columns c1 ON c1.attnum = i.indkey[0]
+            LEFT JOIN actual_columns c2 ON c2.attnum = i.indkey[1]
+            WHERE idx.relkind = 'i' AND i.indisvalid AND i.indisready AND i.indislive
+              AND NOT i.indisunique AND NOT i.indisprimary
+              AND i.indpred IS NULL AND i.indexprs IS NULL
+              AND i.indnkeyatts = e.key_count AND i.indnatts = e.key_count
+              AND pg_catalog.pg_index_column_has_property(i.indexrelid, 1, 'orderable')
+              AND pg_catalog.pg_index_column_has_property(i.indexrelid, 1, 'asc')
+              AND pg_catalog.pg_index_column_has_property(i.indexrelid, 1, 'nulls_last')
+              AND (e.key_count = 1 OR (
+                  pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'orderable')
+                  AND CASE e.kind
+                      WHEN 'tenant_id_id_desc' THEN c2.attname = 'id'
+                          AND pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'desc')
+                          AND pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'nulls_first')
+                      WHEN 'tenant_id_action' THEN c2.attname = 'action'
+                          AND pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'asc')
+                          AND pg_catalog.pg_index_column_has_property(i.indexrelid, 2, 'nulls_last')
+                      ELSE FALSE END))
+              AND CASE e.kind
+                  WHEN 'tenant_id_id_desc' THEN c1.attname = 'tenant_id'
+                  WHEN 'actor_user_id' THEN c1.attname = 'actor_user_id'
+                  WHEN 'tenant_id_action' THEN c1.attname = 'tenant_id'
+                  WHEN 'created_at' THEN c1.attname = 'created_at'
+                  ELSE FALSE END
+        ), invalid_indexes AS (
+            SELECT 1 FROM expected_indexes e
+            WHERE NOT EXISTS (SELECT 1 FROM matching_indexes m WHERE m.kind = e.kind)
+        )
+        SELECT CASE
+            WHEN NOT EXISTS (SELECT 1 FROM target) THEN 'missing'
+            WHEN NOT EXISTS (SELECT 1 FROM target WHERE relkind = 'r' AND relpersistence = 'p')
+              OR EXISTS (SELECT 1 FROM invalid_core_columns)
+              OR EXISTS (SELECT 1 FROM invalid_sequence)
+              OR EXISTS (SELECT 1 FROM invalid_primary_key)
+              OR EXISTS (SELECT 1 FROM invalid_indexes)
+              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 19)
+            THEN 'invalid'
+            WHEN (SELECT count(*) FROM actual_columns) = 13 THEN 'migration44_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 19
+              AND NOT EXISTS (SELECT 1 FROM invalid_projection_columns) THEN 'baseline_exact'
+            ELSE 'invalid'
+        END
+    )
+    SELECT * INTO audit_fingerprint FROM audit_contract;
+
+    IF audit_fingerprint NOT IN ('migration44_exact', 'baseline_exact') THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap requires exact Core migration 44 audit_logs contract';
     END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_catalog.pg_class target
-        WHERE target.oid = to_regclass('public.audit_logs') AND target.relkind IN ('r', 'p')
-    ) THEN
-        RAISE EXCEPTION 'SDPivot OP bootstrap requires public.audit_logs to be a table';
-    END IF;
-
-    SELECT
-        count(*) FILTER (WHERE column_name IN (
-            'id', 'tenant_id', 'actor_user_id', 'actor_role', 'action', 'target_type',
-            'target_id', 'target_user_id', 'request_path', 'request_method', 'outcome',
-            'details', 'created_at')),
-        count(*) FILTER (WHERE column_name IN ('user_id', 'username', 'resource', 'resource_id', 'detail', 'ip')),
-        count(*)
-      INTO core_column_count, sdpivot_column_count, total_column_count
-      FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'audit_logs';
-
-    IF core_column_count <> 13 OR sdpivot_column_count NOT IN (0, 6) OR total_column_count NOT IN (13, 19) THEN
-        RAISE EXCEPTION 'SDPivot OP bootstrap found an unsupported public.audit_logs column shape';
-    END IF;
-
-    SELECT string_agg(
-               format('audit_logs.%I expected %s/%s, found %s/%s',
-                   required.column_name,
-                   array_to_string(required.allowed_types, '/'), required.is_nullable,
-                   COALESCE(existing.data_type, 'missing'), COALESCE(existing.is_nullable, 'missing')),
-               '; ' ORDER BY required.column_name)
-      INTO incompatible_columns
-      FROM (VALUES
-          ('id', ARRAY['bigint'], 'NO'),
-          ('tenant_id', ARRAY['bigint'], 'NO'),
-          ('actor_user_id', ARRAY['character varying'], 'NO'),
-          ('actor_role', ARRAY['character varying'], 'NO'),
-          ('action', ARRAY['character varying'], 'NO'),
-          ('target_type', ARRAY['character varying'], 'NO'),
-          ('target_id', ARRAY['character varying'], 'NO'),
-          ('target_user_id', ARRAY['character varying'], 'NO'),
-          ('request_path', ARRAY['character varying'], 'NO'),
-          ('request_method', ARRAY['character varying'], 'NO'),
-          ('outcome', ARRAY['character varying'], 'NO'),
-          ('details', ARRAY['jsonb'], 'NO'),
-          ('created_at', ARRAY['timestamp with time zone'], 'NO')
-      ) AS required(column_name, allowed_types, is_nullable)
-      LEFT JOIN information_schema.columns existing
-        ON existing.table_schema = 'public'
-       AND existing.table_name = 'audit_logs'
-       AND existing.column_name = required.column_name
-     WHERE existing.column_name IS NULL
-        OR NOT (existing.data_type = ANY(required.allowed_types))
-        OR existing.is_nullable <> required.is_nullable;
-
-    IF incompatible_columns IS NOT NULL THEN
-        RAISE EXCEPTION 'SDPivot OP bootstrap requires the completed Core audit_logs schema: %', incompatible_columns;
-    END IF;
-
-    IF sdpivot_column_count = 6 THEN
-        SELECT string_agg(
-                   format('audit_logs.%I expected %s/%s, found %s/%s',
-                       required.column_name,
-                       array_to_string(required.allowed_types, '/'), required.is_nullable,
-                       COALESCE(existing.data_type, 'missing'), COALESCE(existing.is_nullable, 'missing')),
-                   '; ' ORDER BY required.column_name)
-          INTO incompatible_columns
-          FROM (VALUES
-              ('user_id', ARRAY['character varying'], 'YES'),
-              ('username', ARRAY['character varying'], 'YES'),
-              ('resource', ARRAY['character varying'], 'YES'),
-              ('resource_id', ARRAY['character varying'], 'YES'),
-              ('detail', ARRAY['text'], 'YES'),
-              ('ip', ARRAY['character varying'], 'YES')
-          ) AS required(column_name, allowed_types, is_nullable)
-          LEFT JOIN information_schema.columns existing
-            ON existing.table_schema = 'public'
-           AND existing.table_name = 'audit_logs'
-           AND existing.column_name = required.column_name
-         WHERE existing.column_name IS NULL
-            OR NOT (existing.data_type = ANY(required.allowed_types))
-            OR existing.is_nullable <> required.is_nullable;
-
-        IF incompatible_columns IS NOT NULL THEN
-            RAISE EXCEPTION 'SDPivot OP bootstrap found incompatible audit projection columns: %', incompatible_columns;
-        END IF;
-    END IF;
-END $$;
+END;
+$audit_contract$ LANGUAGE plpgsql SECURITY INVOKER;
 
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36);
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS username VARCHAR(100);

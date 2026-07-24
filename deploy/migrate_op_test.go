@@ -30,6 +30,7 @@ type migrationScenario struct {
 	sdpivotState    string
 	publicTables    string
 	coreFingerprint string
+	coreAuditShape  string
 	sdpFingerprint  string
 	sdpV13Schema    string
 	sdpV13Account   string
@@ -82,9 +83,25 @@ case "$sql" in
     class=sdp-state
     output="$(<"$state_dir/sdpivot")"
     ;;
-  *"FROM pg_catalog.pg_tables"*)
+  *"FROM pg_catalog.pg_tables"*|*"application_object"*)
     class=public-count
     output="${FAKE_PUBLIC_TABLES:-0}"
+    ;;
+  *"op-probe:core-audit-m44"*)
+    class=core-audit-m44
+    if [[ -e "$state_dir/core-migrated" ]]; then
+      output=migration44_exact
+    elif [[ -e "$state_dir/bootstrap-migrated" ]]; then
+      output=baseline_exact
+    elif [[ -n "${FAKE_CORE_AUDIT_SHAPE+x}" ]]; then
+      output="$FAKE_CORE_AUDIT_SHAPE"
+    elif [[ "$(<"$state_dir/core")" == absent || "${FAKE_CORE_VERSION_NUM:-0}" -lt 44 ]]; then
+      output=missing
+    elif [[ "$(<"$state_dir/sdpivot")" != absent || "${FAKE_SDP_FINGERPRINT:-complete}" == complete ]]; then
+      output=baseline_exact
+    else
+      output=migration44_exact
+    fi
     ;;
   *"op-probe:core-v12-fp"*)
     class=core-fingerprint
@@ -150,8 +167,8 @@ if [[ "${FAKE_FAIL_AT:-}" == "migrate:$class" ]]; then
   exit 9
 fi
 case "$class" in
-  core) printf '63:f' >"$state_dir/core" ;;
-  bootstrap) printf '12:f' >"$state_dir/sdpivot" ;;
+  core) printf '63:f' >"$state_dir/core"; touch "$state_dir/core-migrated" ;;
+  bootstrap) printf '12:f' >"$state_dir/sdpivot"; touch "$state_dir/bootstrap-migrated" ;;
   sdpivot) printf '14:f' >"$state_dir/sdpivot" ;;
   *) exit 8 ;;
 esac
@@ -162,6 +179,10 @@ esac
 	if markers == "" {
 		markers = "0"
 	}
+	coreVersionNum := strings.TrimSuffix(scenario.coreState, ":f")
+	if coreVersionNum == "absent" || strings.Contains(coreVersionNum, ":") {
+		coreVersionNum = "0"
+	}
 	cmd.Env = append(os.Environ(),
 		"PATH="+binDir+":"+os.Getenv("PATH"),
 		"PSQL_BIN="+filepath.Join(binDir, "psql"),
@@ -170,6 +191,7 @@ esac
 		"FAKE_STATE_DIR="+stateDir,
 		"FAKE_PUBLIC_TABLES="+scenario.publicTables,
 		"FAKE_CORE_FINGERPRINT="+scenario.coreFingerprint,
+		"FAKE_CORE_VERSION_NUM="+coreVersionNum,
 		"FAKE_SDP_FINGERPRINT="+scenario.sdpFingerprint,
 		"FAKE_SDP_V13_SCHEMA="+scenario.sdpV13Schema,
 		"FAKE_SDP_V13_ACCOUNT="+scenario.sdpV13Account,
@@ -177,6 +199,9 @@ esac
 		"FAKE_SDP_LATEST_FINGERPRINT="+scenario.sdpLatest,
 		"FAKE_FAIL_AT="+scenario.failAt,
 	)
+	if scenario.coreAuditShape != "" {
+		cmd.Env = append(cmd.Env, "FAKE_CORE_AUDIT_SHAPE="+scenario.coreAuditShape)
+	}
 	output, err := cmd.CombinedOutput()
 	if scenario.wantSuccess && err != nil {
 		t.Fatalf("scenario %s failed: %v\n%s", scenario.name, err, output)
@@ -217,8 +242,8 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 			coreState: "absent", sdpivotState: "absent", publicTables: "0",
 			coreFingerprint: "complete", sdpFingerprint: "empty", wantSuccess: true,
 			wantCalls: []string{
-				"psql:core-exists", "psql:public-count", "migrate:core",
-				"psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-fingerprint",
+				"psql:core-exists", "psql:core-audit-m44", "psql:public-count", "migrate:core",
+				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-fingerprint",
 				"migrate:bootstrap", "psql:sdp-exists", "psql:sdp-state",
 				"migrate:sdpivot", "psql:sdp-exists", "psql:sdp-state",
 				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
@@ -233,7 +258,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 			sdpFingerprint:  "complete",
 			wantSuccess:     true,
 			wantCalls: []string{
-				"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state",
+				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44",
 				"psql:sdp-exists", "psql:sdp-fingerprint", "migrate:bootstrap",
 				"psql:sdp-exists", "psql:sdp-state", "migrate:sdpivot",
 				"psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
@@ -244,7 +269,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 			coreState: "63:f", sdpivotState: "12:f", publicTables: "1",
 			coreFingerprint: "complete", sdpFingerprint: "complete", wantSuccess: true,
 			wantCalls: []string{
-				"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-state",
+				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-state",
 				"psql:sdp-fingerprint", "migrate:sdpivot", "psql:sdp-exists", "psql:sdp-state",
 				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
 			},
@@ -254,7 +279,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 			coreState: "63:f", sdpivotState: "13:f", publicTables: "1",
 			coreFingerprint: "complete", sdpFingerprint: "complete", wantSuccess: true,
 			wantCalls: []string{
-				"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state",
+				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44",
 				"psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account",
 				"migrate:sdpivot", "psql:sdp-exists", "psql:sdp-state",
 				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
@@ -265,9 +290,9 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 			coreState: "12:f", sdpivotState: "absent", publicTables: "1",
 			coreFingerprint: "complete", sdpFingerprint: "empty", wantSuccess: true,
 			wantCalls: []string{
-				"psql:core-exists", "psql:core-state", "psql:core-fingerprint",
+				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-fingerprint",
 				"psql:sdp-exists", "psql:sdp-flags", "migrate:core",
-				"psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-fingerprint",
+				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-fingerprint",
 				"migrate:bootstrap", "psql:sdp-exists", "psql:sdp-state",
 				"migrate:sdpivot", "psql:sdp-exists", "psql:sdp-state",
 				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
@@ -278,7 +303,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 			coreState: "63:f", sdpivotState: "14:f", publicTables: "1",
 			coreFingerprint: "complete", sdpFingerprint: "complete", wantSuccess: true,
 			wantCalls: []string{
-				"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state",
+				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44",
 				"psql:sdp-exists", "psql:sdp-state",
 				"psql:sdp-fingerprint", "psql:sdp-v13-schema", "psql:sdp-v13-account", "psql:sdp-latest",
 				"psql:sdp-exists", "psql:sdp-state",
@@ -297,10 +322,10 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 
 func TestMigrationStateMachineFailsClosedForUnsafeStates(t *testing.T) {
 	tests := []migrationScenario{
-		{name: "core dirty", coreState: "12:t", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "empty", wantCalls: []string{"psql:core-exists", "psql:core-state"}},
+		{name: "core dirty", coreState: "12:t", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "empty", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44"}},
 		{name: "sdpivot dirty", coreState: "63:f", sdpivotState: "12:t", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{}},
-		{name: "default ledger v12 ownership ambiguous", coreState: "12:f", sdpivotState: "absent", coreFingerprint: "invalid", sdpFingerprint: "complete", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-fingerprint"}},
-		{name: "core incomplete with sdpivot markers", coreState: "12:f", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "partial", sdpMarkers: "1", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-fingerprint", "psql:sdp-exists", "psql:sdp-flags"}},
+		{name: "default ledger v12 ownership ambiguous", coreState: "12:f", sdpivotState: "absent", coreFingerprint: "invalid", sdpFingerprint: "complete", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-fingerprint"}},
+		{name: "core incomplete with sdpivot markers", coreState: "12:f", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "partial", sdpMarkers: "1", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-fingerprint", "psql:sdp-exists", "psql:sdp-flags"}},
 		{name: "partial table set", coreState: "63:f", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "partial"},
 		{name: "critical column missing", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
 		{name: "function missing or mismatched", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
@@ -335,10 +360,10 @@ func TestMigrationStateMachineFailsClosedForUnsafeStates(t *testing.T) {
 func TestMigrationStateMachineStopsImmediatelyWhenCommandFails(t *testing.T) {
 	tests := []migrationScenario{
 		{name: "initial inspection fails", coreState: "absent", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "psql:core-exists", wantCalls: []string{"psql:core-exists"}},
-		{name: "core migration fails", coreState: "absent", sdpivotState: "absent", publicTables: "0", sdpFingerprint: "empty", failAt: "migrate:core", wantCalls: []string{"psql:core-exists", "psql:public-count", "migrate:core"}},
-		{name: "fingerprint inspection fails", coreState: "63:f", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "psql:sdp-fingerprint", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-fingerprint"}},
-		{name: "bootstrap migration fails", coreState: "63:f", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "migrate:bootstrap", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-fingerprint", "migrate:bootstrap"}},
-		{name: "security migration fails", coreState: "63:f", sdpivotState: "12:f", sdpFingerprint: "complete", failAt: "migrate:sdpivot", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-exists", "psql:core-state", "psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "migrate:sdpivot"}},
+		{name: "core migration fails", coreState: "absent", sdpivotState: "absent", publicTables: "0", sdpFingerprint: "empty", failAt: "migrate:core", wantCalls: []string{"psql:core-exists", "psql:core-audit-m44", "psql:public-count", "migrate:core"}},
+		{name: "fingerprint inspection fails", coreState: "63:f", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "psql:sdp-fingerprint", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-fingerprint"}},
+		{name: "bootstrap migration fails", coreState: "63:f", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "migrate:bootstrap", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-fingerprint", "migrate:bootstrap"}},
+		{name: "security migration fails", coreState: "63:f", sdpivotState: "12:f", sdpFingerprint: "complete", failAt: "migrate:sdpivot", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "migrate:sdpivot"}},
 	}
 
 	for _, test := range tests {
@@ -346,6 +371,61 @@ func TestMigrationStateMachineStopsImmediatelyWhenCommandFails(t *testing.T) {
 			test.wantSuccess = false
 			_, calls := runMigrationScenario(t, test)
 			assertCalls(t, calls, expectedCallsWithInitialSDPivotInspection(test, test.wantCalls))
+		})
+	}
+}
+
+func TestCoreAuditMigration44GateRunsBeforeCoreMutation(t *testing.T) {
+	tests := []struct {
+		name      string
+		version   string
+		shape     string
+		wantAllow bool
+	}{
+		{name: "43 missing", version: "43:f", shape: "missing", wantAllow: true},
+		{name: "44 exact", version: "44:f", shape: "migration44_exact", wantAllow: true},
+		{name: "62 exact", version: "62:f", shape: "migration44_exact", wantAllow: true},
+		{name: "43 migration44 exact", version: "43:f", shape: "migration44_exact"},
+		{name: "43 baseline exact", version: "43:f", shape: "baseline_exact"},
+		{name: "43 invalid", version: "43:f", shape: "invalid"},
+		{name: "44 missing", version: "44:f", shape: "missing"},
+		{name: "44 baseline exact", version: "44:f", shape: "baseline_exact"},
+		{name: "44 invalid", version: "44:f", shape: "invalid"},
+		{name: "62 missing", version: "62:f", shape: "missing"},
+		{name: "62 baseline exact", version: "62:f", shape: "baseline_exact"},
+		{name: "62 invalid", version: "62:f", shape: "invalid"},
+		{name: "63 missing", version: "63:f", shape: "missing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scenario := migrationScenario{name: tt.name, coreState: tt.version, coreAuditShape: tt.shape, sdpivotState: "absent", sdpFingerprint: "empty", wantSuccess: tt.wantAllow}
+			_, calls := runMigrationScenario(t, scenario)
+			probe, coreMigrate := -1, -1
+			for i, call := range calls {
+				if call == "psql:core-audit-m44" && probe < 0 {
+					probe = i
+				}
+				if call == "migrate:core" {
+					coreMigrate = i
+				}
+			}
+			if probe < 0 {
+				t.Fatal("Core audit fingerprint probe was not recorded")
+			}
+			if tt.wantAllow {
+				if coreMigrate < 0 || probe > coreMigrate {
+					t.Fatalf("Core migration was not gated by the audit probe: %v", calls)
+				}
+			} else {
+				if coreMigrate >= 0 {
+					t.Fatalf("unsafe audit shape entered Core migration: %v", calls)
+				}
+				for _, call := range calls {
+					if call == "migrate:core" {
+						t.Fatalf("unsafe audit shape entered Core migration: %v", calls)
+					}
+				}
+			}
 		})
 	}
 }
