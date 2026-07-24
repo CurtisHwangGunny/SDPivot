@@ -53,7 +53,7 @@ migration_state() {
         return 0
     fi
 
-    if ! state="$(sql_scalar "SELECT version::text || ':' || dirty::text FROM public.${table_name}")"; then
+    if ! state="$(sql_scalar "SELECT version::text || ':' || CASE WHEN dirty THEN 't' ELSE 'f' END FROM public.${table_name}")"; then
         return 1
     fi
     printf '%s\n' "$state"
@@ -196,7 +196,44 @@ sdpivot_v12_fingerprint() {
         ), existing_markers AS (
             SELECT count(*) AS count
             FROM marker_objects
-            WHERE to_regclass(format('public.%I', object_name)) IS NOT NULL
+            WHERE object_name <> 'audit_logs'
+              AND to_regclass(format('public.%I', object_name)) IS NOT NULL
+        ), core_audit_required(column_name, allowed_types) AS (
+            VALUES
+                ('id', ARRAY['bigint']),
+                ('tenant_id', ARRAY['bigint']),
+                ('actor_user_id', ARRAY['character varying']),
+                ('actor_role', ARRAY['character varying']),
+                ('action', ARRAY['character varying']),
+                ('target_type', ARRAY['character varying']),
+                ('target_id', ARRAY['character varying']),
+                ('target_user_id', ARRAY['character varying']),
+                ('request_path', ARRAY['character varying']),
+                ('request_method', ARRAY['character varying']),
+                ('outcome', ARRAY['character varying']),
+                ('details', ARRAY['jsonb']),
+                ('created_at', ARRAY['timestamp with time zone'])
+        ), core_audit_invalid AS (
+            SELECT 1
+            FROM core_audit_required required
+            LEFT JOIN information_schema.columns existing
+              ON existing.table_schema = 'public'
+             AND existing.table_name = 'audit_logs'
+             AND existing.column_name = required.column_name
+            WHERE existing.column_name IS NULL
+               OR NOT (existing.data_type = ANY(required.allowed_types))
+            UNION ALL
+            SELECT 1
+            FROM information_schema.columns existing
+            WHERE existing.table_schema = 'public'
+              AND existing.table_name = 'audit_logs'
+              AND existing.column_name IN ('user_id', 'username', 'resource', 'resource_id', 'detail', 'ip')
+        ), core_audit_state AS (
+            SELECT CASE
+                WHEN to_regclass('public.audit_logs') IS NULL THEN 'absent'
+                WHEN EXISTS (SELECT 1 FROM core_audit_invalid) THEN 'invalid'
+                ELSE 'complete'
+            END AS state
         ), required_columns(table_name, column_name, allowed_types) AS (
             VALUES
                 ('users', 'is_ops_admin', ARRAY['boolean']),
@@ -333,6 +370,7 @@ sdpivot_v12_fingerprint() {
         )
         SELECT CASE
             WHEN (SELECT count FROM existing_markers) = 0
+              AND (SELECT state FROM core_audit_state) IN ('absent', 'complete')
               AND to_regprocedure('public.set_tenant_context(bigint,boolean)') IS NULL
               AND to_regprocedure('public.get_current_tenant_id()') IS NULL
               AND to_regprocedure('public.is_ops_admin_context()') IS NULL
@@ -620,9 +658,21 @@ fi
 if [[ "$core_state" == "absent" ]]; then
     if ! existing_public_tables="$(sql_scalar "
         SELECT count(*)
-        FROM pg_catalog.pg_tables
-        WHERE schemaname = 'public'
-          AND tablename NOT IN ('schema_migrations', 'sdpivot_schema_migrations')
+        FROM pg_catalog.pg_class application_object
+        JOIN pg_catalog.pg_namespace application_schema
+          ON application_schema.oid = application_object.relnamespace
+        WHERE application_schema.nspname = 'public'
+          AND application_object.relkind IN ('r', 'p')
+          AND application_object.relname NOT IN ('schema_migrations', 'sdpivot_schema_migrations')
+          AND NOT EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_depend extension_dependency
+                JOIN pg_catalog.pg_extension owner_extension
+                  ON owner_extension.oid = extension_dependency.refobjid
+                WHERE extension_dependency.classid = 'pg_catalog.pg_class'::regclass
+                  AND extension_dependency.objid = application_object.oid
+                  AND extension_dependency.deptype = 'e'
+          )
     ")"; then
         fail "failed to inspect public application objects"
     fi

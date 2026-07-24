@@ -56,7 +56,7 @@ func TestBaselineFailsClosedWithoutVersionedCore(t *testing.T) {
 		"('users', 'id', ARRAY['character varying', 'text'])",
 		"('users', 'email', ARRAY['character varying', 'text'])",
 		"('users', 'password_hash', ARRAY['character varying', 'text'])",
-		"('users', 'tenant_id', ARRAY['bigint'])",
+		"('users', 'tenant_id', ARRAY['integer', 'bigint'])",
 		"('users', 'is_active', ARRAY['boolean'])",
 		"('users', 'is_system_admin', ARRAY['boolean'])",
 		"('organizations', 'id', ARRAY['character varying', 'text'])",
@@ -181,7 +181,7 @@ func TestBaselineIndexedColumnsAreCoveredByCompatibilitySpecs(t *testing.T) {
 func TestBaselinePreservesTenantIsolationSafetyContract(t *testing.T) {
 	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
 	requireFragments(t, sql,
-		"CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, _p_is_ops_admin BOOLEAN DEFAULT FALSE)",
+		"CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, p_is_ops_admin BOOLEAN DEFAULT FALSE)",
 		"PERFORM set_config('app.is_ops_admin', 'false', false)",
 		"LANGUAGE plpgsql SECURITY INVOKER",
 		"CREATE OR REPLACE FUNCTION is_ops_admin_context() RETURNS BOOLEAN AS $$ SELECT FALSE; $$ LANGUAGE sql STABLE SECURITY INVOKER",
@@ -274,7 +274,7 @@ func TestBaselineUsesQuotedStringDefaults(t *testing.T) {
 func TestBaselineHasNoOpsAdminRLSBypass(t *testing.T) {
 	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
 	requireFragments(t, sql,
-		"CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, _p_is_ops_admin BOOLEAN DEFAULT FALSE)",
+		"CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, p_is_ops_admin BOOLEAN DEFAULT FALSE)",
 		"PERFORM set_config('app.current_tenant_id', p_tenant_id::TEXT, false)",
 		"PERFORM set_config('app.is_ops_admin', 'false', false)",
 		"LANGUAGE plpgsql SECURITY INVOKER",

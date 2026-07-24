@@ -20,13 +20,14 @@ cleanup_test() {
     exit "$status"
 }
 trap cleanup_test EXIT HUP INT TERM
-/bin/mkdir -p -- "$ROOT/deploy/tests" "$ROOT/deploy/migration" "$ROOT/docker" "$ROOT/frontend/sdpivot/dist" \
+/bin/mkdir -p -- "$ROOT/deploy/tests" "$ROOT/deploy/migration" "$ROOT/migrations/postgres-bootstrap" "$ROOT/docker" "$ROOT/frontend/sdpivot/dist" \
     "$ROOT/frontend/sdpivot/deps/cppjieba/dict" "$ROOT/cmd" "$ROOT/config" "$ROOT/dataset" \
     "$ROOT/deps" "$ROOT/docs" "$ROOT/internal" "$ROOT/migrations" "$ROOT/packages" \
     "$ROOT/scripts" "$ROOT/skills" "$ROOT/docreader"
 for relative in \
     .dockerignore go.mod go.sum Makefile \
     deploy/docker-compose.op.yml deploy/migrate-op.sh deploy/migration/Dockerfile \
+    migrations/postgres-bootstrap/000012_sdpivot_op_baseline.up.sql \
     deploy/validate-op-deployment.sh deploy/op-deploy.sh deploy/tests/test-op-deployment.sh \
     docker/Dockerfile.app docker/Dockerfile.docreader \
     frontend/sdpivot/Dockerfile.backend frontend/sdpivot/Dockerfile.frontend \
@@ -100,6 +101,63 @@ expected = 'test "$$(cat /proc/1/comm)" = postgres && pg_isready -U "$$POSTGRES_
 assert text.count(expected) == 1
 PY_COMPOSE_HEALTH
 pass postgres_health_waits_for_final_pid1
+
+/usr/bin/python3 - "$ROOT/deploy/migrate-op.sh" <<'PY_MIGRATION_EXTENSION_OBJECTS'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+required = (
+    "FROM pg_catalog.pg_class application_object",
+    "JOIN pg_catalog.pg_namespace application_schema",
+    "application_object.relkind IN ('r', 'p')",
+    "FROM pg_catalog.pg_depend extension_dependency",
+    "JOIN pg_catalog.pg_extension owner_extension",
+    "extension_dependency.classid = 'pg_catalog.pg_class'::regclass",
+    "extension_dependency.objid = application_object.oid",
+    "extension_dependency.deptype = 'e'",
+)
+for marker in required:
+    assert text.count(marker) == 1, marker
+assert "FROM pg_catalog.pg_tables" not in text
+PY_MIGRATION_EXTENSION_OBJECTS
+pass migration_greenfield_ignores_extension_owned_tables
+
+/usr/bin/python3 - "$ROOT/deploy/migrate-op.sh" <<'PY_MIGRATION_BOOL_STATE'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+expected = "SELECT version::text || ':' || CASE WHEN dirty THEN 't' ELSE 'f' END FROM public.${table_name}"
+assert text.count(expected) == 1
+assert "dirty::text FROM public.${table_name}" not in text
+PY_MIGRATION_BOOL_STATE
+pass migration_state_normalizes_postgres_boolean
+
+/usr/bin/python3 - "$ROOT/deploy/migrate-op.sh" "$ROOT/migrations/postgres-bootstrap/000012_sdpivot_op_baseline.up.sql" <<'PY_CORE_AUDIT_COMPAT'
+from pathlib import Path
+import sys
+
+migration = Path(sys.argv[1]).read_text(encoding="utf-8")
+baseline = Path(sys.argv[2]).read_text(encoding="utf-8")
+for marker in (
+    "core_audit_required(column_name, allowed_types)",
+    "object_name <> 'audit_logs'",
+    "core_audit_state",
+    "IN ('absent', 'complete')",
+):
+    assert marker in migration, marker
+for marker in (
+    "sdpivot_column_count NOT IN (0, 6)",
+    "requires the completed Core audit_logs schema",
+    "ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36)",
+    "ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(50)",
+):
+    assert marker in baseline, marker
+assert baseline.index("requires the completed Core audit_logs schema") < baseline.index("ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS user_id")
+assert baseline.index("ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS ip") < baseline.index("SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE)")
+PY_CORE_AUDIT_COMPAT
+pass migration_greenfield_preserves_core_audit_schema
 
 payload="$TMP_ROOT/bash-env-payload"
 printf 'touch %q\n' "$TMP_ROOT/bash-env-executed" > "$payload"

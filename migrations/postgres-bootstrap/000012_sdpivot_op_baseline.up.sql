@@ -27,7 +27,7 @@ BEGIN
           ('users', 'id', ARRAY['character varying', 'text']),
           ('users', 'email', ARRAY['character varying', 'text']),
           ('users', 'password_hash', ARRAY['character varying', 'text']),
-          ('users', 'tenant_id', ARRAY['bigint']),
+          ('users', 'tenant_id', ARRAY['integer', 'bigint']),
           ('users', 'is_active', ARRAY['boolean']),
           ('users', 'is_system_admin', ARRAY['boolean']),
           ('organizations', 'id', ARRAY['character varying', 'text']),
@@ -236,6 +236,70 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
+
+-- Core migration 000044 owns audit_logs. On greenfield OP databases, preserve
+-- that schema and add only the legacy SDPivot projection columns required by
+-- the local administration API. Unknown or partially mixed shapes fail closed.
+DO $$
+DECLARE
+    sdpivot_column_count INTEGER;
+    incompatible_core_columns TEXT;
+BEGIN
+    IF to_regclass('public.audit_logs') IS NOT NULL THEN
+        SELECT count(*)
+          INTO sdpivot_column_count
+          FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'audit_logs'
+           AND column_name IN ('user_id', 'username', 'resource', 'resource_id', 'detail', 'ip');
+
+        IF sdpivot_column_count NOT IN (0, 6) THEN
+            RAISE EXCEPTION 'SDPivot OP bootstrap found a partially mixed public.audit_logs schema';
+        END IF;
+
+        IF sdpivot_column_count = 0 THEN
+            SELECT string_agg(
+                       format('audit_logs.%I expected %s, found %s',
+                           required.column_name,
+                           array_to_string(required.allowed_types, '/'),
+                           COALESCE(existing.data_type, 'missing')),
+                       '; ' ORDER BY required.column_name)
+              INTO incompatible_core_columns
+              FROM (VALUES
+                  ('id', ARRAY['bigint']),
+                  ('tenant_id', ARRAY['bigint']),
+                  ('actor_user_id', ARRAY['character varying']),
+                  ('actor_role', ARRAY['character varying']),
+                  ('action', ARRAY['character varying']),
+                  ('target_type', ARRAY['character varying']),
+                  ('target_id', ARRAY['character varying']),
+                  ('target_user_id', ARRAY['character varying']),
+                  ('request_path', ARRAY['character varying']),
+                  ('request_method', ARRAY['character varying']),
+                  ('outcome', ARRAY['character varying']),
+                  ('details', ARRAY['jsonb']),
+                  ('created_at', ARRAY['timestamp with time zone'])
+              ) AS required(column_name, allowed_types)
+              LEFT JOIN information_schema.columns existing
+                ON existing.table_schema = 'public'
+               AND existing.table_name = 'audit_logs'
+               AND existing.column_name = required.column_name
+             WHERE existing.column_name IS NULL
+                OR NOT (existing.data_type = ANY(required.allowed_types));
+
+            IF incompatible_core_columns IS NOT NULL THEN
+                RAISE EXCEPTION 'SDPivot OP bootstrap requires the completed Core audit_logs schema: %', incompatible_core_columns;
+            END IF;
+        END IF;
+    END IF;
+END $$;
+
+ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36);
+ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS resource VARCHAR(100);
+ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS resource_id VARCHAR(64);
+ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS detail TEXT;
+ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(50);
 
 SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE);
 
@@ -604,7 +668,7 @@ SELECT sdpivot_op_bootstrap_000012_assert_schema(TRUE);
 DROP FUNCTION sdpivot_op_bootstrap_000012_assert_schema(BOOLEAN);
 
 -- Historical tenant helpers, made safe when application GUCs are unset or empty.
-CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, _p_is_ops_admin BOOLEAN DEFAULT FALSE)
+CREATE OR REPLACE FUNCTION set_tenant_context(p_tenant_id BIGINT, p_is_ops_admin BOOLEAN DEFAULT FALSE)
 RETURNS void AS $$
 BEGIN
     PERFORM set_config('app.current_tenant_id', p_tenant_id::TEXT, false);
