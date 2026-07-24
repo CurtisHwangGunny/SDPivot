@@ -119,6 +119,50 @@ func TestBaselineChecksExistingTableCompatibilityBeforeHelpersAndPolicies(t *tes
 	)
 }
 
+func TestBaselineRequiresExactCompatibleAuditLogsBeforeProjectionAlter(t *testing.T) {
+	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
+	requireFragments(t, sql,
+		"to_regclass('public.audit_logs') IS NULL",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires Core table public.audit_logs'",
+		"target.oid = to_regclass('public.audit_logs') AND target.relkind IN ('r', 'p')",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires public.audit_logs to be a table'",
+		"core_column_count <> 13",
+		"sdpivot_column_count NOT IN (0, 6)",
+		"total_column_count NOT IN (13, 19)",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap found an unsupported public.audit_logs column shape'",
+		"required(column_name, allowed_types, is_nullable)",
+		"existing.data_type = ANY(required.allowed_types)",
+		"existing.is_nullable <> required.is_nullable",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires the completed Core audit_logs schema",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap found incompatible audit projection columns",
+	)
+
+	for _, spec := range []string{
+		"('id', ARRAY['bigint'], 'NO')",
+		"('actor_user_id', ARRAY['character varying'], 'NO')",
+		"('details', ARRAY['jsonb'], 'NO')",
+		"('created_at', ARRAY['timestamp with time zone'], 'NO')",
+		"('user_id', ARRAY['character varying'], 'YES')",
+		"('detail', ARRAY['text'], 'YES')",
+		"('ip', ARRAY['character varying'], 'YES')",
+	} {
+		requireFragments(t, sql, spec)
+	}
+
+	alter := "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36)"
+	requireOrder(t, sql,
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires Core table public.audit_logs'",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires public.audit_logs to be a table'",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap found an unsupported public.audit_logs column shape'",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires the completed Core audit_logs schema",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap found incompatible audit projection columns",
+		alter,
+	)
+	if strings.Contains(normalizeSQL(sql), normalizeSQL("ALTER TABLE IF EXISTS audit_logs")) {
+		t.Error("audit projection ALTER must not hide a missing Core audit_logs table with IF EXISTS")
+	}
+}
+
 func TestBaselineAcceptsOnlyCompleteHistoricalOrBootstrapIDProfiles(t *testing.T) {
 	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
 	requireFragments(t, sql,

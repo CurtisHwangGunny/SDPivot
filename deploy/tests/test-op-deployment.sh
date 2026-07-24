@@ -141,21 +141,28 @@ import sys
 migration = Path(sys.argv[1]).read_text(encoding="utf-8")
 baseline = Path(sys.argv[2]).read_text(encoding="utf-8")
 for marker in (
-    "core_audit_required(column_name, allowed_types)",
+    "core_audit_required(column_name, allowed_types, is_nullable)",
+    "sdpivot_audit_required(column_name, allowed_types, is_nullable)",
     "object_name <> 'audit_logs'",
-    "core_audit_state",
-    "IN ('absent', 'complete')",
+    "core_audit_shape",
+    "'core_exact'",
+    "'baseline_exact'",
 ):
     assert marker in migration, marker
 for marker in (
+    "requires Core table public.audit_logs",
+    "requires public.audit_logs to be a table",
+    "core_column_count <> 13",
     "sdpivot_column_count NOT IN (0, 6)",
+    "total_column_count NOT IN (13, 19)",
     "requires the completed Core audit_logs schema",
-    "ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36)",
-    "ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(50)",
+    "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36)",
+    "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(50)",
 ):
     assert marker in baseline, marker
-assert baseline.index("requires the completed Core audit_logs schema") < baseline.index("ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS user_id")
-assert baseline.index("ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS ip") < baseline.index("SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE)")
+assert "ALTER TABLE IF EXISTS audit_logs" not in baseline
+assert baseline.index("requires Core table public.audit_logs") < baseline.index("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id")
+assert baseline.index("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip") < baseline.index("SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE)")
 PY_CORE_AUDIT_COMPAT
 pass migration_greenfield_preserves_core_audit_schema
 

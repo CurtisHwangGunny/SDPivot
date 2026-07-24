@@ -238,68 +238,111 @@ END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
 -- Core migration 000044 owns audit_logs. On greenfield OP databases, preserve
--- that schema and add only the legacy SDPivot projection columns required by
--- the local administration API. Unknown or partially mixed shapes fail closed.
+-- that exact schema and add only the legacy SDPivot projection columns required
+-- by the local administration API. Missing, partial, mixed, or unknown shapes
+-- fail closed before any schema change.
 DO $$
 DECLARE
+    incompatible_columns TEXT;
+    core_column_count INTEGER;
     sdpivot_column_count INTEGER;
-    incompatible_core_columns TEXT;
+    total_column_count INTEGER;
 BEGIN
-    IF to_regclass('public.audit_logs') IS NOT NULL THEN
-        SELECT count(*)
-          INTO sdpivot_column_count
-          FROM information_schema.columns
-         WHERE table_schema = 'public'
-           AND table_name = 'audit_logs'
-           AND column_name IN ('user_id', 'username', 'resource', 'resource_id', 'detail', 'ip');
+    IF to_regclass('public.audit_logs') IS NULL THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap requires Core table public.audit_logs';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_class target
+        WHERE target.oid = to_regclass('public.audit_logs') AND target.relkind IN ('r', 'p')
+    ) THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap requires public.audit_logs to be a table';
+    END IF;
 
-        IF sdpivot_column_count NOT IN (0, 6) THEN
-            RAISE EXCEPTION 'SDPivot OP bootstrap found a partially mixed public.audit_logs schema';
-        END IF;
+    SELECT
+        count(*) FILTER (WHERE column_name IN (
+            'id', 'tenant_id', 'actor_user_id', 'actor_role', 'action', 'target_type',
+            'target_id', 'target_user_id', 'request_path', 'request_method', 'outcome',
+            'details', 'created_at')),
+        count(*) FILTER (WHERE column_name IN ('user_id', 'username', 'resource', 'resource_id', 'detail', 'ip')),
+        count(*)
+      INTO core_column_count, sdpivot_column_count, total_column_count
+      FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'audit_logs';
 
-        IF sdpivot_column_count = 0 THEN
-            SELECT string_agg(
-                       format('audit_logs.%I expected %s, found %s',
-                           required.column_name,
-                           array_to_string(required.allowed_types, '/'),
-                           COALESCE(existing.data_type, 'missing')),
-                       '; ' ORDER BY required.column_name)
-              INTO incompatible_core_columns
-              FROM (VALUES
-                  ('id', ARRAY['bigint']),
-                  ('tenant_id', ARRAY['bigint']),
-                  ('actor_user_id', ARRAY['character varying']),
-                  ('actor_role', ARRAY['character varying']),
-                  ('action', ARRAY['character varying']),
-                  ('target_type', ARRAY['character varying']),
-                  ('target_id', ARRAY['character varying']),
-                  ('target_user_id', ARRAY['character varying']),
-                  ('request_path', ARRAY['character varying']),
-                  ('request_method', ARRAY['character varying']),
-                  ('outcome', ARRAY['character varying']),
-                  ('details', ARRAY['jsonb']),
-                  ('created_at', ARRAY['timestamp with time zone'])
-              ) AS required(column_name, allowed_types)
-              LEFT JOIN information_schema.columns existing
-                ON existing.table_schema = 'public'
-               AND existing.table_name = 'audit_logs'
-               AND existing.column_name = required.column_name
-             WHERE existing.column_name IS NULL
-                OR NOT (existing.data_type = ANY(required.allowed_types));
+    IF core_column_count <> 13 OR sdpivot_column_count NOT IN (0, 6) OR total_column_count NOT IN (13, 19) THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap found an unsupported public.audit_logs column shape';
+    END IF;
 
-            IF incompatible_core_columns IS NOT NULL THEN
-                RAISE EXCEPTION 'SDPivot OP bootstrap requires the completed Core audit_logs schema: %', incompatible_core_columns;
-            END IF;
+    SELECT string_agg(
+               format('audit_logs.%I expected %s/%s, found %s/%s',
+                   required.column_name,
+                   array_to_string(required.allowed_types, '/'), required.is_nullable,
+                   COALESCE(existing.data_type, 'missing'), COALESCE(existing.is_nullable, 'missing')),
+               '; ' ORDER BY required.column_name)
+      INTO incompatible_columns
+      FROM (VALUES
+          ('id', ARRAY['bigint'], 'NO'),
+          ('tenant_id', ARRAY['bigint'], 'NO'),
+          ('actor_user_id', ARRAY['character varying'], 'NO'),
+          ('actor_role', ARRAY['character varying'], 'NO'),
+          ('action', ARRAY['character varying'], 'NO'),
+          ('target_type', ARRAY['character varying'], 'NO'),
+          ('target_id', ARRAY['character varying'], 'NO'),
+          ('target_user_id', ARRAY['character varying'], 'NO'),
+          ('request_path', ARRAY['character varying'], 'NO'),
+          ('request_method', ARRAY['character varying'], 'NO'),
+          ('outcome', ARRAY['character varying'], 'NO'),
+          ('details', ARRAY['jsonb'], 'NO'),
+          ('created_at', ARRAY['timestamp with time zone'], 'NO')
+      ) AS required(column_name, allowed_types, is_nullable)
+      LEFT JOIN information_schema.columns existing
+        ON existing.table_schema = 'public'
+       AND existing.table_name = 'audit_logs'
+       AND existing.column_name = required.column_name
+     WHERE existing.column_name IS NULL
+        OR NOT (existing.data_type = ANY(required.allowed_types))
+        OR existing.is_nullable <> required.is_nullable;
+
+    IF incompatible_columns IS NOT NULL THEN
+        RAISE EXCEPTION 'SDPivot OP bootstrap requires the completed Core audit_logs schema: %', incompatible_columns;
+    END IF;
+
+    IF sdpivot_column_count = 6 THEN
+        SELECT string_agg(
+                   format('audit_logs.%I expected %s/%s, found %s/%s',
+                       required.column_name,
+                       array_to_string(required.allowed_types, '/'), required.is_nullable,
+                       COALESCE(existing.data_type, 'missing'), COALESCE(existing.is_nullable, 'missing')),
+                   '; ' ORDER BY required.column_name)
+          INTO incompatible_columns
+          FROM (VALUES
+              ('user_id', ARRAY['character varying'], 'YES'),
+              ('username', ARRAY['character varying'], 'YES'),
+              ('resource', ARRAY['character varying'], 'YES'),
+              ('resource_id', ARRAY['character varying'], 'YES'),
+              ('detail', ARRAY['text'], 'YES'),
+              ('ip', ARRAY['character varying'], 'YES')
+          ) AS required(column_name, allowed_types, is_nullable)
+          LEFT JOIN information_schema.columns existing
+            ON existing.table_schema = 'public'
+           AND existing.table_name = 'audit_logs'
+           AND existing.column_name = required.column_name
+         WHERE existing.column_name IS NULL
+            OR NOT (existing.data_type = ANY(required.allowed_types))
+            OR existing.is_nullable <> required.is_nullable;
+
+        IF incompatible_columns IS NOT NULL THEN
+            RAISE EXCEPTION 'SDPivot OP bootstrap found incompatible audit projection columns: %', incompatible_columns;
         END IF;
     END IF;
 END $$;
 
-ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36);
-ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS username VARCHAR(100);
-ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS resource VARCHAR(100);
-ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS resource_id VARCHAR(64);
-ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS detail TEXT;
-ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(50);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS resource VARCHAR(100);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS resource_id VARCHAR(64);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS detail TEXT;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(50);
 
 SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE);
 

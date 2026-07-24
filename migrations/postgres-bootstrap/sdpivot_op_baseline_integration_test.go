@@ -101,6 +101,21 @@ func historicalBootstrapFixture(t *testing.T, migration string, mixed bool) stri
 			id VARCHAR(36) PRIMARY KEY,
 			owner_id VARCHAR(36) NOT NULL,
 			owner_tenant_id BIGINT NOT NULL
+		);
+		CREATE TABLE audit_logs (
+			id BIGSERIAL PRIMARY KEY,
+			tenant_id BIGINT NOT NULL,
+			actor_user_id VARCHAR(36) NOT NULL DEFAULT '',
+			actor_role VARCHAR(32) NOT NULL DEFAULT '',
+			action VARCHAR(64) NOT NULL,
+			target_type VARCHAR(32) NOT NULL DEFAULT '',
+			target_id VARCHAR(64) NOT NULL DEFAULT '',
+			target_user_id VARCHAR(36) NOT NULL DEFAULT '',
+			request_path VARCHAR(512) NOT NULL DEFAULT '',
+			request_method VARCHAR(16) NOT NULL DEFAULT '',
+			outcome VARCHAR(16) NOT NULL DEFAULT 'success',
+			details JSONB NOT NULL DEFAULT '{}'::JSONB,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`}
 	for _, table := range []string{"org_ext", "knowledge_spaces", "documents", "document_chunks", "document_versions", "chunk_strategies"} {
 		definition := extractBootstrapTable(t, migration, table)
@@ -110,6 +125,73 @@ func historicalBootstrapFixture(t *testing.T, migration string, mixed bool) stri
 		parts = append(parts, definition)
 	}
 	return strings.Join(parts, "\n")
+}
+
+func TestSDPivotBootstrapAuditLogsPostgreSQLContract(t *testing.T) {
+	migrationBytes, err := os.ReadFile("000012_sdpivot_op_baseline.up.sql")
+	if err != nil {
+		t.Fatalf("read bootstrap migration: %v", err)
+	}
+	migration := string(migrationBytes)
+
+	tests := []struct {
+		name       string
+		mutate     string
+		wantError  string
+		wantColumn int
+	}{
+		{name: "accepts exact Core audit schema", wantColumn: 19},
+		{name: "rejects missing audit table", mutate: "DROP TABLE audit_logs", wantError: "requires core table public.audit_logs"},
+		{name: "rejects wrong Core column type", mutate: "ALTER TABLE audit_logs ALTER COLUMN actor_user_id TYPE TEXT", wantError: "requires the completed core audit_logs schema"},
+		{name: "rejects partial compatibility columns", mutate: "ALTER TABLE audit_logs ADD COLUMN user_id VARCHAR(36)", wantError: "unsupported public.audit_logs column shape"},
+		{name: "rejects wrong compatibility column type", mutate: `
+			ALTER TABLE audit_logs ADD COLUMN user_id VARCHAR(36);
+			ALTER TABLE audit_logs ADD COLUMN username VARCHAR(100);
+			ALTER TABLE audit_logs ADD COLUMN resource VARCHAR(100);
+			ALTER TABLE audit_logs ADD COLUMN resource_id VARCHAR(64);
+			ALTER TABLE audit_logs ADD COLUMN detail VARCHAR(255);
+			ALTER TABLE audit_logs ADD COLUMN ip VARCHAR(50);`, wantError: "incompatible audit projection columns"},
+		{name: "rejects unknown audit column", mutate: "ALTER TABLE audit_logs ADD COLUMN unexpected TEXT", wantError: "unsupported public.audit_logs column shape"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withBootstrapContractDatabase(t, func(ctx context.Context, conn *pgx.Conn) {
+				if err := execBootstrapSQL(ctx, conn, historicalBootstrapFixture(t, migration, false)); err != nil {
+					t.Fatalf("create Core audit fixture: %v", err)
+				}
+				if tt.mutate != "" {
+					if err := execBootstrapSQL(ctx, conn, tt.mutate); err != nil {
+						t.Fatalf("mutate Core audit fixture: %v", err)
+					}
+				}
+
+				err := execBootstrapSQL(ctx, conn, migration)
+				if tt.wantError != "" {
+					if err == nil {
+						t.Fatalf("bootstrap accepted incompatible audit_logs fixture")
+					}
+					if !strings.Contains(strings.ToLower(err.Error()), tt.wantError) {
+						t.Fatalf("bootstrap failed for unexpected reason: %v", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("apply bootstrap to exact Core audit fixture: %v", err)
+				}
+				var count int
+				if err := conn.QueryRow(ctx, `
+					SELECT count(*)
+					FROM information_schema.columns
+					WHERE table_schema = 'public' AND table_name = 'audit_logs'`).Scan(&count); err != nil {
+					t.Fatalf("count bootstrapped audit columns: %v", err)
+				}
+				if count != tt.wantColumn {
+					t.Fatalf("audit_logs column count = %d, want %d", count, tt.wantColumn)
+				}
+			})
+		})
+	}
 }
 
 func TestSDPivotBootstrapHistoricalUUIDPostgreSQLContract(t *testing.T) {

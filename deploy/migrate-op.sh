@@ -181,7 +181,7 @@ sdpivot_v12_fingerprint() {
                 ('space_categories'), ('documents'), ('document_chunks'),
                 ('document_versions'), ('chunk_strategies'), ('qa_sessions'),
                 ('qa_messages'), ('writing_drafts'), ('write_category_config'),
-                ('announcements'), ('audit_logs'), ('sensitive_words'),
+                ('announcements'), ('sensitive_words'),
                 ('billing_plans'), ('enterprise_subscriptions'), ('invoices'),
                 ('sdpivot_brand_migration_000011'), ('sdpivot_rls_migration_000012_state')
         ), required_tables(table_name) AS (
@@ -198,21 +198,29 @@ sdpivot_v12_fingerprint() {
             FROM marker_objects
             WHERE object_name <> 'audit_logs'
               AND to_regclass(format('public.%I', object_name)) IS NOT NULL
-        ), core_audit_required(column_name, allowed_types) AS (
+        ), core_audit_required(column_name, allowed_types, is_nullable) AS (
             VALUES
-                ('id', ARRAY['bigint']),
-                ('tenant_id', ARRAY['bigint']),
-                ('actor_user_id', ARRAY['character varying']),
-                ('actor_role', ARRAY['character varying']),
-                ('action', ARRAY['character varying']),
-                ('target_type', ARRAY['character varying']),
-                ('target_id', ARRAY['character varying']),
-                ('target_user_id', ARRAY['character varying']),
-                ('request_path', ARRAY['character varying']),
-                ('request_method', ARRAY['character varying']),
-                ('outcome', ARRAY['character varying']),
-                ('details', ARRAY['jsonb']),
-                ('created_at', ARRAY['timestamp with time zone'])
+                ('id', ARRAY['bigint'], 'NO'),
+                ('tenant_id', ARRAY['bigint'], 'NO'),
+                ('actor_user_id', ARRAY['character varying'], 'NO'),
+                ('actor_role', ARRAY['character varying'], 'NO'),
+                ('action', ARRAY['character varying'], 'NO'),
+                ('target_type', ARRAY['character varying'], 'NO'),
+                ('target_id', ARRAY['character varying'], 'NO'),
+                ('target_user_id', ARRAY['character varying'], 'NO'),
+                ('request_path', ARRAY['character varying'], 'NO'),
+                ('request_method', ARRAY['character varying'], 'NO'),
+                ('outcome', ARRAY['character varying'], 'NO'),
+                ('details', ARRAY['jsonb'], 'NO'),
+                ('created_at', ARRAY['timestamp with time zone'], 'NO')
+        ), sdpivot_audit_required(column_name, allowed_types, is_nullable) AS (
+            VALUES
+                ('user_id', ARRAY['character varying'], 'YES'),
+                ('username', ARRAY['character varying'], 'YES'),
+                ('resource', ARRAY['character varying'], 'YES'),
+                ('resource_id', ARRAY['character varying'], 'YES'),
+                ('detail', ARRAY['text'], 'YES'),
+                ('ip', ARRAY['character varying'], 'YES')
         ), core_audit_invalid AS (
             SELECT 1
             FROM core_audit_required required
@@ -222,17 +230,44 @@ sdpivot_v12_fingerprint() {
              AND existing.column_name = required.column_name
             WHERE existing.column_name IS NULL
                OR NOT (existing.data_type = ANY(required.allowed_types))
-            UNION ALL
+               OR existing.is_nullable <> required.is_nullable
+        ), sdpivot_audit_invalid AS (
             SELECT 1
+            FROM sdpivot_audit_required required
+            LEFT JOIN information_schema.columns existing
+              ON existing.table_schema = 'public'
+             AND existing.table_name = 'audit_logs'
+             AND existing.column_name = required.column_name
+            WHERE existing.column_name IS NULL
+               OR NOT (existing.data_type = ANY(required.allowed_types))
+               OR existing.is_nullable <> required.is_nullable
+        ), audit_column_profile AS (
+            SELECT
+                count(*) FILTER (WHERE existing.column_name IN (SELECT column_name FROM core_audit_required)) AS core_count,
+                count(*) FILTER (WHERE existing.column_name IN (SELECT column_name FROM sdpivot_audit_required)) AS sdpivot_count,
+                count(*) AS total_count
             FROM information_schema.columns existing
             WHERE existing.table_schema = 'public'
               AND existing.table_name = 'audit_logs'
-              AND existing.column_name IN ('user_id', 'username', 'resource', 'resource_id', 'detail', 'ip')
-        ), core_audit_state AS (
+        ), core_audit_shape AS (
             SELECT CASE
-                WHEN to_regclass('public.audit_logs') IS NULL THEN 'absent'
-                WHEN EXISTS (SELECT 1 FROM core_audit_invalid) THEN 'invalid'
-                ELSE 'complete'
+                WHEN to_regclass('public.audit_logs') IS NULL THEN 'missing'
+                WHEN NOT EXISTS (
+                        SELECT 1 FROM pg_catalog.pg_class target
+                        WHERE target.oid = to_regclass('public.audit_logs') AND target.relkind IN ('r', 'p')
+                     )
+                  OR EXISTS (SELECT 1 FROM core_audit_invalid)
+                  OR (SELECT core_count FROM audit_column_profile) <> 13
+                  OR (SELECT total_count FROM audit_column_profile) NOT IN (13, 19)
+                THEN 'invalid'
+                WHEN (SELECT sdpivot_count FROM audit_column_profile) = 0
+                  AND (SELECT total_count FROM audit_column_profile) = 13
+                THEN 'core_exact'
+                WHEN (SELECT sdpivot_count FROM audit_column_profile) = 6
+                  AND (SELECT total_count FROM audit_column_profile) = 19
+                  AND NOT EXISTS (SELECT 1 FROM sdpivot_audit_invalid)
+                THEN 'baseline_exact'
+                ELSE 'invalid'
             END AS state
         ), required_columns(table_name, column_name, allowed_types) AS (
             VALUES
@@ -370,7 +405,7 @@ sdpivot_v12_fingerprint() {
         )
         SELECT CASE
             WHEN (SELECT count FROM existing_markers) = 0
-              AND (SELECT state FROM core_audit_state) IN ('absent', 'complete')
+              AND (SELECT state FROM core_audit_shape) = 'core_exact'
               AND to_regprocedure('public.set_tenant_context(bigint,boolean)') IS NULL
               AND to_regprocedure('public.get_current_tenant_id()') IS NULL
               AND to_regprocedure('public.is_ops_admin_context()') IS NULL
@@ -380,6 +415,7 @@ sdpivot_v12_fingerprint() {
                     WHERE to_regclass(format('public.%I', table_name)) IS NULL
                  )
               OR EXISTS (SELECT 1 FROM invalid_columns)
+              OR (SELECT state FROM core_audit_shape) <> 'baseline_exact'
               OR EXISTS (SELECT 1 FROM invalid_id_profile)
               OR EXISTS (SELECT 1 FROM invalid_rls)
               OR NOT EXISTS (SELECT 1 FROM tenant_function WHERE valid_return)

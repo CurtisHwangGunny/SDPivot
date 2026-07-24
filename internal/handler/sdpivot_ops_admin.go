@@ -340,7 +340,14 @@ func (h *SDPivotOpsAdminHandler) GetAuditLogs(c *gin.Context) {
 	userID := c.Query("user_id")
 	action := c.Query("action")
 
-	q := h.db.Table("audit_logs")
+	q := h.db.Table("audit_logs").Select(`
+		id, tenant_id,
+		COALESCE(user_id, actor_user_id) AS user_id,
+		COALESCE(username, ''::text) AS username, action,
+		COALESCE(resource, target_type) AS resource,
+		COALESCE(resource_id, target_id) AS resource_id,
+		COALESCE(detail, details->>'detail', ''::text) AS detail,
+		COALESCE(ip, ''::text) AS ip, created_at`)
 	if startTime != "" {
 		q = q.Where("created_at >= ?", startTime)
 	}
@@ -348,7 +355,7 @@ func (h *SDPivotOpsAdminHandler) GetAuditLogs(c *gin.Context) {
 		q = q.Where("created_at <= ?", endTime)
 	}
 	if userID != "" {
-		q = q.Where("user_id = ?", userID)
+		q = q.Where("COALESCE(user_id, actor_user_id) = ?", userID)
 	}
 	if action != "" {
 		q = q.Where("action ILIKE ?", "%"+action+"%")
@@ -406,7 +413,14 @@ func (h *SDPivotOpsAdminHandler) ExportAuditLogs(c *gin.Context) {
 	}
 
 	rows := make([]AuditRow, 0)
-	h.db.Table("audit_logs").Order("created_at DESC").Limit(10000).Scan(&rows)
+	h.db.Table("audit_logs").Select(`
+		id,
+		COALESCE(user_id, actor_user_id) AS user_id,
+		COALESCE(username, ''::text) AS username, action,
+		COALESCE(resource, target_type) AS resource,
+		COALESCE(resource_id, target_id) AS resource_id,
+		COALESCE(detail, details->>'detail', ''::text) AS detail,
+		COALESCE(ip, ''::text) AS ip, created_at`).Order("created_at DESC").Limit(10000).Scan(&rows)
 
 	for _, r := range rows {
 		writer.Write([]string{
@@ -500,9 +514,9 @@ func (h *SDPivotOpsAdminHandler) writeAuditLog(c *gin.Context, action, resource,
 	h.db.Exec(`INSERT INTO audit_logs (
 		tenant_id, actor_user_id, actor_role, action, target_type, target_id,
 		target_user_id, request_path, request_method, outcome, details,
-		created_at, username, resource, resource_id, detail, ip
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?, ?, ?)`,
+		created_at, user_id, username, resource, resource_id, detail, ip
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?, ?, ?, ?, ?, ?)`,
 		tenantID, userID, role, action, resource, resourceID,
 		"", c.Request.URL.Path, c.Request.Method, "success", detailsJSON,
-		time.Now(), username, resource, resourceID, detail, c.ClientIP())
+		time.Now(), userID, username, resource, resourceID, detail, c.ClientIP())
 }
