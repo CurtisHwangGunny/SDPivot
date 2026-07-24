@@ -401,7 +401,7 @@ BEGIN
         RAISE EXCEPTION 'SDPivot OP bootstrap requires exact Core migration 44 audit_logs contract';
     END IF;
 END;
-$audit_contract$ LANGUAGE plpgsql SECURITY INVOKER;
+$audit_contract$ LANGUAGE plpgsql;
 
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36);
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS username VARCHAR(100);

@@ -120,6 +120,11 @@ start = script.index(marker)
 end = script.index("\n    \"\n}", start)
 query = "\n".join(line[8:] if line.startswith("        ") else line for line in script[start:end].splitlines()) + ";\n"
 migration = (source_root / "migrations/versioned/000044_audit_log.up.sql").read_text()
+bootstrap = (source_root / "migrations/postgres-bootstrap/000012_sdpivot_op_baseline.up.sql").read_text()
+gate_start = bootstrap.index("DO $audit_contract$")
+gate_end_marker = "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(50);"
+gate_end = bootstrap.index(gate_end_marker, gate_start) + len(gate_end_marker)
+bootstrap_gate = bootstrap[gate_start:gate_end] + "\n"
 base = ["docker", "exec", "-i", container, "psql", "-U", "test"]
 
 def psql(database, sql, capture=False):
@@ -149,6 +154,11 @@ for number, (name, mutation, expected) in enumerate(cases, 1):
         if mutation:
             psql(database, mutation)
         actual = psql(database, query, capture=True)
+        if expected == "migration44_exact":
+            psql(database, bootstrap_gate)
+            after_bootstrap = psql(database, query, capture=True)
+            if after_bootstrap != "baseline_exact":
+                raise RuntimeError(f"{name}: bootstrap expected baseline_exact, got {after_bootstrap}")
         if actual != expected:
             raise RuntimeError(f"{name}: expected {expected}, got {actual}")
         print(f"PASS pg17_{name}={actual}")
