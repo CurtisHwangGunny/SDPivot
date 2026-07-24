@@ -92,6 +92,29 @@ assert module["FORWARDED_SIGNALS"] == (signal.SIGTERM, signal.SIGINT, signal.SIG
 PY
 pass syntax
 
+/usr/bin/python3 - "$ROOT/docker/Dockerfile.app" <<'PY_APP_RUNTIME_PERMISSIONS'
+from pathlib import Path
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+assert "chown -R appuser:appuser /app /data/files" not in text
+assert "chown -R appuser:appuser /data/files" in text
+assert "COPY --chown=appuser:appuser --from=builder /root/.duckdb /home/appuser/.duckdb" in text
+required = (
+    "chmod -R a+rX ./config ./scripts ./migrations ./dataset ./skills /home/appuser/.duckdb",
+    "test \"$(stat -c '%U:%G' /app)\" = \"root:root\"",
+    "gosu appuser test -r ./config/config.yaml",
+    "gosu appuser test -x ./scripts/docker-entrypoint.sh",
+    "gosu appuser test -x ./WeKnora",
+    "! gosu appuser test -w /app",
+    "! gosu appuser test -w ./config/config.yaml",
+    "! -readable -print -quit",
+)
+for marker in required:
+    assert text.count(marker) == 1, marker
+PY_APP_RUNTIME_PERMISSIONS
+pass app_runtime_assets_are_readable_and_immutable
+
 /usr/bin/python3 - "$ROOT/deploy/docker-compose.op.yml" <<'PY_COMPOSE_HEALTH'
 from pathlib import Path
 import sys
@@ -150,18 +173,18 @@ for marker in (
 ):
     assert marker in migration, marker
 for marker in (
-    "requires Core table public.audit_logs",
-    "requires public.audit_logs to be a table",
-    "core_column_count <> 13",
-    "sdpivot_column_count NOT IN (0, 6)",
-    "total_column_count NOT IN (13, 19)",
-    "requires the completed Core audit_logs schema",
+    "pg_catalog.pg_get_serial_sequence('public.audit_logs', 'id')::regclass AS sequence_oid",
+    "invalid_core_columns",
+    "invalid_projection_columns",
+    "audit_fingerprint NOT IN ('migration44_exact', 'baseline_exact')",
+    "requires exact Core migration 44 audit_logs contract",
     "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36)",
     "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(50)",
+    "SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE)",
 ):
     assert marker in baseline, marker
 assert "ALTER TABLE IF EXISTS audit_logs" not in baseline
-assert baseline.index("requires Core table public.audit_logs") < baseline.index("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id")
+assert baseline.index("requires exact Core migration 44 audit_logs contract") < baseline.index("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id")
 assert baseline.index("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip") < baseline.index("SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE)")
 PY_CORE_AUDIT_COMPAT
 pass migration_greenfield_preserves_core_audit_schema

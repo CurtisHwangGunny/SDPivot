@@ -85,7 +85,7 @@ RUN if [ -n "$APK_MIRROR_ARG" ]; then \
 
 # Create data directories and set permissions
 RUN mkdir -p /data/files && \
-    chown -R appuser:appuser /app /data/files
+    chown -R appuser:appuser /data/files
 
 # Copy migrate tool from builder stage
 COPY --from=builder /go/bin/migrate /usr/local/bin/
@@ -99,14 +99,23 @@ COPY --from=builder /app/dataset/samples ./dataset/samples
 COPY --from=builder /app/skills/preloaded ./skills/preloaded
 # Keep a read-only backup so bind-mount cannot erase built-in skills
 COPY --from=builder /app/skills/preloaded ./skills/_builtin
-COPY --from=builder /root/.duckdb /home/appuser/.duckdb
+COPY --chown=appuser:appuser --from=builder /root/.duckdb /home/appuser/.duckdb
 COPY --from=builder /app/WeKnora .
 
 # Copy and make entrypoint script executable
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
 
-# Make scripts executable
-RUN chmod +x ./scripts/*.sh
+# Keep application assets immutable while granting appuser the read/execute access it needs.
+RUN chmod +x ./scripts/*.sh && \
+    chmod -R a+rX ./config ./scripts ./migrations ./dataset ./skills /home/appuser/.duckdb && \
+    test "$(stat -c '%U:%G' /app)" = "root:root" && \
+    gosu appuser test -r ./config/config.yaml && \
+    gosu appuser test -x ./scripts/docker-entrypoint.sh && \
+    gosu appuser test -x ./WeKnora && \
+    ! gosu appuser test -w /app && \
+    ! gosu appuser test -w ./config/config.yaml && \
+    test -z "$(gosu appuser find ./config ./scripts ./migrations ./dataset ./skills /home/appuser/.duckdb \
+        -xdev \( -type f -o -type d \) ! -readable -print -quit)"
 
 # Expose ports
 EXPOSE 8080
