@@ -37,6 +37,7 @@ type DocumentTag struct {
 	DocumentID  string    `json:"document_id" gorm:"type:varchar(36);primaryKey;not null"`
 	TagID       string    `json:"tag_id" gorm:"type:varchar(36);primaryKey;not null"`
 	DimensionID string    `json:"dimension_id" gorm:"type:varchar(36);not null"`
+	Confidence  float64   `json:"confidence" gorm:"type:decimal(5,4);not null;default:0"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

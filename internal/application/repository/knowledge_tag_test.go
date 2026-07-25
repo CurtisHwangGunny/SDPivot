@@ -38,6 +38,16 @@ CREATE TABLE IF NOT EXISTS knowledge_tag_relations (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (knowledge_id, tag_id)
 );
+CREATE TABLE IF NOT EXISTS document_tags (
+    tenant_id INTEGER NOT NULL,
+    document_id VARCHAR(36) NOT NULL,
+    tag_id VARCHAR(36) NOT NULL,
+    dimension_id VARCHAR(36) NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, document_id, tag_id),
+    UNIQUE (tenant_id, document_id, dimension_id)
+);
 CREATE TABLE IF NOT EXISTS chunks (
     id VARCHAR(36) PRIMARY KEY,
     tenant_id INTEGER NOT NULL,
@@ -170,6 +180,68 @@ func TestApplyKnowledgeListFilter_TagIDsOrSemantics(t *testing.T) {
 	var ids []string
 	require.NoError(t, query.Pluck("id", &ids).Error)
 	assert.ElementsMatch(t, []string{docA, docB, docC}, ids)
+}
+
+func TestApplyKnowledgeListFilter_DimensionTagsOrWithinAndAcross(t *testing.T) {
+	db := setupKnowledgeTagTestDB(t)
+	ctx := context.Background()
+	kbID := uuid.NewString()
+	otherKBID := uuid.NewString()
+	docLegalActive := uuid.NewString()
+	docFinanceActive := uuid.NewString()
+	docLegalDraft := uuid.NewString()
+	docOtherTenant := uuid.NewString()
+	docOtherKB := uuid.NewString()
+	departmentID := uuid.NewString()
+	lifecycleID := uuid.NewString()
+	legalID := uuid.NewString()
+	financeID := uuid.NewString()
+	activeID := uuid.NewString()
+	draftID := uuid.NewString()
+
+	for _, row := range []struct {
+		id       string
+		tenantID uint64
+		kbID     string
+	}{
+		{docLegalActive, 1, kbID},
+		{docFinanceActive, 1, kbID},
+		{docLegalDraft, 1, kbID},
+		{docOtherTenant, 2, kbID},
+		{docOtherKB, 1, otherKBID},
+	} {
+		require.NoError(t, db.Exec(`
+			INSERT INTO knowledges (id, tenant_id, knowledge_base_id, type, title, parse_status)
+			VALUES (?, ?, ?, 'file', ?, 'completed')
+		`, row.id, row.tenantID, row.kbID, row.id).Error)
+	}
+	for _, row := range []types.DocumentTag{
+		{TenantID: 1, DocumentID: docLegalActive, DimensionID: departmentID, TagID: legalID},
+		{TenantID: 1, DocumentID: docLegalActive, DimensionID: lifecycleID, TagID: activeID},
+		{TenantID: 1, DocumentID: docFinanceActive, DimensionID: departmentID, TagID: financeID},
+		{TenantID: 1, DocumentID: docFinanceActive, DimensionID: lifecycleID, TagID: activeID},
+		{TenantID: 1, DocumentID: docLegalDraft, DimensionID: departmentID, TagID: legalID},
+		{TenantID: 1, DocumentID: docLegalDraft, DimensionID: lifecycleID, TagID: draftID},
+		{TenantID: 2, DocumentID: docOtherTenant, DimensionID: departmentID, TagID: legalID},
+		{TenantID: 2, DocumentID: docOtherTenant, DimensionID: lifecycleID, TagID: activeID},
+		{TenantID: 1, DocumentID: docOtherKB, DimensionID: departmentID, TagID: legalID},
+		{TenantID: 1, DocumentID: docOtherKB, DimensionID: lifecycleID, TagID: activeID},
+	} {
+		require.NoError(t, db.Create(&row).Error)
+	}
+
+	query := db.WithContext(ctx).Model(&types.Knowledge{}).
+		Where("tenant_id = ? AND knowledge_base_id = ?", uint64(1), kbID)
+	query = applyKnowledgeListFilter(query, types.KnowledgeListFilter{
+		DimensionTagFilters: []types.DimensionTagFilter{
+			{DimensionID: departmentID, TagIDs: []string{legalID, financeID}},
+			{DimensionID: lifecycleID, TagIDs: []string{activeID}},
+		},
+	})
+
+	var ids []string
+	require.NoError(t, query.Pluck("id", &ids).Error)
+	assert.ElementsMatch(t, []string{docLegalActive, docFinanceActive}, ids)
 }
 
 func TestBatchCountReferences_ScopedToKnowledgeBase(t *testing.T) {

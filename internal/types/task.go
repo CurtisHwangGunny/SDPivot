@@ -4,9 +4,9 @@ package types
 // router.NewAsynqServer — a task enqueued to a queue that the server does not
 // list will never be consumed.
 const (
-	QueueCritical   = "critical"
-	QueueDefault    = "default"
-	QueueLow        = "low"
+	QueueCritical = "critical"
+	QueueDefault  = "default"
+	QueueLow      = "low"
 	// QueueMultimodal isolates high-volume, slow VLM image tasks (OCR + caption)
 	// so a single large scanned PDF (hundreds–thousands of page images) cannot
 	// saturate the shared worker pool and block user-facing document parsing in
@@ -38,6 +38,7 @@ const (
 	TypeDataTableSummary     = "datatable:summary"      // 表格摘要任务
 	TypeImageMultimodal      = "image:multimodal"       // 图片多模态处理任务（OCR + VLM Caption）
 	TypeKnowledgePostProcess = "knowledge:post_process" // 知识后处理任务（统一调度）
+	TypeAutoTagGeneration    = "auto_tag:generation"    // LLM 文档七维标签生成任务
 	TypeManualProcess        = "manual:process"         // 手工知识更新任务（cleanup + 重新索引）
 	TypeDataSourceSync       = "datasource:sync"        // 数据源同步任务
 	TypeWikiIngest           = "wiki:ingest"            // Wiki 页面同步任务
@@ -159,6 +160,16 @@ type SummaryGenerationPayload struct {
 	Attempt int `json:"attempt,omitempty"`
 }
 
+// AutoTagGenerationPayload represents the LLM document classification task payload.
+type AutoTagGenerationPayload struct {
+	TracingContext
+	TenantID        uint64 `json:"tenant_id"`
+	KnowledgeBaseID string `json:"knowledge_base_id"`
+	KnowledgeID     string `json:"knowledge_id"`
+	Language        string `json:"language,omitempty"`
+	Attempt         int    `json:"attempt,omitempty"`
+}
+
 // KBClonePayload represents the knowledge base clone task payload
 type KBClonePayload struct {
 	TracingContext
@@ -205,8 +216,8 @@ type KnowledgeListDeletePayload struct {
 // KnowledgeListReparsePayload represents the batch knowledge reparse task payload
 type KnowledgeListReparsePayload struct {
 	TracingContext
-	TenantID      uint64                      `json:"tenant_id"`
-	KnowledgeIDs  []string                    `json:"knowledge_ids"`
+	TenantID      uint64                     `json:"tenant_id"`
+	KnowledgeIDs  []string                   `json:"knowledge_ids"`
 	ProcessConfig *KnowledgeProcessOverrides `json:"process_config,omitempty"`
 }
 

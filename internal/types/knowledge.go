@@ -85,11 +85,20 @@ const (
 	ManualKnowledgeStatusPublish  = "publish"
 )
 
+// DimensionTagFilter selects any listed tag within one classification dimension.
+type DimensionTagFilter struct {
+	DimensionID string   `json:"dimension_id"`
+	TagIDs      []string `json:"tag_ids"`
+}
+
 // KnowledgeListFilter aggregates optional filters for listing knowledge entries
 // under a knowledge base. Empty / zero fields mean "no filter on that dimension".
 type KnowledgeListFilter struct {
 	// TagIDs filters by multiple tags (OR semantics: match any of the given tags).
 	TagIDs []string
+	// DimensionTagFilters use OR semantics within a dimension and AND semantics
+	// across dimensions.
+	DimensionTagFilters []DimensionTagFilter
 	// Keyword performs a LIKE match on file_name / title when non-empty.
 	Keyword string
 	// FileType filters by file_type, or by type for the special values "manual" / "url".

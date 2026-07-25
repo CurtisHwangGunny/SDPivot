@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -830,6 +831,7 @@ func buildSpanTree(knowledgeID string, attempt int, rows []types.KnowledgeProces
 // @Param        page       query     int     false  "页码"
 // @Param        page_size  query     int     false  "每页数量"
 // @Param        tag_ids       query     string  false  "标签ID筛选，逗号分隔（OR语义）"
+// @Param        tag_filters   query     string  false  "多维标签筛选JSON；维度内OR、维度间AND，例如 [{\"dimension_id\":\"department-id\",\"tag_ids\":[\"legal-id\",\"finance-id\"]}]"
 // @Param        keyword       query     string  false  "关键词搜索"
 // @Param        file_type     query     string  false  "文件类型筛选"
 // @Param        parse_status  query     string  false  "解析状态筛选 (pending/processing/completed/failed)"
@@ -864,12 +866,18 @@ func (h *KnowledgeHandler) ListKnowledge(c *gin.Context) {
 		return
 	}
 
+	dimensionTagFilters, err := parseDimensionTagFilters(c.Query("tag_filters"))
+	if err != nil {
+		c.Error(errors.NewBadRequestError("invalid tag_filters: " + err.Error()))
+		return
+	}
 	filter := types.KnowledgeListFilter{
-		TagIDs:      parseCommaSeparatedTagIDs(c.Query("tag_ids")),
-		Keyword:     c.Query("keyword"),
-		FileType:    c.Query("file_type"),
-		ParseStatus: c.Query("parse_status"),
-		Source:      c.Query("source"),
+		TagIDs:              parseCommaSeparatedTagIDs(c.Query("tag_ids")),
+		DimensionTagFilters: dimensionTagFilters,
+		Keyword:             c.Query("keyword"),
+		FileType:            c.Query("file_type"),
+		ParseStatus:         c.Query("parse_status"),
+		Source:              c.Query("source"),
 	}
 	if raw := c.Query("start_time"); raw != "" {
 		t, err := parseFilterTime(raw)
@@ -2247,6 +2255,69 @@ func parseCommaSeparatedTagIDs(raw string) []string {
 		result = append(result, p)
 	}
 	return result
+}
+
+// parseDimensionTagFilters accepts either an array of filter objects or an
+// object keyed by dimension ID. Duplicate dimensions and tag IDs are merged.
+func parseDimensionTagFilters(raw string) ([]types.DimensionTagFilter, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	byDimension := make(map[string][]string)
+	if strings.HasPrefix(raw, "{") {
+		if err := json.Unmarshal([]byte(raw), &byDimension); err != nil {
+			return nil, err
+		}
+	} else {
+		var filters []types.DimensionTagFilter
+		if err := json.Unmarshal([]byte(raw), &filters); err != nil {
+			return nil, err
+		}
+		for _, filter := range filters {
+			dimensionID := strings.TrimSpace(filter.DimensionID)
+			if dimensionID == "" {
+				return nil, fmt.Errorf("dimension_id is required")
+			}
+			byDimension[dimensionID] = append(byDimension[dimensionID], filter.TagIDs...)
+		}
+	}
+
+	normalized := make(map[string][]string, len(byDimension))
+	for dimensionID, tagIDs := range byDimension {
+		dimensionID = strings.TrimSpace(dimensionID)
+		if dimensionID == "" {
+			return nil, fmt.Errorf("dimension_id is required")
+		}
+		normalized[dimensionID] = append(normalized[dimensionID], tagIDs...)
+	}
+	dimensionIDs := make([]string, 0, len(normalized))
+	for dimensionID := range normalized {
+		dimensionIDs = append(dimensionIDs, dimensionID)
+	}
+	sort.Strings(dimensionIDs)
+
+	filters := make([]types.DimensionTagFilter, 0, len(dimensionIDs))
+	for _, dimensionID := range dimensionIDs {
+		seen := make(map[string]struct{})
+		tagIDs := make([]string, 0, len(normalized[dimensionID]))
+		for _, tagID := range normalized[dimensionID] {
+			tagID = strings.TrimSpace(tagID)
+			if tagID == "" {
+				continue
+			}
+			if _, ok := seen[tagID]; ok {
+				continue
+			}
+			seen[tagID] = struct{}{}
+			tagIDs = append(tagIDs, tagID)
+		}
+		if len(tagIDs) > 0 {
+			filters = append(filters, types.DimensionTagFilter{DimensionID: dimensionID, TagIDs: tagIDs})
+		}
+	}
+	return filters, nil
 }
 
 // parseFilterTime parses a query-string timestamp accepted by knowledge list

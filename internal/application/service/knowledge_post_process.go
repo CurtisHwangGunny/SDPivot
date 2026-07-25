@@ -157,6 +157,7 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 	//    completed while wiki runs minutes later. A wiki op that never
 	//    drains is bounded by the housekeeping finalizing sweep.
 	willSpawnSummary := len(textChunks) > 0
+	willSpawnAutoTag := willSpawnSummary && kb.SummaryModelID != ""
 	willSpawnQuestion := willSpawnSummary && kb.NeedsEmbeddingModel() &&
 		eff.QuestionGenerationConfig.Enabled
 	willSpawnWiki := kb.IndexingStrategy.WikiEnabled && len(textChunks) > 0
@@ -192,6 +193,9 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 	}
 	expectedSubtasks := 0
 	if willSpawnSummary {
+		expectedSubtasks++
+	}
+	if willSpawnAutoTag {
 		expectedSubtasks++
 	}
 	expectedSubtasks += questionBatchCount
@@ -285,6 +289,7 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 
 	// 4. Spawn Summary and Question Tasks
 	enqueuedSummary := false
+	enqueuedAutoTag := false
 	enqueuedQuestionCount := 0
 	if willSpawnSummary {
 		enqueuedSummary = s.enqueueSummaryGenerationTask(ctx, payload, attempt)
@@ -307,6 +312,9 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 			}
 			enqueuedQuestionCount = s.enqueueQuestionGenerationTasks(ctx, payload, eff.QuestionGenerationConfig, attempt, questionChunks)
 		}
+	}
+	if willSpawnAutoTag {
+		enqueuedAutoTag = s.enqueueAutoTagGenerationTask(ctx, payload, attempt)
 	}
 
 	// 5. Spawn Graph RAG Tasks — only when graph indexing is enabled in IndexingStrategy
@@ -369,8 +377,14 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 		if willSpawnSummary {
 			plannedOwned++
 		}
+		if willSpawnAutoTag {
+			plannedOwned++
+		}
 		actualOwned := enqueuedQuestionCount + enqueuedGraphCount
 		if enqueuedSummary {
+			actualOwned++
+		}
+		if enqueuedAutoTag {
 			actualOwned++
 		}
 		if shortfall := plannedOwned - actualOwned; shortfall > 0 {
@@ -394,6 +408,7 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 	postOutput := types.JSONMap{
 		"chunks_total":            len(textChunks),
 		"enqueued_summary":        enqueuedSummary,
+		"enqueued_auto_tag":       enqueuedAutoTag,
 		"enqueued_question":       enqueuedQuestionCount > 0,
 		"enqueued_question_count": enqueuedQuestionCount,
 		"enqueued_wiki":           enqueuedWiki,
@@ -409,6 +424,35 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 	s.tracker().FinalizeAttempt(ctx, payload.KnowledgeID, attempt,
 		types.SpanStatusDone, postOutput, "", "")
 	return nil
+}
+
+func (s *KnowledgePostProcessService) enqueueAutoTagGenerationTask(
+	ctx context.Context,
+	payload types.KnowledgePostProcessPayload,
+	attempt int,
+) bool {
+	if s.taskEnqueuer == nil {
+		return false
+	}
+	taskPayload := types.AutoTagGenerationPayload{
+		TenantID:        payload.TenantID,
+		KnowledgeBaseID: payload.KnowledgeBaseID,
+		KnowledgeID:     payload.KnowledgeID,
+		Language:        payload.Language,
+		Attempt:         attempt,
+	}
+	langfuse.InjectTracing(ctx, &taskPayload)
+	payloadBytes, err := json.Marshal(taskPayload)
+	if err != nil {
+		logger.Warnf(ctx, "[KnowledgePostProcess] Failed to marshal auto-tag payload: %v", err)
+		return false
+	}
+	task := asynq.NewTask(types.TypeAutoTagGeneration, payloadBytes, asynq.Queue(types.QueueLow), asynq.MaxRetry(3))
+	if _, err := s.taskEnqueuer.Enqueue(task); err != nil {
+		logger.Warnf(ctx, "[KnowledgePostProcess] Failed to enqueue auto-tag generation for %s: %v", payload.KnowledgeID, err)
+		return false
+	}
+	return true
 }
 
 // enqueueSummaryGenerationTask enqueues the summary task. Returns true only

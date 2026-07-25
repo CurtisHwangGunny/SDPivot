@@ -104,6 +104,22 @@ func applyKnowledgeListFilter(query *gorm.DB, filter types.KnowledgeListFilter) 
 			filter.TagIDs,
 		)
 	}
+	for _, tagFilter := range filter.DimensionTagFilters {
+		if tagFilter.DimensionID == "" || len(tagFilter.TagIDs) == 0 {
+			continue
+		}
+		query = query.Where(
+			`EXISTS (
+				SELECT 1 FROM document_tags
+				WHERE document_tags.tenant_id = knowledges.tenant_id
+				  AND document_tags.document_id = knowledges.id
+				  AND document_tags.dimension_id = ?
+				  AND document_tags.tag_id IN (?)
+			)`,
+			tagFilter.DimensionID,
+			tagFilter.TagIDs,
+		)
+	}
 	if filter.Keyword != "" {
 		escaped := escapeLikeKeyword(filter.Keyword)
 		query = query.Where("(file_name LIKE ? OR title LIKE ?)", "%"+escaped+"%", "%"+escaped+"%")
