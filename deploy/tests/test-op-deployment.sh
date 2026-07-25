@@ -219,6 +219,46 @@ expect_fail bash_env_ignored /usr/bin/env BASH_ENV="$payload" \
 
 "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate >/dev/null
 pass compliant_validate
+
+# The public bind and port must be explicit, loopback-only, and canonical.
+env_value_case() {
+    local name="$1"
+    local key="$2"
+    local value="$3"
+    write_good_env
+    /usr/bin/python3 - "$ENV_FILE" "$key" "$value" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+key, value = sys.argv[2:]
+lines = path.read_text().splitlines()
+updated = [key + "=" + value if line.startswith(key + "=") else line for line in lines]
+path.write_text("\n".join(updated) + "\n")
+PY
+    /bin/chmod 600 "$ENV_FILE"
+    expect_fail "$name" "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate
+}
+for bind in '' '0.0.0.0' '::' 'localhost' '127.0.0.2' '192.0.2.10' '::1' '2001:db8::1'; do
+    env_value_case "bind_rejected_${bind:-empty}" OP_HTTP_BIND "$bind"
+done
+for port in '' '0' '65536' 'abc' '+8080' '08' '08080'; do
+    env_value_case "port_rejected_${port:-empty}" OP_HTTP_PORT "$port"
+done
+for port in 1 65535; do
+    write_good_env
+    /usr/bin/python3 - "$ENV_FILE" "$port" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+path.write_text(path.read_text().replace("OP_HTTP_PORT=8080", "OP_HTTP_PORT=" + sys.argv[2]))
+PY
+    /bin/chmod 600 "$ENV_FILE"
+    "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate >/dev/null
+    pass "port_accepts_$port"
+done
+write_good_env
+pass bind_accepts_loopback
+
 expect_fail internal_lock_argv_bypass "$ROOT/deploy/op-deploy.sh" --internal-locked --env-file "$ENV_FILE" validate
 expect_fail up_build_equals "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" up --build=true
 expect_fail up_no_build_equals "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" up --no-build=false
@@ -356,7 +396,8 @@ if "config" in args and "--format" in args and "json" in args:
             "SDP_DB_PASSWORD": env["OP_DB_PASSWORD"], "SDP_REDIS_PASSWORD": env["OP_REDIS_PASSWORD"],
             "SDP_JWT_SECRET": env["OP_SDP_JWT_SECRET"]}}, "networks": internal}},
         "sdp-frontend": {{"image": env["OP_SDP_FRONTEND_IMAGE"], "networks": frontend, "ports": [{{
-            "host_ip": env["OP_HTTP_BIND"], "published": env["OP_HTTP_PORT"], "target": 80, "protocol": "tcp"
+            "host_ip": env["OP_HTTP_BIND"], "published": env["OP_HTTP_PORT"], "target": 80,
+            "protocol": "tcp", "mode": "ingress"
         }}]}}
     }}
     print(json.dumps({{"name": "sdpivot-op", "services": services, "networks": networks}}))
@@ -394,7 +435,8 @@ for service in {'postgres', 'redis', 'migration', 'docreader', 'app', 'sdp-backe
     assert set(c['services'][service]['networks']) == {'op-internal'}
     assert not c['services'][service].get('ports')
 assert c['services']['sdp-frontend']['ports'] == [{
-    'host_ip': '127.0.0.1', 'published': '8080', 'target': 80, 'protocol': 'tcp'
+    'host_ip': '127.0.0.1', 'published': '8080', 'target': 80,
+    'protocol': 'tcp', 'mode': 'ingress'
 }]
 PY
 config_boundary_case() {
@@ -410,18 +452,48 @@ import sys
 path = Path(sys.argv[1])
 mutation = sys.argv[2]
 config = json.loads(path.read_text())
-if mutation == "internal_ingress":
+if mutation == "missing_network":
+    del config["networks"]["op-ingress"]
+elif mutation == "missing_service":
+    del config["services"]["app"]
+elif mutation == "missing_project":
+    del config["name"]
+elif mutation == "extra_network":
+    config["networks"]["extra"] = {"name": "sdpivot-op_extra"}
+elif mutation == "external_internal":
+    config["networks"]["op-internal"]["external"] = True
+elif mutation == "internal_ingress":
     config["networks"]["op-ingress"]["internal"] = True
 elif mutation == "external_ingress":
     config["networks"]["op-ingress"]["external"] = True
+elif mutation == "internal_name":
+    config["networks"]["op-internal"]["name"] = "drift_op-internal"
+elif mutation == "ingress_name":
+    config["networks"]["op-ingress"]["name"] = "drift_op-ingress"
+elif mutation == "frontend_missing_networks":
+    del config["services"]["sdp-frontend"]["networks"]
 elif mutation == "frontend_internal_only":
     config["services"]["sdp-frontend"]["networks"] = {"op-internal": None}
+elif mutation == "frontend_extra_network":
+    config["services"]["sdp-frontend"]["networks"]["extra"] = None
 elif mutation == "backend_ingress":
     config["services"]["sdp-backend"]["networks"]["op-ingress"] = None
+elif mutation == "backend_extra_network":
+    config["services"]["sdp-backend"]["networks"]["extra"] = None
 elif mutation == "backend_port":
     config["services"]["sdp-backend"]["ports"] = [{"published": "18081", "target": 8081}]
-elif mutation == "frontend_port":
+elif mutation == "frontend_second_port":
+    config["services"]["sdp-frontend"]["ports"].append(dict(config["services"]["sdp-frontend"]["ports"][0]))
+elif mutation.startswith("missing_port_"):
+    del config["services"]["sdp-frontend"]["ports"][0][mutation.removeprefix("missing_port_")]
+elif mutation == "target_drift":
+    config["services"]["sdp-frontend"]["ports"][0]["target"] = 81
+elif mutation == "host_ip_drift":
+    config["services"]["sdp-frontend"]["ports"][0]["host_ip"] = "0.0.0.0"
+elif mutation == "published_drift":
     config["services"]["sdp-frontend"]["ports"][0]["published"] = "18080"
+elif mutation == "protocol_drift":
+    config["services"]["sdp-frontend"]["ports"][0]["protocol"] = "udp"
 else:
     raise AssertionError(mutation)
 path.write_text(json.dumps(config))
@@ -429,12 +501,29 @@ PY
     /bin/chmod 600 "$candidate"
     expect_fail "$name" "$ROOT/deploy/validate-op-deployment.sh" config "$ENV_FILE" "$candidate"
 }
+config_boundary_case compose_rejects_missing_network missing_network
+config_boundary_case compose_rejects_missing_service missing_service
+config_boundary_case compose_rejects_missing_project missing_project
+config_boundary_case compose_rejects_extra_network extra_network
+config_boundary_case compose_rejects_external_internal external_internal
 config_boundary_case compose_rejects_internal_ingress internal_ingress
 config_boundary_case compose_rejects_external_ingress external_ingress
+config_boundary_case compose_rejects_internal_network_name_drift internal_name
+config_boundary_case compose_rejects_ingress_network_name_drift ingress_name
+config_boundary_case compose_rejects_frontend_missing_networks frontend_missing_networks
 config_boundary_case compose_rejects_frontend_without_ingress frontend_internal_only
+config_boundary_case compose_rejects_frontend_extra_network frontend_extra_network
 config_boundary_case compose_rejects_backend_ingress backend_ingress
+config_boundary_case compose_rejects_backend_extra_network backend_extra_network
 config_boundary_case compose_rejects_backend_published_port backend_port
-config_boundary_case compose_rejects_frontend_port_mismatch frontend_port
+config_boundary_case compose_rejects_frontend_second_port frontend_second_port
+for field in target host_ip published protocol; do
+    config_boundary_case "compose_rejects_frontend_missing_$field" "missing_port_$field"
+done
+config_boundary_case compose_rejects_frontend_target_drift target_drift
+config_boundary_case compose_rejects_frontend_host_ip_drift host_ip_drift
+config_boundary_case compose_rejects_frontend_published_drift published_drift
+config_boundary_case compose_rejects_frontend_protocol_drift protocol_drift
 /usr/bin/cp -- "$TMP_ROOT/op-deploy.pre-config-fake" "$ROOT/deploy/op-deploy.sh"
 LAUNCHER_RESTORE=""
 pass ambient_env_isolated

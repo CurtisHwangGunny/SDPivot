@@ -83,7 +83,7 @@ SECRET_KEYS = (
 REQUIRED_KEYS = (
     "OP_DB_USER", "OP_DB_PASSWORD", "OP_DB_NAME", "OP_REDIS_PASSWORD",
     "OP_JWT_SECRET", "OP_SDP_JWT_SECRET", "OP_TENANT_AES_KEY", "OP_SYSTEM_AES_KEY",
-    "OP_ALLOWED_ORIGINS", *IMAGE_KEYS,
+    "OP_ALLOWED_ORIGINS", "OP_HTTP_BIND", "OP_HTTP_PORT", *IMAGE_KEYS,
 )
 PLACEHOLDERS = ("change_me", "changeme", "placeholder", "replace_me", "dummy", "sample", "todo", "your_", "insert_")
 COMMON_WORDS = (
@@ -373,6 +373,11 @@ def validate_values(values):
         fail("OP_DB_PASSWORD must use URL-unreserved characters for the migration connection URL")
     validate_secrets(values)
     validate_origin(values["OP_ALLOWED_ORIGINS"])
+    if values["OP_HTTP_BIND"] != "127.0.0.1":
+        fail("OP_HTTP_BIND must be exactly 127.0.0.1")
+    http_port = values["OP_HTTP_PORT"]
+    if not re.fullmatch(r"[1-9][0-9]{0,4}", http_port) or int(http_port) > 65535:
+        fail("OP_HTTP_PORT must be a canonical decimal integer from 1 through 65535")
     for key in IMAGE_KEYS:
         validate_image(key, values[key])
 
@@ -799,10 +804,14 @@ def verify_config(snapshot, config_path):
     if not isinstance(frontend_ports, list) or len(frontend_ports) != 1 or not isinstance(frontend_ports[0], dict):
         fail("Compose service sdp-frontend must publish exactly one port")
     frontend_port = frontend_ports[0]
-    if (str(frontend_port.get("host_ip", "")) != values["OP_HTTP_BIND"]
-            or str(frontend_port.get("published", "")) != values["OP_HTTP_PORT"]
-            or str(frontend_port.get("target", "")) != "80"
-            or frontend_port.get("protocol", "tcp") != "tcp"):
+    required_port_fields = {"target", "published", "host_ip", "protocol"}
+    if not required_port_fields.issubset(frontend_port):
+        fail("Compose service sdp-frontend published port is missing required fields")
+    if (type(frontend_port["target"]) is not int or frontend_port["target"] != 80
+            or type(frontend_port["published"]) is not str or frontend_port["published"] != values["OP_HTTP_PORT"]
+            or type(frontend_port["host_ip"]) is not str or frontend_port["host_ip"] != "127.0.0.1"
+            or frontend_port["host_ip"] != values["OP_HTTP_BIND"]
+            or type(frontend_port["protocol"]) is not str or frontend_port["protocol"] != "tcp"):
         fail("Compose service sdp-frontend published port does not match the validated snapshot")
 
     expected_images = {
