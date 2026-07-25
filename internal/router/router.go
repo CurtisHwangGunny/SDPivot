@@ -78,6 +78,7 @@ type RouterParams struct {
 	UserFavoriteHandler          *handler.UserResourceFavoriteHandler
 	SkillHandler                 *handler.SkillHandler
 	OrganizationHandler          *handler.OrganizationHandler
+	DepartmentHandler            *handler.DepartmentHandler
 	IMHandler                    *handler.IMHandler
 	EmbedChannelHandler          *handler.EmbedChannelHandler
 	EmbedChannelService          interfaces.EmbedChannelService
@@ -203,7 +204,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		)
 
 		RegisterAuthRoutes(v1, params.AuthHandler)
-		RegisterTenantRoutes(v1, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler, rbacGuards)
+		RegisterTenantRoutes(v1, params.TenantHandler, params.TenantMemberHandler, params.TenantInvitationHandler, params.AuditLogHandler, params.DepartmentHandler, rbacGuards)
 		RegisterMyInvitationRoutes(v1, params.TenantInvitationHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler, rbacGuards)
 		RegisterKnowledgeTagRoutes(v1, params.TagHandler, rbacGuards)
@@ -543,6 +544,7 @@ func RegisterTenantRoutes(
 	memberHandler *handler.TenantMemberHandler,
 	invitationHandler *handler.TenantInvitationHandler,
 	auditLogHandler *handler.AuditLogHandler,
+	departmentHandler *handler.DepartmentHandler,
 	g *rbacGuards,
 ) {
 	// Cross-tenant superuser endpoints — promoted from handler if-blocks
@@ -619,6 +621,16 @@ func RegisterTenantRoutes(
 			// for environments wired without the audit dependency.
 			if auditLogHandler != nil {
 				tenantByID.GET("/audit-log", g.Admin(), auditLogHandler.ListTenantAuditLog)
+			}
+
+			if departmentHandler != nil {
+				departments := tenantByID.Group("/departments")
+				departments.GET("", g.Viewer(), departmentHandler.List)
+				departments.GET("/tree", g.Viewer(), departmentHandler.Tree)
+				departments.GET("/:department_id", g.Viewer(), departmentHandler.Get)
+				departments.POST("", g.Admin(), departmentHandler.Create)
+				departments.PUT("/:department_id", g.Admin(), departmentHandler.Update)
+				departments.DELETE("/:department_id", g.Admin(), departmentHandler.Delete)
 			}
 		}
 	}

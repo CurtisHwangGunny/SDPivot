@@ -95,6 +95,10 @@ type User struct {
 	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
 	// Whether the user is a system administrator (independent of tenant roles)
 	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
+	// AccessRole is the product-level role used by SD Pivot permission checks.
+	AccessRole AccessRole `json:"access_role" gorm:"type:varchar(32);not null;default:'knowledge_viewer';index"`
+	// DepartmentID scopes department administrators to one tenant department.
+	DepartmentID *string `json:"department_id,omitempty" gorm:"type:varchar(36);index"`
 	// Ops admin fields (SDPivot PRD 1.1.4)
 	IsOpsAdmin         bool       `json:"is_ops_admin" gorm:"default:false;index:idx_users_ops_admin,where:is_ops_admin = true"`
 	MustChangePassword bool       `json:"must_change_password" gorm:"default:false"`

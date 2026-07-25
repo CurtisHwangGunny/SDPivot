@@ -414,12 +414,17 @@ func generateUUID() string {
 	return uuid.New().String()
 }
 
-// resolveUserRole determines the JWT role for a user.
-// Returns "admin" if the user is a system admin, otherwise "member".
+// resolveUserRole determines the product role embedded in the JWT.
 func (h *SDPivotAuthHandler) resolveUserRole(userID string) string {
 	var user types.User
-	if err := h.db.Select("is_system_admin").Where("id = ?", userID).First(&user).Error; err == nil && user.IsSystemAdmin {
-		return "admin"
+	if err := h.db.Select("access_role, is_system_admin, is_ops_admin").Where("id = ?", userID).First(&user).Error; err == nil {
+		if user.IsSystemAdmin || user.IsOpsAdmin {
+			return string(types.AccessRoleSuperAdmin)
+		}
+		role := types.NormalizeAccessRole(string(user.AccessRole))
+		if role.IsValid() {
+			return string(role)
+		}
 	}
-	return "member"
+	return string(types.AccessRoleKnowledgeViewer)
 }

@@ -2,9 +2,11 @@ package handler
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +29,7 @@ func NewSDPivotOpsAdminHandler(db *gorm.DB) *SDPivotOpsAdminHandler {
 
 // RegisterOpsRoutes registers protected ops admin routes (requires ops_admin role).
 func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
-	ops := rg.Group("/ops")
+	ops := rg.Group("/ops", middleware.RequirePermission(middleware.PermissionUserRoleAssign))
 	{
 		ops.GET("/dashboard", h.GetOpsDashboard)
 		ops.GET("/enterprises", h.ListEnterprises)
@@ -35,7 +37,10 @@ func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
 		ops.PUT("/enterprises/:id/status", h.UpdateEnterpriseStatus)
 		ops.GET("/tenants", h.ListEnterprises) // compat alias
 		ops.GET("/users", h.ListUsers)
+		ops.POST("/users", h.CreateUser)
+		ops.POST("/users/import", h.ImportUsers)
 		ops.PUT("/users/:id/status", h.UpdateUserStatus)
+		ops.PUT("/users/:id/role", h.UpdateUserRole)
 		ops.GET("/audit-logs", h.GetAuditLogs)
 		ops.GET("/audit-logs/export", h.ExportAuditLogs)
 		ops.GET("/audit-log", h.GetAuditLogs) // compat alias
@@ -68,8 +73,7 @@ func (h *SDPivotOpsAdminHandler) RegisterPublicOpsRoutes(rg *gin.RouterGroup) {
 
 // requireOpsAdmin checks if current user has ops_admin role.
 func requireOpsAdmin(c *gin.Context) bool {
-	role, _ := c.Get("role")
-	return role == "ops_admin"
+	return middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign)
 }
 
 func denyIfNotOpsAdmin(c *gin.Context) bool {
@@ -260,12 +264,16 @@ func (h *SDPivotOpsAdminHandler) ListUsers(c *gin.Context) {
 		Nickname   string    `json:"nickname"`
 		IsActive   bool      `json:"is_active"`
 		IsOpsAdmin bool      `json:"is_ops_admin" gorm:"column:is_ops_admin"`
+		AccessRole types.AccessRole `json:"access_role" gorm:"column:access_role"`
+		DepartmentID *string `json:"department_id" gorm:"column:department_id"`
+		DepartmentName string `json:"department_name" gorm:"column:department_name"`
 		TenantID   uint64    `json:"tenant_id"`
 		CreatedAt  time.Time `json:"created_at"`
 	}
 
-	q := h.db.Table("users").Select("users.id, users.username, users.email, users.is_active, users.is_ops_admin, users.tenant_id, users.created_at, COALESCE(p.phone, '') AS phone, COALESCE(p.nickname, '') AS nickname").
+	q := h.db.Table("users").Select("users.id, users.username, users.email, users.is_active, users.is_ops_admin, users.access_role, users.department_id, users.tenant_id, users.created_at, COALESCE(p.phone, '') AS phone, COALESCE(p.nickname, '') AS nickname, COALESCE(d.name, '') AS department_name").
 		Joins("LEFT JOIN smartknora_user_profiles p ON p.user_id = users.id").
+		Joins("LEFT JOIN departments d ON d.id = users.department_id AND d.deleted_at IS NULL").
 		Where("users.deleted_at IS NULL")
 
 	if search != "" {
@@ -289,6 +297,64 @@ func (h *SDPivotOpsAdminHandler) ListUsers(c *gin.Context) {
 		"page":      page,
 		"page_size": pageSize,
 	})
+}
+
+// UpdateUserRole assigns one of the four product roles to a user.
+func (h *SDPivotOpsAdminHandler) UpdateUserRole(c *gin.Context) {
+	if denyIfNotOpsAdmin(c) {
+		return
+	}
+	userID := c.Param("id")
+	var req struct {
+		Role         types.AccessRole `json:"role" binding:"required"`
+		DepartmentID *string          `json:"department_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || !req.Role.IsValid() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "role must be super_admin, department_admin, knowledge_editor, or knowledge_viewer"})
+		return
+	}
+
+	var user types.User
+	if err := h.db.Select("id, tenant_id").Where("id = ?", userID).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load user"})
+		}
+		return
+	}
+
+	var departmentID *string
+	if req.Role == types.AccessRoleDepartmentAdmin {
+		if req.DepartmentID == nil || strings.TrimSpace(*req.DepartmentID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "department_id is required for department_admin"})
+			return
+		}
+		id := strings.TrimSpace(*req.DepartmentID)
+		var count int64
+		if err := h.db.Model(&types.Department{}).Where("id = ? AND tenant_id = ?", id, user.TenantID).Count(&count).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate department"})
+			return
+		}
+		if count == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "department does not belong to the user's tenant"})
+			return
+		}
+		departmentID = &id
+	}
+
+	updates := map[string]interface{}{
+		"access_role":   req.Role,
+		"department_id": departmentID,
+		"is_ops_admin":  req.Role == types.AccessRoleSuperAdmin,
+		"updated_at":    time.Now(),
+	}
+	if err := h.db.Model(&types.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user role"})
+		return
+	}
+	h.writeAuditLog(c, "update_user_role", "user", userID, fmt.Sprintf("role: %s", req.Role))
+	c.JSON(http.StatusOK, gin.H{"message": "user role updated", "role": req.Role, "department_id": departmentID})
 }
 
 func (h *SDPivotOpsAdminHandler) UpdateUserStatus(c *gin.Context) {

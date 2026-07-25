@@ -63,6 +63,17 @@ export function listEnterprises(params?: any) { return opsClient.get('/ops/enter
 export function getEnterprise(id: string) { return opsClient.get(`/ops/enterprises/${id}`) }
 export function updateEnterpriseStatus(id: string, status: string) { return opsClient.put(`/ops/enterprises/${id}/status`, { status }) }
 export function listUsers(params?: any) { return opsClient.get('/ops/users', { params }) }
+export function createUser(data: { phone?: string; email?: string; password: string; nickname?: string }) { return opsClient.post('/ops/users', data) }
+export function importUsers(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return opsClient.post<{
+    total: number
+    imported: number
+    failed: number
+    errors: Array<{ row: number; field?: string; value?: string; message: string }>
+  }>('/ops/users/import', form)
+}
 export function updateUserStatus(id: string, isActive: boolean) { return opsClient.put(`/ops/users/${id}/status`, { is_active: isActive }) }
 export function getAuditLogs(params?: any) { return opsClient.get('/ops/audit-logs', { params }) }
 export function exportAuditLogs(params?: any) { return opsClient.get('/ops/audit-logs/export', { params, responseType: 'blob' }) }

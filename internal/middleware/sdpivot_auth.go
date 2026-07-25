@@ -5,8 +5,53 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/auth"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
+
+// Permission names a protected product action.
+type Permission string
+
+const (
+	PermissionUserRoleAssign Permission = "user.role.assign"
+	PermissionDepartmentManage Permission = "department.manage"
+	PermissionKnowledgeWrite Permission = "knowledge.write"
+	PermissionKnowledgeRead Permission = "knowledge.read"
+)
+
+var accessRolePermissions = map[types.AccessRole]map[Permission]struct{}{
+	types.AccessRoleSuperAdmin: {
+		PermissionUserRoleAssign: {}, PermissionDepartmentManage: {},
+		PermissionKnowledgeWrite: {}, PermissionKnowledgeRead: {},
+	},
+	types.AccessRoleDepartmentAdmin: {
+		PermissionDepartmentManage: {}, PermissionKnowledgeWrite: {}, PermissionKnowledgeRead: {},
+	},
+	types.AccessRoleKnowledgeEditor: {
+		PermissionKnowledgeWrite: {}, PermissionKnowledgeRead: {},
+	},
+	types.AccessRoleKnowledgeViewer: {
+		PermissionKnowledgeRead: {},
+	},
+}
+
+// HasPermission checks a product role against the permission matrix.
+func HasPermission(role string, permission Permission) bool {
+	_, ok := accessRolePermissions[types.NormalizeAccessRole(role)][permission]
+	return ok
+}
+
+// RequirePermission rejects callers whose JWT role lacks permission.
+func RequirePermission(permission Permission) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if HasPermission(GetRole(c), permission) {
+			c.Next()
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": permission})
+		c.Abort()
+	}
+}
 
 // SDPivotAuth creates a middleware that validates JWT access tokens
 // and sets user context for SDPivot routes.

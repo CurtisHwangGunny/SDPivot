@@ -78,7 +78,7 @@ func (h *SDPivotOpsHandler) OpsLogin(c *gin.Context) {
 
 	// Generate tokens with ops-admin role
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, "ops_admin")
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, string(types.AccessRoleSuperAdmin))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -111,7 +111,7 @@ func (h *SDPivotOpsHandler) OpsLogin(c *gin.Context) {
 		"user": gin.H{
 			"id":    user.ID,
 			"email": user.Email,
-			"role":  "ops_admin",
+			"role":  types.AccessRoleSuperAdmin,
 		},
 	})
 }
@@ -135,7 +135,7 @@ func (h *SDPivotOpsHandler) OpsRefreshToken(c *gin.Context) {
 		return
 	}
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, "ops_admin")
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, string(types.AccessRoleSuperAdmin))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -160,8 +160,7 @@ func (h *SDPivotOpsHandler) OpsRefreshToken(c *gin.Context) {
 // OpsChangePassword handles forced password change (PRD 1.1.4).
 func (h *SDPivotOpsHandler) OpsChangePassword(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	role, _ := c.Get("role")
-	if role != "ops_admin" {
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "ops admin access required"})
 		return
 	}
@@ -231,8 +230,7 @@ func (h *SDPivotOpsHandler) OpsChangePassword(c *gin.Context) {
 // CheckFirstLogin checks if ops admin needs to change password.
 func (h *SDPivotOpsHandler) CheckFirstLogin(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	role, _ := c.Get("role")
-	if role != "ops_admin" {
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "ops admin access required"})
 		return
 	}
