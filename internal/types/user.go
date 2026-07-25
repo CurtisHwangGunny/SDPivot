@@ -101,12 +101,11 @@ type User struct {
 	PasswordChangedAt  *time.Time `json:"password_changed_at"`
 	PasswordExpiresAt  *time.Time `json:"password_expires_at"`
 
-	// SDPivot lifecycle fields (PRD v4.2): 30-day full trial, 90-day certification extension, paid conversion.
+	// SDPivot lifecycle fields (PRD v4.2): 30-day trial and certification extension.
 	TrialStartedAt  *time.Time `json:"trial_started_at"`
 	TrialPhase      string     `json:"trial_phase" gorm:"type:varchar(20);default:30day;index"`
 	AuthenticatedAt *time.Time `json:"authenticated_at"`
 	AuthExtendedAt  *time.Time `json:"auth_extended_at"`
-	PaidAt          *time.Time `json:"paid_at"`
 	// Per-user UI/feature preferences (memory toggle, future knobs).
 	// Stored as JSON (jsonb on Postgres, TEXT on SQLite) via the
 	// driver.Valuer / sql.Scanner methods on UserPreferences.

@@ -75,17 +75,10 @@ export function createSensitiveWord(data: { word: string; category?: string }) {
 export function deleteSensitiveWord(id: string) { return opsClient.delete(`/ops/filters/words/${id}`) }
 export function listFilterHits(params?: any) { return opsClient.get('/ops/filters/hits', { params }) }
 export function updateFilterHit(orgId: string, action: string) { return opsClient.put(`/ops/filters/hits/${orgId}`, { action }) }
-export function listBillingPlans() { return opsClient.get('/ops/billing/plans') }
-export function createBillingPlan(data: any) { return opsClient.post('/ops/billing/plans', data) }
-export function updateBillingPlan(id: string, data: any) { return opsClient.put(`/ops/billing/plans/${id}`, data) }
-export function deleteBillingPlan(id: string) { return opsClient.delete(`/ops/billing/plans/${id}`) }
-export function listSubscriptions(params?: any) { return opsClient.get('/ops/billing/subscriptions', { params }) }
-export function updateSubscription(orgId: string, data: { plan_id: string; expires_at?: string }) { return opsClient.put(`/ops/billing/subscriptions/${orgId}`, data) }
-export function listInvoices(params?: any) { return opsClient.get('/ops/billing/invoices', { params }) }
 export function listConfigs() { return opsClient.get('/ops/config') }
 export function updateConfig(key: string, value: string, description?: string) { return opsClient.put(`/ops/config/${key}`, { value, description }) }
 export function getTrialConfig() { return opsClient.get('/ops/config/trial') }
-export function updateTrialConfig(data: { trial_days: number; extended_trial_days: number; downgrade_space_limit: number }) { return opsClient.put('/ops/config/trial', data) }
+export function updateTrialConfig(data: { trial_days: number; extended_trial_days: number }) { return opsClient.put('/ops/config/trial', data) }
 export function listModels() { return opsClient.get('/ops/models') }
 export function createModel(data: any) { return opsClient.post('/ops/models', data) }
 export function updateModel(id: string, data: any) { return opsClient.put(`/ops/models/${id}`, data) }

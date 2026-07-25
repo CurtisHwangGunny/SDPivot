@@ -2,236 +2,15 @@ package handler
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
-
-// ============================================================
-// Billing — 计费管理（PRD §4.1.3）
-// ============================================================
-
-type OpsBillingPlan struct {
-	ID           string    `json:"id" gorm:"type:varchar(36);primaryKey"`
-	Name         string    `json:"name" gorm:"type:varchar(100);not null"`
-	Price        float64   `json:"price" gorm:"type:decimal(10,2);not null;default:0"`
-	TokenQuota   int64     `json:"token_quota" gorm:"not null;default:0"`
-	StorageQuota int64     `json:"storage_quota" gorm:"not null;default:0"`
-	Features     string    `json:"features" gorm:"type:jsonb;not null;default:'{}'"`
-	Status       string    `json:"status" gorm:"type:varchar(20);not null;default:active"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
-
-func (OpsBillingPlan) TableName() string { return "billing_plans" }
-
-type OpsEnterpriseSubscription struct {
-	ID        string     `json:"id" gorm:"type:varchar(36);primaryKey"`
-	OrgID     string     `json:"org_id" gorm:"type:varchar(36);not null;index"`
-	PlanID    string     `json:"plan_id" gorm:"type:varchar(36);not null"`
-	Status    string     `json:"status" gorm:"type:varchar(20);not null;default:active"`
-	StartedAt time.Time  `json:"started_at"`
-	ExpiresAt *time.Time `json:"expires_at"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-}
-
-func (OpsEnterpriseSubscription) TableName() string { return "enterprise_subscriptions" }
-
-type OpsInvoice struct {
-	ID          string    `json:"id" gorm:"type:varchar(36);primaryKey"`
-	OrgID       string    `json:"org_id" gorm:"type:varchar(36);not null;index"`
-	PlanID      string    `json:"plan_id" gorm:"type:varchar(36)"`
-	Amount      float64   `json:"amount" gorm:"type:decimal(10,2);not null;default:0"`
-	PeriodStart time.Time `json:"period_start"`
-	PeriodEnd   time.Time `json:"period_end"`
-	Status      string    `json:"status" gorm:"type:varchar(20);not null;default:pending"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-func (OpsInvoice) TableName() string { return "invoices" }
-
-func (h *SDPivotOpsAdminHandler) ListBillingPlans(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
-		return
-	}
-	var plans []OpsBillingPlan
-	h.db.Order("created_at DESC").Find(&plans)
-	c.JSON(http.StatusOK, gin.H{"plans": plans})
-}
-
-func (h *SDPivotOpsAdminHandler) CreateBillingPlan(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
-		return
-	}
-	var req struct {
-		Name         string  `json:"name" binding:"required"`
-		Price        float64 `json:"price"`
-		TokenQuota   int64   `json:"token_quota"`
-		StorageQuota int64   `json:"storage_quota"`
-		Features     string  `json:"features"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if req.Features == "" {
-		req.Features = "{}"
-	}
-	plan := OpsBillingPlan{
-		ID: uuid.New().String(), Name: req.Name, Price: req.Price,
-		TokenQuota: req.TokenQuota, StorageQuota: req.StorageQuota,
-		Features: req.Features, Status: "active",
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	h.db.Create(&plan)
-	h.writeAuditLog(c, "create_billing_plan", "billing_plan", plan.ID, "name: "+req.Name)
-	c.JSON(http.StatusCreated, gin.H{"plan": plan})
-}
-
-func (h *SDPivotOpsAdminHandler) UpdateBillingPlan(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
-		return
-	}
-	id := c.Param("id")
-	var req struct {
-		Name         *string  `json:"name"`
-		Price        *float64 `json:"price"`
-		TokenQuota   *int64   `json:"token_quota"`
-		StorageQuota *int64   `json:"storage_quota"`
-		Status       *string  `json:"status"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	updates := map[string]interface{}{"updated_at": time.Now()}
-	if req.Name != nil {
-		updates["name"] = *req.Name
-	}
-	if req.Price != nil {
-		updates["price"] = *req.Price
-	}
-	if req.TokenQuota != nil {
-		updates["token_quota"] = *req.TokenQuota
-	}
-	if req.StorageQuota != nil {
-		updates["storage_quota"] = *req.StorageQuota
-	}
-	if req.Status != nil {
-		updates["status"] = *req.Status
-	}
-	h.db.Model(&OpsBillingPlan{}).Where("id = ?", id).Updates(updates)
-	h.writeAuditLog(c, "update_billing_plan", "billing_plan", id, "")
-	c.JSON(http.StatusOK, gin.H{"message": "updated"})
-}
-
-func (h *SDPivotOpsAdminHandler) DeleteBillingPlan(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
-		return
-	}
-	id := c.Param("id")
-	h.db.Where("id = ?", id).Delete(&OpsBillingPlan{})
-	h.writeAuditLog(c, "delete_billing_plan", "billing_plan", id, "")
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
-}
-
-func (h *SDPivotOpsAdminHandler) ListSubscriptions(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
-		return
-	}
-	h.db.Exec("SET LOCAL row_security = off")
-	page, pageSize := parsePagination(c)
-
-	type SubRow struct {
-		ID        string     `json:"id"`
-		OrgID     string     `json:"org_id"`
-		OrgName   string     `json:"org_name"`
-		PlanID    string     `json:"plan_id"`
-		PlanName  string     `json:"plan_name"`
-		Status    string     `json:"status"`
-		StartedAt time.Time  `json:"started_at"`
-		ExpiresAt *time.Time `json:"expires_at"`
-	}
-
-	var total int64
-	h.db.Table("enterprise_subscriptions es").
-		Joins("LEFT JOIN organizations o ON o.id = es.org_id").
-		Joins("LEFT JOIN billing_plans bp ON bp.id = es.plan_id").
-		Count(&total)
-
-	var rows []SubRow
-	h.db.Table("enterprise_subscriptions es").
-		Select("es.id, es.org_id, COALESCE(o.name, '') as org_name, es.plan_id, COALESCE(bp.name, '') as plan_name, es.status, es.started_at, es.expires_at").
-		Joins("LEFT JOIN organizations o ON o.id = es.org_id").
-		Joins("LEFT JOIN billing_plans bp ON bp.id = es.plan_id").
-		Order("es.created_at DESC").
-		Offset((page - 1) * pageSize).Limit(pageSize).Scan(&rows)
-
-	c.JSON(http.StatusOK, gin.H{"subscriptions": rows, "total": total, "page": page, "page_size": pageSize})
-}
-
-func (h *SDPivotOpsAdminHandler) UpdateSubscription(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
-		return
-	}
-	orgID := c.Param("orgId")
-	var req struct {
-		PlanID    string  `json:"plan_id" binding:"required"`
-		ExpiresAt *string `json:"expires_at"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Upsert subscription
-	var existing OpsEnterpriseSubscription
-	if h.db.Where("org_id = ?", orgID).First(&existing).Error == nil {
-		h.db.Model(&existing).Updates(map[string]interface{}{
-			"plan_id": req.PlanID, "status": "active", "updated_at": time.Now(),
-		})
-	} else {
-		sub := OpsEnterpriseSubscription{
-			ID: uuid.New().String(), OrgID: orgID, PlanID: req.PlanID,
-			Status: "active", StartedAt: time.Now(),
-			CreatedAt: time.Now(), UpdatedAt: time.Now(),
-		}
-		h.db.Create(&sub)
-	}
-
-	// Sync org_ext subscription_status
-	var plan OpsBillingPlan
-	planName := "free"
-	if h.db.Where("id = ?", req.PlanID).First(&plan).Error == nil {
-		planName = plan.Name
-	}
-	h.db.Table("org_ext").Where("org_id = ?", orgID).Update("subscription_status", planName)
-
-	h.writeAuditLog(c, "update_subscription", "enterprise", orgID, "plan: "+req.PlanID)
-	c.JSON(http.StatusOK, gin.H{"message": "subscription updated"})
-}
-
-func (h *SDPivotOpsAdminHandler) ListInvoices(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
-		return
-	}
-	h.db.Exec("SET LOCAL row_security = off")
-	page, pageSize := parsePagination(c)
-
-	var total int64
-	h.db.Table("invoices").Count(&total)
-
-	var invoices []OpsInvoice
-	h.db.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&invoices)
-
-	c.JSON(http.StatusOK, gin.H{"invoices": invoices, "total": total, "page": page, "page_size": pageSize})
-}
 
 // ============================================================
 // Config — 系统配置（PRD §4.1.3）
@@ -254,6 +33,11 @@ func (h *SDPivotOpsAdminHandler) ListConfigs(c *gin.Context) {
 	}
 	var configs []OpsSystemConfig
 	h.db.Order("key ASC").Find(&configs)
+	for i := range configs {
+		if isSMSSecretConfig(configs[i].Key) && configs[i].Value != "" {
+			configs[i].Value = "***"
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"configs": configs})
 }
 
@@ -286,8 +70,112 @@ func (h *SDPivotOpsAdminHandler) UpdateConfig(c *gin.Context) {
 		h.db.Create(&cfg)
 	}
 
-	h.writeAuditLog(c, "update_config", "system_config", key, "value: "+req.Value)
-	c.JSON(http.StatusOK, gin.H{"message": "config updated", "key": key, "value": req.Value})
+	detail := "value: " + req.Value
+	if isSMSSecretConfig(key) {
+		detail = "secret updated"
+	}
+	h.writeAuditLog(c, "update_config", "system_config", key, detail)
+	responseValue := req.Value
+	if isSMSSecretConfig(key) && responseValue != "" {
+		responseValue = "***"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "config updated", "key": key, "value": responseValue})
+}
+
+var smsConfigDefaults = []struct {
+	key         string
+	value       string
+	description string
+}{
+	{"sms_provider", "custom", "短信服务商: aliyun/tencent/huawei/custom"},
+	{"sms_endpoint", "", "短信服务 HTTP 接口地址"},
+	{"sms_access_key_id", "", "短信服务 Access Key ID"},
+	{"sms_access_key_secret", "", "短信服务 Access Key Secret"},
+	{"sms_region", "", "短信服务区域"},
+	{"sms_sign_name", "", "短信签名"},
+	{"sms_template_id", "", "短信模板 ID"},
+	{"sms_app_id", "", "短信应用 ID"},
+	{"sms_sender", "", "华为短信发送通道号"},
+	{"sms_custom_headers", "{}", "自定义短信接口请求头 JSON"},
+	{"sms_timeout_seconds", "10", "短信请求超时秒数"},
+}
+
+func isSMSSecretConfig(key string) bool {
+	switch key {
+	case "sms_access_key_id", "sms_access_key_secret", "sms_custom_headers":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *SDPivotOpsAdminHandler) GetSMSConfig(c *gin.Context) {
+	if denyIfNotOpsAdmin(c) {
+		return
+	}
+	response := make(map[string]interface{}, len(smsConfigDefaults)+3)
+	for _, item := range smsConfigDefaults {
+		value := h.getOrCreateConfigValue(item.key, item.value, item.description)
+		if isSMSSecretConfig(item.key) {
+			response[item.key+"_configured"] = value != "" && value != "{}"
+			continue
+		}
+		response[item.key] = value
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func (h *SDPivotOpsAdminHandler) UpdateSMSConfig(c *gin.Context) {
+	if denyIfNotOpsAdmin(c) {
+		return
+	}
+	var req struct {
+		Provider        string  `json:"provider" binding:"required,oneof=aliyun tencent huawei custom"`
+		Endpoint        string  `json:"endpoint" binding:"required,url"`
+		AccessKeyID     *string `json:"access_key_id"`
+		AccessKeySecret *string `json:"access_key_secret"`
+		Region          string  `json:"region"`
+		SignName        string  `json:"sign_name"`
+		TemplateID      string  `json:"template_id"`
+		AppID           string  `json:"app_id"`
+		Sender          string  `json:"sender"`
+		CustomHeaders   *string `json:"custom_headers"`
+		TimeoutSeconds  int     `json:"timeout_seconds" binding:"omitempty,min=1,max=120"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.TimeoutSeconds == 0 {
+		req.TimeoutSeconds = 10
+	}
+
+	values := map[string]string{
+		"sms_provider":        strings.ToLower(strings.TrimSpace(req.Provider)),
+		"sms_endpoint":        strings.TrimSpace(req.Endpoint),
+		"sms_region":          strings.TrimSpace(req.Region),
+		"sms_sign_name":       strings.TrimSpace(req.SignName),
+		"sms_template_id":     strings.TrimSpace(req.TemplateID),
+		"sms_app_id":          strings.TrimSpace(req.AppID),
+		"sms_sender":          strings.TrimSpace(req.Sender),
+		"sms_timeout_seconds": strconv.Itoa(req.TimeoutSeconds),
+	}
+	if req.AccessKeyID != nil {
+		values["sms_access_key_id"] = strings.TrimSpace(*req.AccessKeyID)
+	}
+	if req.AccessKeySecret != nil {
+		values["sms_access_key_secret"] = strings.TrimSpace(*req.AccessKeySecret)
+	}
+	if req.CustomHeaders != nil {
+		values["sms_custom_headers"] = strings.TrimSpace(*req.CustomHeaders)
+	}
+	for _, item := range smsConfigDefaults {
+		if value, ok := values[item.key]; ok {
+			h.upsertConfig(item.key, value, item.description)
+		}
+	}
+	h.writeAuditLog(c, "update_sms_config", "system_config", "sms", "provider: "+values["sms_provider"])
+	c.JSON(http.StatusOK, gin.H{"message": "sms config updated"})
 }
 
 func (h *SDPivotOpsAdminHandler) GetTrialConfig(c *gin.Context) {
@@ -296,11 +184,9 @@ func (h *SDPivotOpsAdminHandler) GetTrialConfig(c *gin.Context) {
 	}
 	trialDays := h.getOrCreateConfigValue("trial_days", "30", "试用期天数")
 	extendedDays := h.getOrCreateConfigValue("extended_trial_days", "90", "认证后延长天数")
-	downgradeSpaceLimit := h.getOrCreateConfigValue("downgrade_space_limit", "1", "降级后空间数量限制")
 	c.JSON(http.StatusOK, gin.H{
-		"trial_days":            trialDays,
-		"extended_trial_days":   extendedDays,
-		"downgrade_space_limit": downgradeSpaceLimit,
+		"trial_days":          trialDays,
+		"extended_trial_days": extendedDays,
 	})
 }
 
@@ -309,9 +195,8 @@ func (h *SDPivotOpsAdminHandler) UpdateTrialConfig(c *gin.Context) {
 		return
 	}
 	var req struct {
-		TrialDays           int `json:"trial_days"`
-		ExtendedTrialDays   int `json:"extended_trial_days"`
-		DowngradeSpaceLimit int `json:"downgrade_space_limit"`
+		TrialDays         int `json:"trial_days"`
+		ExtendedTrialDays int `json:"extended_trial_days"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -320,7 +205,6 @@ func (h *SDPivotOpsAdminHandler) UpdateTrialConfig(c *gin.Context) {
 
 	h.upsertConfig("trial_days", strconv.Itoa(req.TrialDays), "试用期天数")
 	h.upsertConfig("extended_trial_days", strconv.Itoa(req.ExtendedTrialDays), "认证后延长天数")
-	h.upsertConfig("downgrade_space_limit", strconv.Itoa(req.DowngradeSpaceLimit), "降级后空间数量限制")
 
 	h.writeAuditLog(c, "update_trial_config", "system_config", "trial", "")
 	c.JSON(http.StatusOK, gin.H{"message": "trial config updated"})
@@ -510,7 +394,3 @@ func getUserIDFromCtx(c *gin.Context) string {
 	}
 	return ""
 }
-
-// Ensure unused imports are referenced
-var _ = fmt.Sprintf
-var _ = gorm.ErrRecordNotFound

@@ -43,19 +43,12 @@ func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
 		ops.GET("/announcements", h.ListAnnouncements)
 		ops.DELETE("/announcements/:id", h.DeleteAnnouncement)
 
-		// Billing (PRD 4.1.3)
-		ops.GET("/billing/plans", h.ListBillingPlans)
-		ops.POST("/billing/plans", h.CreateBillingPlan)
-		ops.PUT("/billing/plans/:id", h.UpdateBillingPlan)
-		ops.DELETE("/billing/plans/:id", h.DeleteBillingPlan)
-		ops.GET("/billing/subscriptions", h.ListSubscriptions)
-		ops.PUT("/billing/subscriptions/:orgId", h.UpdateSubscription)
-		ops.GET("/billing/invoices", h.ListInvoices)
-
 		// Config (PRD 4.1.3)
 		ops.GET("/config", h.ListConfigs)
 		ops.GET("/config/trial", h.GetTrialConfig)
 		ops.PUT("/config/trial", h.UpdateTrialConfig)
+		ops.GET("/config/sms", h.GetSMSConfig)
+		ops.PUT("/config/sms", h.UpdateSMSConfig)
 		ops.PUT("/config/:key", h.UpdateConfig)
 
 		// Models (PRD 4.1.3)

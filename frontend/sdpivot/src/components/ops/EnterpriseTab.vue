@@ -29,7 +29,6 @@ const entColumns = [
   { colKey: 'name', title: '企业名称', ellipsis: true },
   { colKey: 'member_count', title: '成员数', width: 80 },
   { colKey: 'auth_status', title: '认证状态', width: 100 },
-  { colKey: 'subscription_status', title: '订阅', width: 80 },
   { colKey: 'created_at', title: '创建时间', width: 120 },
   { colKey: 'operation', title: '操作', width: 80 },
 ]

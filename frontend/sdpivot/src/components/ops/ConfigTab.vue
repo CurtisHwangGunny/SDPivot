@@ -6,8 +6,6 @@
         <t-input v-model="trialForm.trial_days" type="number" style="width:80px" />
         <span>认证后延长:</span>
         <t-input v-model="trialForm.extended_trial_days" type="number" style="width:80px" />
-        <span>降级空间限制:</span>
-        <t-input v-model="trialForm.downgrade_space_limit" type="number" style="width:80px" />
         <t-button theme="primary" @click="saveTrial">保存</t-button>
       </div>
     </t-card>
@@ -27,7 +25,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import * as opsApi from '@/api/ops'
 
 const configs = ref<any[]>([])
-const trialForm = reactive({ trial_days: '30', extended_trial_days: '90', downgrade_space_limit: '1' })
+const trialForm = reactive({ trial_days: '30', extended_trial_days: '90' })
 const configColumns = [
   { colKey: 'key', title: '配置项', width: 200 },
   { colKey: 'value', title: '值', ellipsis: true },
@@ -48,13 +46,12 @@ async function loadTrialConfig() {
     const d = r.data as any
     trialForm.trial_days = d.trial_days || '30'
     trialForm.extended_trial_days = d.extended_trial_days || '90'
-    trialForm.downgrade_space_limit = d.downgrade_space_limit || '1'
   } catch {}
 }
 
 async function saveTrial() {
   try {
-    await opsApi.updateTrialConfig({ trial_days: parseInt(trialForm.trial_days), extended_trial_days: parseInt(trialForm.extended_trial_days), downgrade_space_limit: parseInt(trialForm.downgrade_space_limit) })
+    await opsApi.updateTrialConfig({ trial_days: parseInt(trialForm.trial_days), extended_trial_days: parseInt(trialForm.extended_trial_days) })
     MessagePlugin.success('保存成功')
   } catch (e: any) {
     MessagePlugin.error(e.response?.data?.error || '保存失败')

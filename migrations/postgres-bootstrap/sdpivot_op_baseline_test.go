@@ -111,7 +111,7 @@ func TestBaselineChecksExistingTableCompatibilityBeforeHelpersAndPolicies(t *tes
 		"CREATE OR REPLACE FUNCTION sdpivot_op_bootstrap_000012_assert_schema",
 		"SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE)",
 		"CREATE TABLE IF NOT EXISTS org_ext",
-		"CREATE TABLE IF NOT EXISTS invoices",
+		"CREATE TABLE IF NOT EXISTS sensitive_words",
 		"SELECT sdpivot_op_bootstrap_000012_assert_schema(TRUE)",
 		"DROP FUNCTION sdpivot_op_bootstrap_000012_assert_schema(BOOLEAN)",
 		"CREATE OR REPLACE FUNCTION set_tenant_context",
@@ -248,8 +248,7 @@ func TestBaselineCreatesObjectsBeforePolicies(t *testing.T) {
 		"org_ext", "org_members", "smartknora_user_profiles", "refresh_tokens", "token_usage",
 		"knowledge_spaces", "space_members", "space_categories", "documents", "document_chunks",
 		"document_versions", "chunk_strategies", "qa_sessions", "qa_messages", "writing_drafts",
-		"write_category_config", "announcements", "audit_logs", "sensitive_words", "billing_plans",
-		"enterprise_subscriptions", "invoices",
+		"write_category_config", "announcements", "audit_logs", "sensitive_words",
 	} {
 		requireFragments(t, sql, "CREATE TABLE IF NOT EXISTS "+table)
 	}
@@ -294,7 +293,7 @@ func TestBaselineContainsNoFixedAccountRoleOrSeedData(t *testing.T) {
 		}
 	}
 
-	if regexp.MustCompile(`\binsert\s+into\s+(announcements|sensitive_words|billing_plans|enterprise_subscriptions|invoices)\b`).MatchString(sql) {
+	if regexp.MustCompile(`\binsert\s+into\s+(announcements|sensitive_words)\b`).MatchString(sql) {
 		t.Error("bootstrap must not seed retired SaaS operations data")
 	}
 }

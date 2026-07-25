@@ -82,7 +82,7 @@ WHERE deleted_at IS NULL;
 开发服务器历史存在 `smartknora` 独立数据库，但该库未被 SDP 后端使用，且存在以下问题：
 
 - 与 WeKnora `users.id` 类型不一致
-- 缺失 `enterprises`、`billing_plans`、`audit_logs`、`models` 等运营必需表
+- 缺失 `enterprises`、`audit_logs`、`models` 等运营必需表
 - 与当前 SDP API 没有运行时连接关系
 - 容易造成部署与排障混淆
 

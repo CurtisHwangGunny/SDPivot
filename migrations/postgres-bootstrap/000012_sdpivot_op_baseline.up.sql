@@ -145,17 +145,7 @@ BEGIN
           ('sensitive_words', 'id', ARRAY['character varying']),
           ('sensitive_words', 'word', ARRAY['character varying']),
           ('sensitive_words', 'category', ARRAY['character varying']),
-          ('sensitive_words', 'status', ARRAY['character varying']),
-          ('billing_plans', 'id', ARRAY['character varying']),
-          ('billing_plans', 'status', ARRAY['character varying']),
-          ('enterprise_subscriptions', 'id', ARRAY['character varying']),
-          ('enterprise_subscriptions', 'org_id', ARRAY['character varying']),
-          ('enterprise_subscriptions', 'plan_id', ARRAY['character varying']),
-          ('invoices', 'id', ARRAY['character varying']),
-          ('invoices', 'org_id', ARRAY['character varying']),
-          ('invoices', 'status', ARRAY['character varying']),
-          ('invoices', 'period_start', ARRAY['timestamp with time zone']),
-          ('invoices', 'period_end', ARRAY['timestamp with time zone'])
+          ('sensitive_words', 'status', ARRAY['character varying'])
       ) AS required(table_name, column_name, allowed_types)
       LEFT JOIN information_schema.columns existing
         ON existing.table_schema = 'public'
@@ -421,7 +411,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_phase VARCHAR(20) DEFAULT '30day';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS authenticated_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_extended_at TIMESTAMPTZ;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
 
 DO $$
 DECLARE
@@ -468,7 +457,6 @@ CREATE TABLE IF NOT EXISTS org_ext (
     auth_type           VARCHAR(20),
     auth_expires_at     TIMESTAMPTZ,
     tenant_id           BIGINT NOT NULL,
-    subscription_status VARCHAR(20) DEFAULT 'free',
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -733,45 +721,28 @@ CREATE INDEX IF NOT EXISTS idx_sw_word ON sensitive_words (word);
 CREATE INDEX IF NOT EXISTS idx_sw_category ON sensitive_words (category);
 CREATE INDEX IF NOT EXISTS idx_sw_status ON sensitive_words (status);
 
-CREATE TABLE IF NOT EXISTS billing_plans (
-    id            VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    name          VARCHAR(100) NOT NULL,
-    price         DECIMAL(10,2) NOT NULL DEFAULT 0,
-    token_quota   BIGINT NOT NULL DEFAULT 0,
-    storage_quota BIGINT NOT NULL DEFAULT 0,
-    features      JSONB NOT NULL DEFAULT '{}'::JSONB,
-    status        VARCHAR(20) NOT NULL DEFAULT 'active',
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS system_configs (
+    id          BIGSERIAL PRIMARY KEY,
+    key         VARCHAR(100) NOT NULL UNIQUE,
+    value       TEXT NOT NULL DEFAULT '',
+    description VARCHAR(255) NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_bp_status ON billing_plans (status);
 
-CREATE TABLE IF NOT EXISTS enterprise_subscriptions (
-    id         VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    org_id     VARCHAR(36) NOT NULL,
-    plan_id    VARCHAR(36) NOT NULL,
-    status     VARCHAR(20) NOT NULL DEFAULT 'active',
-    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_es_org ON enterprise_subscriptions (org_id);
-CREATE INDEX IF NOT EXISTS idx_es_plan ON enterprise_subscriptions (plan_id);
-
-CREATE TABLE IF NOT EXISTS invoices (
-    id           VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    org_id       VARCHAR(36) NOT NULL,
-    plan_id      VARCHAR(36),
-    amount       DECIMAL(10,2) NOT NULL DEFAULT 0,
-    period_start TIMESTAMPTZ NOT NULL,
-    period_end   TIMESTAMPTZ NOT NULL,
-    status       VARCHAR(20) NOT NULL DEFAULT 'pending',
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_inv_org ON invoices (org_id);
-CREATE INDEX IF NOT EXISTS idx_inv_status ON invoices (status);
-CREATE INDEX IF NOT EXISTS idx_inv_period ON invoices (period_start, period_end);
+INSERT INTO system_configs (key, value, description) VALUES
+    ('sms_provider', 'custom', '短信服务商: aliyun/tencent/huawei/custom'),
+    ('sms_endpoint', '', '短信服务 HTTP 接口地址'),
+    ('sms_access_key_id', '', '短信服务 Access Key ID'),
+    ('sms_access_key_secret', '', '短信服务 Access Key Secret'),
+    ('sms_region', '', '短信服务区域'),
+    ('sms_sign_name', '', '短信签名'),
+    ('sms_template_id', '', '短信模板 ID'),
+    ('sms_app_id', '', '短信应用 ID'),
+    ('sms_sender', '', '华为短信发送通道号'),
+    ('sms_custom_headers', '{}', '自定义短信接口请求头 JSON'),
+    ('sms_timeout_seconds', '10', '短信请求超时秒数')
+ON CONFLICT (key) DO NOTHING;
 
 SELECT sdpivot_op_bootstrap_000012_assert_schema(TRUE);
 DROP FUNCTION sdpivot_op_bootstrap_000012_assert_schema(BOOLEAN);
