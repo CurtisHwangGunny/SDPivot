@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"github.com/sirupsen/logrus"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 // Recovery is a middleware that recovers from panics
@@ -28,8 +28,7 @@ func Recovery() gin.HandlerFunc {
 
 				// 返回500错误
 				c.AbortWithStatusJSON(500, gin.H{
-					"error":   "Internal Server Error",
-					"message": fmt.Sprintf("%v", err),
+					"error": "Internal Server Error",
 				})
 			}
 		}()

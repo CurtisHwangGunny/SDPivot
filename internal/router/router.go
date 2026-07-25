@@ -36,6 +36,7 @@ type RouterParams struct {
 	dig.In
 
 	Config                       *config.Config
+	SystemSettingService         interfaces.SystemSettingService
 	FileService                  interfaces.FileService
 	UserService                  interfaces.UserService
 	KBService                    interfaces.KnowledgeBaseService
@@ -112,9 +113,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-API-Key", "X-Request-ID", "X-Tenant-ID", "X-Embed-Session"},
 		ExposeHeaders:    []string{"Content-Length", "Access-Control-Allow-Origin"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 		MaxAge:           12 * time.Hour,
 	}))
+	r.Use(middleware.SecurityHeaders())
 
 	// 基础中间件（不需要认证）
 	r.Use(middleware.RequestID())
@@ -161,6 +163,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.Config))
+	r.Use(middleware.IPWhitelist(params.SystemSettingService))
 
 	// 文件服务：统一代理本地/MinIO/COS/TOS存储后端（需要认证）
 	serveFiles(r, params.FileService)

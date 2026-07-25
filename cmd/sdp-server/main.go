@@ -22,6 +22,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/router"
 )
 
@@ -88,6 +89,7 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.SecurityHeaders())
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     getAllowedOrigins(),
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -115,7 +117,13 @@ func main() {
 	}).RegisterRoutes(r)
 
 	// ── Start Server ───────────────────────────────────────────
-	srv := &http.Server{Addr: ":" + port, Handler: r}
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 	serveErr := make(chan error, 1)
 	go func() {
 		log.Printf("[Server] SDPivot v2.0.0 starting on :%s", port)

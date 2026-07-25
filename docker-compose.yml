@@ -33,9 +33,10 @@ services:
         - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
     container_name: WeKnora-app
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080"
     volumes:
       - data-files:/data/files
+      - backup-data:/data/backups
       - docreader-tmp:/tmp/docreader:ro
       - ./config/config.yaml:/app/config/config.yaml
       # Optional: mount custom skills directory (allows adding skills without rebuilding image)
@@ -79,6 +80,7 @@ services:
       - DB_USER=${DB_USER:-}
       - DB_PASSWORD=${DB_PASSWORD:-}
       - DB_NAME=${DB_NAME:-}
+      - WEKNORA_BACKUP_DIR=${WEKNORA_BACKUP_DIR:-/data/backups}
       - TZ=${TZ:-Asia/Shanghai}
       - WEKNORA_LANGUAGE=${WEKNORA_LANGUAGE:-zh-CN}
       # ========== Langfuse (optional observability) ==========
@@ -373,8 +375,8 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: WeKnora-minio
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${INFRA_BIND:-127.0.0.1}:${MINIO_PORT:-9000}:9000"
+      - "${INFRA_BIND:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY_ID:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
@@ -404,8 +406,8 @@ services:
       - NEO4J_apoc_import_file_use__neo4j__config=true
       - NEO4JLABS_PLUGINS=["apoc"]
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "${INFRA_BIND:-127.0.0.1}:7474:7474"
+      - "${INFRA_BIND:-127.0.0.1}:7687:7687"
     restart: always
     networks:
       - WeKnora-network
@@ -417,8 +419,8 @@ services:
     image: qdrant/qdrant:v1.16.2
     container_name: WeKnora-qdrant
     ports:
-      - "${QDRANT_REST_PORT:-6333}:6333"
-      - "${QDRANT_PORT:-6334}:6334"
+      - "${INFRA_BIND:-127.0.0.1}:${QDRANT_REST_PORT:-6333}:6333"
+      - "${INFRA_BIND:-127.0.0.1}:${QDRANT_PORT:-6334}:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
@@ -446,8 +448,8 @@ services:
       timeout: 20s
       retries: 3
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      - "${INFRA_BIND:-127.0.0.1}:19530:19530"
+      - "${INFRA_BIND:-127.0.0.1}:9091:9091"
     volumes:
       - milvus_data:/var/lib/milvus
     networks:
@@ -469,8 +471,8 @@ services:
       - CLUSTER_DATA_BIND_PORT=7001
       - RAFT_BOOTSTRAP_EXPECT=1
     ports:
-      - "9035:8080"
-      - "50052:50051"
+      - "${INFRA_BIND:-127.0.0.1}:9035:8080"
+      - "${INFRA_BIND:-127.0.0.1}:50052:50051"
     volumes:
       - weaviate_data:/var/lib/weaviate
     networks:
@@ -503,8 +505,8 @@ services:
       - FE_SERVERS=fe1:doris-fe:9010
       - FE_ID=1
     ports:
-      - "${DORIS_FE_HTTP_PORT:-8030}:8030"
-      - "${DORIS_FE_MYSQL_PORT:-9030}:9030"
+      - "${INFRA_BIND:-127.0.0.1}:${DORIS_FE_HTTP_PORT:-8030}:8030"
+      - "${INFRA_BIND:-127.0.0.1}:${DORIS_FE_MYSQL_PORT:-9030}:9030"
     volumes:
       - doris_fe_meta:/opt/apache-doris/fe/doris-meta
       - doris_fe_log:/opt/apache-doris/fe/log
@@ -524,7 +526,7 @@ services:
     depends_on:
       - doris-fe
     ports:
-      - "${DORIS_BE_HTTP_PORT:-8040}:8040"
+      - "${INFRA_BIND:-127.0.0.1}:${DORIS_BE_HTTP_PORT:-8040}:8040"
     volumes:
       - doris_be_storage:/opt/apache-doris/be/storage
       - doris_be_log:/opt/apache-doris/be/log
@@ -538,7 +540,7 @@ services:
     image: dexidp/dex:latest
     container_name: dex
     ports:
-      - "5556:5556"
+      - "${INFRA_BIND:-127.0.0.1}:5556:5556"
     volumes:
       - ./misc/dex-config.yaml:/etc/dex/config.yaml
     command: ["dex", "serve", "/etc/dex/config.yaml"]
@@ -635,9 +637,9 @@ services:
       MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}
     ports:
       # 9100：S3 API（浏览器上传媒体时会直连此端口，必须对外暴露）
-      - "${LANGFUSE_MINIO_S3_PORT:-9100}:9000"
+      - "${INFRA_BIND:-127.0.0.1}:${LANGFUSE_MINIO_S3_PORT:-9100}:9000"
       # 9101：MinIO 控制台（可选，方便排障）
-      - "${LANGFUSE_MINIO_CONSOLE_PORT:-9101}:9001"
+      - "${INFRA_BIND:-127.0.0.1}:${LANGFUSE_MINIO_CONSOLE_PORT:-9101}:9001"
     volumes:
       - langfuse_minio_data:/data
     healthcheck:
@@ -729,7 +731,7 @@ services:
     restart: unless-stopped
     depends_on: *langfuse-depends-on
     ports:
-      - "${LANGFUSE_WEB_PORT:-3000}:3000"
+      - "${INFRA_BIND:-127.0.0.1}:${LANGFUSE_WEB_PORT:-3000}:3000"
     # 同样走 wrapper entrypoint，末尾写死 web 的原始启动命令（见镜像 Dockerfile 的 CMD）
     entrypoint:
       - /bin/sh
@@ -770,7 +772,7 @@ services:
       context: ./mcp-server
     container_name: WeKnora-mcp
     ports:
-      - "${MCP_PORT:-8082}:8000"
+      - "${INFRA_BIND:-127.0.0.1}:${MCP_PORT:-8082}:8000"
     environment:
       - WEKNORA_BASE_URL=http://app:8080/api/v1
       - WEKNORA_API_KEY=${WEKNORA_API_KEY:-}
@@ -790,6 +792,7 @@ networks:
 volumes:
   postgres-data:
   data-files:
+  backup-data:
   docreader-tmp:
   minio_data:
   neo4j-data:

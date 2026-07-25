@@ -1,7 +1,8 @@
 package router
 
 import (
-	"log"
+	"crypto/rand"
+	"encoding/base64"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -38,8 +39,11 @@ type SDPivotRouter struct {
 func NewSDPivotRouter(params SDPivotRouterParams) *SDPivotRouter {
 	jwtSecret := getSDPivotEnv("SDP_JWT_SECRET", "SMARTKNORA_JWT_SECRET")
 	if jwtSecret == "" {
-		log.Println("WARNING: Using default JWT secret. Set SDP_JWT_SECRET in production!")
-		jwtSecret = "sdp-dev-secret-change-in-production"
+		secret := make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			panic("failed to generate SDPivot JWT secret: " + err.Error())
+		}
+		jwtSecret = base64.RawURLEncoding.EncodeToString(secret)
 	}
 
 	jwtConfig := auth.DefaultJWTConfig(jwtSecret)

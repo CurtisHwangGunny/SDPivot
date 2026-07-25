@@ -5,7 +5,7 @@ services:
     image: paradedb/paradedb:v0.22.2-pg17
     container_name: WeKnora-postgres-dev
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${DEV_BIND:-127.0.0.1}:${DB_PORT:-5432}:5432"
     environment:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
@@ -27,7 +27,7 @@ services:
     image: redis:7.0-alpine
     container_name: WeKnora-redis-dev
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${DEV_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data_dev:/data
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
@@ -85,8 +85,8 @@ services:
     image: minio/minio:latest
     container_name: WeKnora-minio-dev
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${DEV_BIND:-127.0.0.1}:${MINIO_PORT:-9000}:9000"
+      - "${DEV_BIND:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY_ID:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_ACCESS_KEY:-minioadmin}
@@ -108,8 +108,8 @@ services:
     image: qdrant/qdrant:v1.16.2
     container_name: WeKnora-qdrant-dev
     ports:
-      - "${QDRANT_REST_PORT:-6333}:6333"
-      - "${QDRANT_PORT:-6334}:6334"
+      - "${DEV_BIND:-127.0.0.1}:${QDRANT_REST_PORT:-6333}:6333"
+      - "${DEV_BIND:-127.0.0.1}:${QDRANT_PORT:-6334}:6334"
     volumes:
       - qdrant_data_dev:/qdrant/storage
     networks:
@@ -140,7 +140,7 @@ services:
         soft: -1
         hard: -1
     ports:
-      - "${OPENSEARCH_PORT:-9200}:9200"
+      - "${DEV_BIND:-127.0.0.1}:${OPENSEARCH_PORT:-9200}:9200"
     volumes:
       - opensearch_data_dev:/usr/share/opensearch/data
     networks:
@@ -165,7 +165,7 @@ services:
       - OPENSEARCH_HOSTS=["http://opensearch:9200"]
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
     ports:
-      - "${OPENSEARCH_DASHBOARDS_PORT:-5601}:5601"
+      - "${DEV_BIND:-127.0.0.1}:${OPENSEARCH_DASHBOARDS_PORT:-5601}:5601"
     networks:
       - WeKnora-network-dev
     depends_on:
@@ -192,8 +192,8 @@ services:
       timeout: 20s
       retries: 3
     ports:
-      - "${MILVUS_PORT:-19530}:19530"
-      - "${MILVUS_HEALTH_PORT:-9091}:9091"
+      - "${DEV_BIND:-127.0.0.1}:${MILVUS_PORT:-19530}:19530"
+      - "${DEV_BIND:-127.0.0.1}:${MILVUS_HEALTH_PORT:-9091}:9091"
     volumes:
       - milvus_data_dev:/var/lib/milvus
     networks:
@@ -215,8 +215,8 @@ services:
       - NEO4J_apoc_import_file_use__neo4j__config=true
       - NEO4JLABS_PLUGINS=["apoc"]
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "${DEV_BIND:-127.0.0.1}:7474:7474"
+      - "${DEV_BIND:-127.0.0.1}:7687:7687"
     restart: always
     networks:
       - WeKnora-network-dev
@@ -243,7 +243,7 @@ services:
     image: wechatopenai/weknora-docreader:${WEKNORA_VERSION:-latest}
     container_name: WeKnora-docreader-dev
     ports:
-      - "${DOCREADER_PORT:-50051}:50051"
+      - "${DEV_BIND:-127.0.0.1}:${DOCREADER_PORT:-50051}:50051"
     volumes:
       - docreader-tmp-dev:/tmp/docreader
     environment:
@@ -290,7 +290,7 @@ services:
     profiles:
       - odl-hybrid
     ports:
-      - "${ODL_HYBRID_PORT:-5002}:5002"
+      - "${DEV_BIND:-127.0.0.1}:${ODL_HYBRID_PORT:-5002}:5002"
     environment:
       # Default --no-ocr (digital PDFs). Scanned PDFs: use builtin OCR / MinerU, or
       # ODL_HYBRID_EXTRA_ARGS="--force-ocr" (needs EasyOCR + libGL in image).
@@ -303,7 +303,7 @@ services:
     image: dexidp/dex:latest
     container_name: WeKnora-dex-dev
     ports:
-      - "5556:5556"
+      - "${DEV_BIND:-127.0.0.1}:5556:5556"
     volumes:
       - ./misc/dex-config.yaml:/etc/dex/config.yaml
     command: ["dex", "serve", "/etc/dex/config.yaml"]
@@ -392,8 +392,8 @@ services:
       MINIO_ROOT_USER: ${LANGFUSE_MINIO_USER:-langfuseminio}
       MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}
     ports:
-      - "${LANGFUSE_MINIO_S3_PORT:-9100}:9000"
-      - "${LANGFUSE_MINIO_CONSOLE_PORT:-9101}:9001"
+      - "${DEV_BIND:-127.0.0.1}:${LANGFUSE_MINIO_S3_PORT:-9100}:9000"
+      - "${DEV_BIND:-127.0.0.1}:${LANGFUSE_MINIO_CONSOLE_PORT:-9101}:9001"
     volumes:
       - langfuse_minio_data_dev:/data
     healthcheck:
@@ -479,7 +479,7 @@ services:
     restart: unless-stopped
     depends_on: *langfuse-dev-depends-on
     ports:
-      - "${LANGFUSE_WEB_PORT:-3000}:3000"
+      - "${DEV_BIND:-127.0.0.1}:${LANGFUSE_WEB_PORT:-3000}:3000"
     entrypoint:
       - /bin/sh
       - -ec

@@ -80,6 +80,21 @@ func TestRequireRole_RejectsBelowMin(t *testing.T) {
 	}
 }
 
+func TestRequireRole_ViewerCannotEdit(t *testing.T) {
+	w := rbacTestHarness(types.TenantRoleViewer, "u1",
+		RequireRole(types.TenantRoleContributor, cfgRBAC(true)))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("Viewer must NOT clear edit gate, got %d", w.Code)
+	}
+}
+
+func TestRequireSystemAdmin_EditorCannotAdmin(t *testing.T) {
+	w := rbacTestHarness(types.TenantRoleContributor, "u1", RequireSystemAdmin(cfgRBAC(false)))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("Editor must NOT clear system admin gate, got %d", w.Code)
+	}
+}
+
 func TestRequireRole_FailOpenWhenRBACDisabled(t *testing.T) {
 	// EnableRBAC=false: the middleware should log but not block, so the
 	// downstream handler still runs. This is the rollout-safety guarantee.

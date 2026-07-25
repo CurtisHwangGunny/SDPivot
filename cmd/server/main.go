@@ -70,7 +70,10 @@ func main() {
 	) error {
 		// Create HTTP server
 		server := &http.Server{
-			Handler: router,
+			Handler:           router,
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			MaxHeaderBytes:    1 << 20,
 		}
 
 		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

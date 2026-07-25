@@ -84,7 +84,7 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
-	if strings.TrimSpace(req.Confirmation) != "RESTORE "+id {
+	if req.Confirmation != "RESTORE "+id {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "confirmation must equal RESTORE " + id})
 		return
 	}

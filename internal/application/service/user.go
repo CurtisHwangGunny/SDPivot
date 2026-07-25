@@ -819,6 +819,10 @@ func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*t
 	if !ok {
 		return nil, 0, errors.New("invalid token claims")
 	}
+	tokenType, ok := claims["type"].(string)
+	if !ok || tokenType != "access" {
+		return nil, 0, errors.New("not an access token")
+	}
 
 	userID, ok := claims["user_id"].(string)
 	if !ok {

@@ -85,11 +85,11 @@ func (m *JWTManager) GenerateAccessToken(userID string, tenantID uint64, role st
 // Returns the claims if valid, or an error if the token is invalid/expired.
 func (m *JWTManager) ValidateAccessToken(tokenString string) (*AccessClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &AccessClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if token.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(m.config.SecretKey), nil
-	})
+	}, jwt.WithIssuer(m.config.Issuer), jwt.WithAudience(m.config.Audience))
 	if err != nil {
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
@@ -97,6 +97,9 @@ func (m *JWTManager) ValidateAccessToken(tokenString string) (*AccessClaims, err
 	claims, ok := token.Claims.(*AccessClaims)
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token claims")
+	}
+	if claims.Scope != "access" {
+		return nil, fmt.Errorf("invalid token scope")
 	}
 
 	return claims, nil
