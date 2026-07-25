@@ -23,12 +23,10 @@
       </div>
 
       <template v-else-if="selectedConfig">
-        <div class="model-switch-row">
+        <div v-if="configs.length > 1" class="model-switch-row">
           <div>
             <span class="switch-label">{{ t('system.modelConfigs.current') }}</span>
-            <strong v-if="configs.length === 1" class="single-model-name">{{ selectedConfig.name }}</strong>
             <t-select
-              v-else
               v-model="selectedId"
               :options="modelOptions"
               class="model-select"
@@ -314,9 +312,6 @@ onMounted(() => loadConfigs())
 .meta-item span {
   color: var(--td-text-color-secondary);
   font-size: 13px;
-}
-.single-model-name {
-  color: var(--td-text-color-primary);
 }
 .model-select {
   width: 300px;
