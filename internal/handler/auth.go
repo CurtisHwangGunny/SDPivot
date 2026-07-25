@@ -666,53 +666,6 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 	})
 }
 
-// SwitchTenant godoc
-// @Summary      切换激活租户
-// @Description  为当前用户在目标租户重新签发访问令牌；要求该用户在目标租户存在 active 成员关系
-// @Tags         认证
-// @Accept       json
-// @Produce      json
-// @Param        request  body      object{tenant_id=integer,refresh_token=string}  true  "切换请求"
-// @Success      200      {object}  types.LoginResponse
-// @Failure      400      {object}  errors.AppError  "参数错误"
-// @Failure      403      {object}  errors.AppError  "无该租户成员关系"
-// @Security     Bearer
-// @Router       /auth/switch-tenant [post]
-//
-// SwitchTenant is the v1 backend hook for the tenant-switcher UI added
-// in PR 3. The current PR ships the endpoint so multi-tenant tests can
-// exercise the membership flow end-to-end before the frontend lands.
-func (h *AuthHandler) SwitchTenant(c *gin.Context) {
-	ctx := c.Request.Context()
-
-	var req struct {
-		TenantID     uint64 `json:"tenant_id"     binding:"required"`
-		RefreshToken string `json:"refresh_token"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		appErr := errors.NewValidationError("Invalid switch-tenant request").WithDetails(err.Error())
-		c.Error(appErr)
-		return
-	}
-
-	user, err := h.userService.GetCurrentUser(ctx)
-	if err != nil || user == nil {
-		appErr := errors.NewUnauthorizedError("not authenticated")
-		c.Error(appErr)
-		return
-	}
-
-	resp, err := h.userService.SwitchTenant(ctx, user, req.TenantID, req.RefreshToken)
-	if err != nil {
-		logger.Errorf(ctx, "SwitchTenant failed user=%s target=%d: %v", user.ID, req.TenantID, err)
-		appErr := errors.NewForbiddenError("switch tenant failed").WithDetails(err.Error())
-		c.Error(appErr)
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
-}
-
 // AutoSetup godoc
 // @Summary      自动初始化（Lite 桌面版）
 // @Description  Lite 版专用：首次启动时自动创建默认用户和租户并返回令牌，后续启动直接签发令牌，免除手动注册/登录流程

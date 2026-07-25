@@ -561,18 +561,7 @@ const persistLoginResponse = async (response: any) => {
     if (Array.isArray(response.memberships)) {
       authStore.setMemberships(response.memberships)
     }
-    // If the backend dropped us into a non-home tenant (honoured a
-    // remembered "last active tenant" preference), set the override so
-    // subsequent requests carry X-Tenant-ID and the UI stays consistent.
-    // Otherwise clear any stale override left in localStorage by a
-    // previous session for a different account.
-    const activeIdNum = Number(activeTenant.id)
-    const homeIdNum = Number(homeTenantIdRaw)
-    if (Number.isFinite(activeIdNum) && Number.isFinite(homeIdNum) && activeIdNum !== homeIdNum) {
-      authStore.setSelectedTenant(activeIdNum, activeTenant.name || null)
-    } else {
-      authStore.setSelectedTenant(null, null)
-    }
+    authStore.setSelectedTenant(null, null)
   }
 
   await nextTick()

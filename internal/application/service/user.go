@@ -200,8 +200,7 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 	// "last active tenant" preference would mint a token for tenant N
 	// but tell the client they're in their home tenant.
 	logger.Info(ctx, "Generating tokens")
-	resolvedTenantID := s.resolveLoginTenantID(ctx, user)
-	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, resolvedTenantID)
+	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, types.DefaultTenantID)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to generate tokens: %v", err)
 		return &types.LoginResponse{
@@ -212,7 +211,7 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 	logger.Info(ctx, "Tokens generated successfully")
 
 	// Get tenant information
-	tenant, err := s.tenantService.GetTenantByID(ctx, resolvedTenantID)
+	tenant, err := s.tenantService.GetTenantByID(ctx, types.DefaultTenantID)
 	if err != nil {
 		logger.Warn(ctx, "Failed to get tenant info")
 	} else {
@@ -443,8 +442,7 @@ func (s *userService) LoginWithOIDC(ctx context.Context, code, redirectURI strin
 
 	// Resolve target tenant once so the JWT claim and the tenant we
 	// return below stay in sync; see Login for the rationale.
-	resolvedTenantID := s.resolveLoginTenantID(ctx, user)
-	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, resolvedTenantID)
+	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, types.DefaultTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate local tokens: %w", err)
 	}
@@ -452,12 +450,12 @@ func (s *userService) LoginWithOIDC(ctx context.Context, code, redirectURI strin
 	// 拉取 tenant + memberships，让 OIDC 登录的返回结构与本地登录一致，
 	// 前端无须为 OIDC 单独走一次 /auth/me 才能拿到角色。
 	var tenant *types.Tenant
-	if resolvedTenantID > 0 {
-		if t, terr := s.tenantService.GetTenantByID(ctx, resolvedTenantID); terr == nil {
+	if types.DefaultTenantID > 0 {
+		if t, terr := s.tenantService.GetTenantByID(ctx, types.DefaultTenantID); terr == nil {
 			tenant = t
 		} else {
 			logger.Warnf(ctx, "OIDC login: failed to load tenant %d for user %s: %v",
-				resolvedTenantID, user.ID, terr)
+				types.DefaultTenantID, user.ID, terr)
 		}
 	}
 	memberships := s.buildMembershipsForUser(ctx, user, tenant)
@@ -545,10 +543,6 @@ func (s *userService) UpdateUserPreferences(
 		merged.EnableMemory = &v
 	}
 	if patch.LastActiveTenantID != nil {
-		// *0 = "forget my preference, fall back to home on next login";
-		// any positive value = set/replace. We do not validate membership
-		// here — invalid values get culled on the next login via
-		// resolveLoginTenantID, keeping this endpoint cheap.
 		if *patch.LastActiveTenantID == 0 {
 			merged.LastActiveTenantID = nil
 		} else {
@@ -605,99 +599,15 @@ func (s *userService) ValidatePassword(ctx context.Context, userID string, passw
 	return bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 }
 
-// GenerateTokens generates access and refresh tokens for user. The
-// access token's tenant_id claim defaults to user.TenantID (home), but
-// if the user has persisted a still-valid "last active tenant"
-// preference we honour it instead — so login (and the refresh-token
-// rotation path that also calls into here) lands the user back where
-// they left off across devices. SwitchTenant remains the explicit tool
-// for switching to an arbitrary membership.
+// GenerateTokens generates access and refresh tokens for the single tenant.
 func (s *userService) GenerateTokens(
 	ctx context.Context,
 	user *types.User,
 ) (accessToken, refreshToken string, err error) {
-	return s.generateTokensForTenant(ctx, user, s.resolveLoginTenantID(ctx, user))
+	return s.generateTokensForTenant(ctx, user, types.DefaultTenantID)
 }
 
-// resolveLoginTenantID picks the tenant whose ID should be encoded in a
-// freshly minted access token. The contract:
-//
-//  1. If the user has no LastActiveTenantID preference set (or it points
-//     at home), return home — the historical behaviour.
-//  2. Otherwise validate the preference: the tenant must still exist and
-//     the user must still have an active membership (or be a cross-tenant
-//     superuser). Validation failure logs a warning, best-effort clears
-//     the stale preference (so we don't waste a DB round-trip on every
-//     subsequent login), and falls back to home.
-//
-// This is intentionally a private method on userService so it can reach
-// memberService / tenantService / userRepo. Errors from the validation
-// path never fail login; the worst case is the user lands in home.
-func (s *userService) resolveLoginTenantID(ctx context.Context, user *types.User) uint64 {
-	if user == nil {
-		return 0
-	}
-	pref := user.Preferences.LastActiveTenantID
-	if pref == nil || *pref == 0 || *pref == user.TenantID {
-		return user.TenantID
-	}
-	preferred := *pref
-
-	// Tenant must still exist.
-	if s.tenantService != nil {
-		if _, err := s.tenantService.GetTenantByID(ctx, preferred); err != nil {
-			logger.Warnf(ctx,
-				"resolveLoginTenantID: preferred tenant %d not loadable for user %s, "+
-					"clearing preference and falling back to home: %v",
-				preferred, user.ID, err)
-			s.clearLastActiveTenantPreference(ctx, user)
-			return user.TenantID
-		}
-	}
-
-	// Membership (or cross-tenant superuser) must still be valid. Mirrors
-	// the gate in SwitchTenant so the two entry points stay consistent.
-	if !user.CanAccessAllTenants {
-		if s.memberService == nil {
-			logger.Warnf(ctx,
-				"resolveLoginTenantID: member service unavailable; falling back to home for user %s",
-				user.ID)
-			return user.TenantID
-		}
-		member, err := s.memberService.GetMembership(ctx, user.ID, preferred)
-		if err != nil || member == nil || member.Status != types.TenantMemberStatusActive {
-			logger.Warnf(ctx,
-				"resolveLoginTenantID: user %s no longer has active membership in tenant %d, "+
-					"clearing preference and falling back to home (err=%v)",
-				user.ID, preferred, err)
-			s.clearLastActiveTenantPreference(ctx, user)
-			return user.TenantID
-		}
-	}
-
-	return preferred
-}
-
-// clearLastActiveTenantPreference is the best-effort cleanup half of
-// resolveLoginTenantID. Failures here are logged but never propagated:
-// the in-memory user already has the preference cleared for this login,
-// and the next login will re-attempt the cleanup.
-func (s *userService) clearLastActiveTenantPreference(ctx context.Context, user *types.User) {
-	if user == nil {
-		return
-	}
-	user.Preferences.LastActiveTenantID = nil
-	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		logger.Warnf(ctx,
-			"clearLastActiveTenantPreference: failed to persist cleared preference for user %s: %v",
-			user.ID, err)
-	}
-}
-
-// generateTokensForTenant is the shared implementation behind
-// GenerateTokens and SwitchTenant. It encodes activeTenantID into the
-// access token's tenant_id claim so the auth middleware scopes future
-// requests there.
+// generateTokensForTenant encodes the fixed tenant ID in access tokens.
 func (s *userService) generateTokensForTenant(
 	ctx context.Context,
 	user *types.User,
@@ -760,75 +670,6 @@ func (s *userService) generateTokensForTenant(
 	return accessToken, refreshToken, nil
 }
 
-// SwitchTenant verifies that user has an active membership in
-// targetTenantID and issues a new token pair scoped to that tenant.
-// The previous refresh token (if provided) is revoked so the old session
-// can no longer roll forward into the source tenant.
-//
-// Returns ErrMembershipNotFound when the user is not a member of the
-// target tenant. Cross-tenant superuser access (CanAccessAllTenants)
-// is allowed without a membership row, mirroring the auth middleware's
-// resolveTenantRole behaviour.
-func (s *userService) SwitchTenant(
-	ctx context.Context,
-	user *types.User,
-	targetTenantID uint64,
-	currentRefreshToken string,
-) (*types.LoginResponse, error) {
-	if user == nil {
-		return nil, errors.New("user is required")
-	}
-	if targetTenantID == 0 {
-		return nil, errors.New("target tenant ID is required")
-	}
-
-	// Verify membership unless the caller is a cross-tenant superuser
-	// switching outside their home tenant.
-	if !user.CanAccessAllTenants || targetTenantID == user.TenantID {
-		if s.memberService == nil {
-			return nil, errors.New("tenant membership service unavailable")
-		}
-		member, err := s.memberService.GetMembership(ctx, user.ID, targetTenantID)
-		if err != nil {
-			return nil, fmt.Errorf("lookup membership: %w", err)
-		}
-		if member == nil || member.Status != types.TenantMemberStatusActive {
-			return nil, ErrMembershipNotFound
-		}
-	}
-
-	tenant, err := s.tenantService.GetTenantByID(ctx, targetTenantID)
-	if err != nil {
-		return nil, fmt.Errorf("load target tenant: %w", err)
-	}
-
-	accessToken, refreshToken, err := s.generateTokensForTenant(ctx, user, targetTenantID)
-	if err != nil {
-		return nil, fmt.Errorf("generate tokens: %w", err)
-	}
-
-	// Best-effort revoke of the previous refresh token. Failure is
-	// logged but not fatal — the new tokens are already issued and the
-	// old refresh token will expire naturally.
-	if strings.TrimSpace(currentRefreshToken) != "" {
-		if err := s.RevokeToken(ctx, currentRefreshToken); err != nil {
-			logger.Warnf(ctx, "Failed to revoke previous refresh token during tenant switch: %v", err)
-		}
-	}
-
-	memberships := s.buildMembershipsForUser(ctx, user, tenant)
-
-	return &types.LoginResponse{
-		Success:      true,
-		Message:      "Tenant switched",
-		User:         user,
-		ActiveTenant: tenant,
-		Memberships:  memberships,
-		Token:        accessToken,
-		RefreshToken: refreshToken,
-	}, nil
-}
-
 // ValidateToken validates an access token. The second return value is
 // the JWT's `tenant_id` claim — i.e. the tenant the token was minted
 // for, which may differ from user.TenantID after a /auth/switch-tenant
@@ -867,42 +708,7 @@ func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*t
 		return nil, 0, err
 	}
 
-	// Extract active tenant from the JWT. Anything missing or unparseable
-	// falls back to the user's home tenant so old tokens (and tokens issued
-	// by code paths that don't yet set the claim) keep working.
-	activeTenantID := tenantIDFromClaims(claims, user.TenantID)
-
-	return user, activeTenantID, nil
-}
-
-// tenantIDFromClaims pulls the active tenant ID out of a parsed JWT
-// claim map. Returns fallback when the claim is missing or has an
-// unrecognised type. Extracted as a free function so it can be unit
-// tested without standing up the full userService dependency graph.
-//
-// JSON numbers come back as float64 from jwt.MapClaims; the int64 /
-// uint64 branches cover legacy code paths and tests that build claims
-// directly. Negative values are treated as missing.
-func tenantIDFromClaims(claims jwt.MapClaims, fallback uint64) uint64 {
-	raw, ok := claims["tenant_id"]
-	if !ok {
-		return fallback
-	}
-	switch v := raw.(type) {
-	case float64:
-		if v > 0 {
-			return uint64(v)
-		}
-	case int64:
-		if v > 0 {
-			return uint64(v)
-		}
-	case uint64:
-		if v > 0 {
-			return v
-		}
-	}
-	return fallback
+	return user, types.DefaultTenantID, nil
 }
 
 // RefreshToken refreshes access token using refresh token

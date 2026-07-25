@@ -251,16 +251,10 @@ import {
 } from '@/api/tenant/members'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
-import { useRoleLabel, useHomeTenant } from '@/composables/useRoleLabel'
-import {
-  navigateAfterTenantSwitch,
-  persistLastActiveTenantPreference,
-  stashTenantSwitchToast,
-} from '@/utils/tenantSwitch'
+import { useRoleLabel } from '@/composables/useRoleLabel'
 
 const { t, locale } = useI18n()
 const { formatRole } = useRoleLabel()
-const { homeTenantId } = useHomeTenant()
 const authStore = useAuthStore()
 
 // Reactive state
@@ -391,27 +385,6 @@ async function deleteCurrentTenant() {
       authStore.setMemberships(
         (authStore.memberships ?? []).filter((m) => m.tenant_id !== tid),
       )
-      await authStore.refreshFromAuthMe()
-      const next =
-        authStore.memberships.find((m) => m.tenant_id === homeTenantId.value) ??
-        authStore.memberships[0]
-      if (next) {
-        const switchingToHome =
-          homeTenantId.value !== null && homeTenantId.value === next.tenant_id
-        const name = next.tenant_name?.trim() || `#${next.tenant_id}`
-        authStore.setSelectedTenant(next.tenant_id, name)
-        stashTenantSwitchToast({
-          name,
-          role: formatRole(next.role) || undefined,
-          roleEnum: next.role || undefined,
-        })
-        const persist = persistLastActiveTenantPreference(
-          switchingToHome ? null : next.tenant_id,
-        )
-        await Promise.race([persist, new Promise((r) => setTimeout(r, 400))])
-        navigateAfterTenantSwitch()
-        return
-      }
       authStore.logout()
       window.location.href = '/login'
     } else {

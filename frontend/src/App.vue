@@ -2,16 +2,14 @@
 import { computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { MessagePlugin, NotifyPlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next'
 import ManualKnowledgeEditor from '@/components/manual-knowledge-editor.vue'
 import UploadConfirmHost from '@/components/UploadConfirmHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { getCurrentUser, userInfoFromApi } from '@/api/auth'
-import { consumePendingTenantSwitchToast } from '@/utils/tenantSwitch'
 import { useRoleLabel } from '@/composables/useRoleLabel'
 import { notifyLoginSuccess } from '@/utils/loginNotify'
-import { renderWorkspaceNotifyContent } from '@/utils/workspaceNotifyContent'
 
 // TDesign locale configs
 import enUSConfig from 'tdesign-vue-next/esm/locale/en_US'
@@ -76,17 +74,7 @@ const syncOIDCUserContext = async () => {
   if (Array.isArray(memberships)) {
     authStore.setMemberships(memberships)
   }
-  // Same active-vs-home reconciliation as Login.vue: if the OIDC login
-  // landed us in a non-home tenant (because the backend honoured a
-  // remembered last-active-tenant preference) make sure X-Tenant-ID
-  // override is set; otherwise drop any stale override.
-  const activeIdNum = tenant?.id != null ? Number(tenant.id) : NaN
-  const homeIdNum = user.tenant_id != null ? Number(user.tenant_id) : NaN
-  if (Number.isFinite(activeIdNum) && Number.isFinite(homeIdNum) && activeIdNum !== homeIdNum) {
-    authStore.setSelectedTenant(activeIdNum, tenant?.name || null)
-  } else {
-    authStore.setSelectedTenant(null, null)
-  }
+  authStore.setSelectedTenant(null, null)
 }
 
 const persistOIDCLoginResponse = async (response: any) => {
@@ -190,37 +178,8 @@ watch(
   { immediate: true },
 )
 
-// 切换租户后会 hard reload；切换前 stash 的 toast 这里 consume 并弹出，
-// 这样 toast 显示在新页面上，duration 才真正生效。
-const showPendingTenantSwitchToast = () => {
-  const pending = consumePendingTenantSwitchToast()
-  if (!pending) return
-  const templateKey = pending.role
-    ? 'tenant.switchSuccessContentWithRole'
-    : 'tenant.switchSuccessContent'
-  // Use tm() not t() — vue-i18n v11's `t()` replaces unspecified named
-  // placeholders with empty strings, which would strip {name}/{role}
-  // before the chip renderer can split on them. tm() returns the raw
-  // message verbatim.
-  const rawTemplate = tm(templateKey)
-  const template = typeof rawTemplate === 'string' ? rawTemplate : ''
-  NotifyPlugin.success({
-    title: t('tenant.switchSuccessTitle'),
-    content: renderWorkspaceNotifyContent({
-      template,
-      name: pending.name,
-      roleLabel: pending.role,
-      roleEnum: pending.roleEnum,
-      roleIconName: pending.roleEnum ? roleIcon(pending.roleEnum) : undefined,
-    }),
-    duration: 6000,
-    closeBtn: true,
-  })
-}
-
 onMounted(() => {
   handleGlobalOIDCCallback()
-  showPendingTenantSwitchToast()
 
   // Auto check for updates on startup
   setTimeout(() => {

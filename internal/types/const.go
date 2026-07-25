@@ -4,6 +4,8 @@ package types
 type ContextKey string
 
 const (
+	// DefaultTenantID is the only runtime tenant in single-tenant mode.
+	DefaultTenantID uint64 = 1
 	// TenantIDContextKey is the context key for tenant ID
 	TenantIDContextKey ContextKey = "TenantID"
 	// TenantInfoContextKey is the context key for tenant information

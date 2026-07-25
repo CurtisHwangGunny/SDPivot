@@ -43,13 +43,6 @@ func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
 		ops.GET("/announcements", h.ListAnnouncements)
 		ops.DELETE("/announcements/:id", h.DeleteAnnouncement)
 
-		// Filters (PRD 4.1.2)
-		ops.GET("/filters/words", h.ListSensitiveWords)
-		ops.POST("/filters/words", h.CreateSensitiveWord)
-		ops.DELETE("/filters/words/:id", h.DeleteSensitiveWord)
-		ops.GET("/filters/hits", h.ListFilterHits)
-		ops.PUT("/filters/hits/:orgId", h.UpdateFilterHit)
-
 		// Billing (PRD 4.1.3)
 		ops.GET("/billing/plans", h.ListBillingPlans)
 		ops.POST("/billing/plans", h.CreateBillingPlan)

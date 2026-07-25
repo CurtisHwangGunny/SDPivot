@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/config"
@@ -92,60 +91,10 @@ func Auth(
 		authHeader := c.GetHeader("Authorization")
 		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
 			token := strings.TrimPrefix(authHeader, "Bearer ")
-			user, jwtTenantID, err := userService.ValidateToken(c.Request.Context(), token)
+			user, _, err := userService.ValidateToken(c.Request.Context(), token)
 			if err == nil && user != nil {
-				// JWT Token认证成功
-				// 默认 target = JWT 里的 tenant_id（来自登录或 /auth/switch-tenant），
-				// 兼容 ValidateToken 的 fallback：claim 缺失时 jwtTenantID == user.TenantID。
-				targetTenantID := jwtTenantID
-				if targetTenantID == 0 {
-					targetTenantID = user.TenantID
-				}
-				crossTenantSwitch := targetTenantID != user.TenantID
-				tenantHeader := c.GetHeader("X-Tenant-ID")
-				if tenantHeader != "" {
-					// 解析目标租户ID。畸形 / 零值必须显式拒绝：静默忽略会让坏掉的
-					// 前端/SDK 悄悄写错租户，反而看不到问题。与 RequirePathTenantMatch
-					// 中对 :id 的校验保持一致（非空、可解析、>0）。
-					parsedTenantID, err := strconv.ParseUint(tenantHeader, 10, 64)
-					if err != nil || parsedTenantID == 0 {
-						logger.Warnf(c.Request.Context(),
-							"Invalid X-Tenant-ID header from user=%s: %q (err=%v)",
-							user.ID, tenantHeader, err)
-						c.JSON(http.StatusBadRequest, gin.H{
-							"error": "Invalid X-Tenant-ID header",
-						})
-						c.Abort()
-						return
-					}
-					// 检查用户是否有权限访问目标租户：自家租户、跨租户超管、或
-					// 有 active membership 行——三选一，由 IsTenantAccessible
-					// 统一判定。
-					if IsTenantAccessible(c.Request.Context(), user, parsedTenantID, memberService, cfg) {
-						// 验证目标租户是否存在
-						targetTenant, err := tenantService.GetTenantByID(c.Request.Context(), parsedTenantID)
-						if err == nil && targetTenant != nil {
-							targetTenantID = parsedTenantID
-							crossTenantSwitch = parsedTenantID != user.TenantID
-							log.Printf("User %s switching to tenant %d", user.ID, targetTenantID)
-						} else {
-							log.Printf("Error getting target tenant by ID: %v, tenantID: %d", err, parsedTenantID)
-							c.JSON(http.StatusBadRequest, gin.H{
-								"error": "Invalid target tenant ID",
-							})
-							c.Abort()
-							return
-						}
-					} else {
-						// 用户没有权限访问目标租户
-						log.Printf("User %s attempted to access tenant %d without permission", user.ID, parsedTenantID)
-						c.JSON(http.StatusForbidden, gin.H{
-							"error": "Forbidden: insufficient permissions to access target tenant",
-						})
-						c.Abort()
-						return
-					}
-				}
+				targetTenantID := types.DefaultTenantID
+				crossTenantSwitch := false
 
 				// 获取租户信息（使用目标租户ID）
 				tenant, err := tenantService.GetTenantByID(c.Request.Context(), targetTenantID)
@@ -174,8 +123,8 @@ func Auth(
 
 				// 存储用户和租户信息到上下文
 				logger.Infof(c.Request.Context(),
-					"[auth] resolved role=%s for user=%s in tenant=%d (jwt_tenant=%d, header=%q, cross_switch=%v)",
-					role, user.ID, targetTenantID, jwtTenantID, tenantHeader, crossTenantSwitch)
+					"[auth] resolved role=%s for user=%s in tenant=%d",
+					role, user.ID, targetTenantID)
 				c.Set(types.TenantIDContextKey.String(), targetTenantID)
 				c.Set(types.TenantInfoContextKey.String(), tenant)
 				c.Set(types.UserContextKey.String(), user)

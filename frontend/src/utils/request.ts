@@ -43,22 +43,6 @@ instance.interceptors.request.use(
     // 添加用户语言偏好
     config.headers["Accept-Language"] = getCurrentLanguage();
     
-    // 添加跨租户访问请求头：只要 setSelectedTenant 写过激活租户，
-    // 每个请求都要附 X-Tenant-ID。早期版本会 short-circuit
-    // "selectedTenantId === defaultTenantId 时不附"以减少 header 体积，
-    // 但这条优化会被任何把 weknora_tenant 写成激活租户的代码（OIDC
-    // 回调、UserMenu loadUserInfo、router hydrate）触发，导致后续请求
-    // 静默丢失 header，前端"切换了"但实际仍跑在 home 租户里——把"切
-    // 换之后只有第一批请求带 X-Tenant-ID"调成永久状态。
-    // 后端 IsTenantAccessible 已经允许 header 指向 home 租户（自家），
-    // 所以无脑附不会引入新风险。
-    if (!isEmbedAuth && !isEmbedPath) {
-      const selectedTenantId = localStorage.getItem('weknora_selected_tenant_id');
-      if (selectedTenantId) {
-        config.headers["X-Tenant-ID"] = selectedTenantId;
-      }
-    }
-    
     config.headers["X-Request-ID"] = `${generateRandomString(12)}`;
     return config;
   },
