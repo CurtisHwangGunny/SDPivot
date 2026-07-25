@@ -185,6 +185,8 @@ func (h *SDPivotWritingHandler) GenerateContent(c *gin.Context) {
 		Category         string `json:"category" binding:"required"`
 		Prompt           string `json:"prompt" binding:"required"`
 		SpaceID          string `json:"space_id"`
+		Tags             string `json:"tags"`
+		CustomTemplate   string `json:"custom_template"`
 		SourceType       string `json:"source_type"`
 		WebSearchEnabled bool   `json:"web_search_enabled"`
 	}
@@ -202,7 +204,18 @@ func (h *SDPivotWritingHandler) GenerateContent(c *gin.Context) {
 			return
 		}
 	}
-	chunks, err := h.searchRelevantWritingChunks(tenantDB, tenantID, middleware.GetUserID(c), req.SpaceID, req.Prompt, 5)
+	userID := middleware.GetUserID(c)
+	template, ok := resolveSDPivotWritingTemplate(req.Category)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported writing category"})
+		return
+	}
+	tagExamples, err := h.searchSameTagWritingExamples(tenantDB, tenantID, userID, req.SpaceID, req.Tags, 3)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search same-tag writing examples"})
+		return
+	}
+	chunks, err := h.searchRelevantWritingChunks(tenantDB, tenantID, userID, req.SpaceID, req.Prompt, 5)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search knowledge base"})
 		return
@@ -215,9 +228,8 @@ func (h *SDPivotWritingHandler) GenerateContent(c *gin.Context) {
 			return
 		}
 	}
-	categoryLabel := sdPivotWritingCategoryLabel(req.Category)
 	systemPrompt := "你是 SDPivot 的企业写作助手。请根据用户写作要求和知识库参考内容生成结构清晰、可直接编辑的中文 Markdown 文稿。不要编造参考资料中没有的事实；如资料不足，请在文末列出需要补充的信息。"
-	userPrompt := buildSDPivotWritingPrompt(categoryLabel, req.Prompt, req.SourceType, req.WebSearchEnabled, chunks, webResults)
+	userPrompt := buildSDPivotWritingPrompt(template, req.Prompt, req.SourceType, req.WebSearchEnabled, tagExamples, req.CustomTemplate, chunks, webResults)
 	llmResult, err := h.llm.Generate(c.Request.Context(), tenantID, systemPrompt, userPrompt, 2200)
 	if err != nil {
 		status := http.StatusBadGateway
@@ -231,28 +243,74 @@ func (h *SDPivotWritingHandler) GenerateContent(c *gin.Context) {
 	}
 	content := llmResult.Content
 	if strings.TrimSpace(content) == "" {
-		content = fmt.Sprintf("# %s\n\n模型未返回有效内容，请稍后重试。", categoryLabel)
+		content = fmt.Sprintf("# %s\n\n模型未返回有效内容，请稍后重试。", template.Label)
 	}
-	userID := middleware.GetUserID(c)
 	h.llm.recordUsage(tenantID, userID, llmResult.ModelID, "/api/v1/sdp/writing/generate", llmResult.PromptTokens, llmResult.CompletionTokens, llmResult.TotalTokens)
-	c.JSON(http.StatusOK, gin.H{"content": content, "category": req.Category, "source_type": req.SourceType, "web_search_enabled": req.WebSearchEnabled, "sources_count": len(chunks) + len(webResults), "knowledge_sources_count": len(chunks), "web_sources_count": len(webResults), "model_id": llmResult.ModelID, "model": llmResult.ModelName})
+	c.JSON(http.StatusOK, gin.H{"content": content, "category": template.ID, "source_type": req.SourceType, "web_search_enabled": req.WebSearchEnabled, "sources_count": len(tagExamples) + len(chunks) + len(webResults), "same_tag_sources_count": len(tagExamples), "knowledge_sources_count": len(chunks), "web_sources_count": len(webResults), "model_id": llmResult.ModelID, "model": llmResult.ModelName})
 }
 
-func sdPivotWritingCategoryLabel(category string) string {
-	categoryTemplates := map[string]string{
-		"notice":                "通知",
-		"announcement":          "公告",
-		"tech_doc":              "技术文档",
-		"meeting_minutes":       "会议纪要",
-		"policy_interpretation": "制度解读",
-		"report":                "报告",
-		"work_summary":          "工作总结",
-		"research_report":       "研究报告",
+type sdPivotWritingTemplate struct {
+	ID           string
+	Label        string
+	Instructions string
+	Structure    string
+}
+
+var sdPivotBuiltinWritingTemplates = map[string]sdPivotWritingTemplate{
+	"notice": {
+		ID:           "notice",
+		Label:        "通知",
+		Instructions: "使用正式、准确、简洁的组织通知语气，明确事项、对象、时间、地点、要求和联系人。",
+		Structure:    "标题；称谓或适用范围；通知正文；执行要求；联系人；落款与日期。",
+	},
+	"technical": {
+		ID:           "technical",
+		Label:        "技术文档",
+		Instructions: "使用可验证的技术表述，清晰区分背景、方案、接口、约束、风险和验证方式。",
+		Structure:    "标题；背景与目标；范围；技术方案；关键流程或接口；约束与风险；验证与运维。",
+	},
+	"report": {
+		ID:           "report",
+		Label:        "报告",
+		Instructions: "先结论后依据，突出目标、事实、分析、问题和可执行建议，避免空泛表述。",
+		Structure:    "标题；摘要；背景与目标；事实与数据；分析；问题与风险；结论与建议。",
+	},
+	"training": {
+		ID:           "training",
+		Label:        "培训材料",
+		Instructions: "面向学习者分层讲解，给出学习目标、关键知识、操作步骤、示例和检验题。",
+		Structure:    "标题；适用对象；学习目标；课程大纲；知识与步骤；案例；练习或检查清单；总结。",
+	},
+	"minutes": {
+		ID:           "minutes",
+		Label:        "会议纪要",
+		Instructions: "忠实记录会议事实，区分讨论、决定和待办，待办需包含负责人和期限；未知信息不得补造。",
+		Structure:    "会议主题；时间地点；参会人员；议程；讨论要点；决议；行动项（负责人/期限）；遗留问题。",
+	},
+	"proposal": {
+		ID:           "proposal",
+		Label:        "方案",
+		Instructions: "围绕问题和目标提出可落地方案，比较选择，说明实施计划、资源、成本、风险和成功指标。",
+		Structure:    "标题；执行摘要；问题与目标；方案概述；备选比较；实施计划；资源与预算；风险与对策；成功指标。",
+	},
+}
+
+var sdPivotWritingCategoryAliases = map[string]string{
+	"announcement":          "notice",
+	"tech_doc":              "technical",
+	"meeting_minutes":       "minutes",
+	"policy_interpretation": "report",
+	"work_summary":          "report",
+	"research_report":       "report",
+}
+
+func resolveSDPivotWritingTemplate(category string) (sdPivotWritingTemplate, bool) {
+	category = strings.ToLower(strings.TrimSpace(category))
+	if canonical := sdPivotWritingCategoryAliases[category]; canonical != "" {
+		category = canonical
 	}
-	if label := categoryTemplates[category]; label != "" {
-		return label
-	}
-	return category
+	template, ok := sdPivotBuiltinWritingTemplates[category]
+	return template, ok
 }
 
 func normalizeWritingSource(sourceType string, webSearchEnabled bool) (string, bool) {
@@ -275,11 +333,41 @@ func (h *SDPivotWritingHandler) defaultWritingSpaceID(tenantDB *gorm.DB, tenantI
 	return ""
 }
 
-func buildSDPivotWritingPrompt(categoryLabel string, prompt string, sourceType string, webSearchEnabled bool, chunks []types.SDPivotDocumentChunk, webResults []*types.WebSearchResult) string {
+type sdPivotWritingExample struct {
+	DocumentID string
+	Title      string
+	Tags       string
+	Content    string
+}
+
+func buildSDPivotWritingPrompt(template sdPivotWritingTemplate, prompt string, sourceType string, webSearchEnabled bool, tagExamples []sdPivotWritingExample, customTemplate string, chunks []types.SDPivotDocumentChunk, webResults []*types.WebSearchResult) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("写作类型:%s\n", categoryLabel))
+	b.WriteString(fmt.Sprintf("写作类型:%s（%s）\n", template.Label, template.ID))
 	b.WriteString("写作要求:\n")
 	b.WriteString(prompt)
+	b.WriteString("\n\n模板优先级（严格按顺序执行，前项约束高于后项）:\n")
+	b.WriteString("1. 系统内置模板\n")
+	b.WriteString("写作规范:")
+	b.WriteString(template.Instructions)
+	b.WriteString("\n建议结构:")
+	b.WriteString(template.Structure)
+	b.WriteString("\n\n2. 同标签文档自学习\n")
+	if len(tagExamples) == 0 {
+		b.WriteString("（未提供标签或未检索到同标签文档）\n")
+	} else {
+		b.WriteString("仅学习以下文档的表达、章节组织和惯用格式，不得复制其中与本次任务无关的事实：\n")
+		for i, example := range tagExamples {
+			b.WriteString(fmt.Sprintf("[S%d] 标题:%s\n文档ID:%s\n标签:%s\n%s\n\n", i+1, example.Title, example.DocumentID, example.Tags, example.Content))
+		}
+	}
+	b.WriteString("3. 用户自定义模板\n")
+	if strings.TrimSpace(customTemplate) == "" {
+		b.WriteString("（未提供用户自定义模板）\n")
+	} else {
+		b.WriteString("在不冲突于内置模板和同标签文档风格的前提下采用以下补充要求：\n")
+		b.WriteString(customTemplate)
+		b.WriteString("\n")
+	}
 	b.WriteString("\n\n知识来源:")
 	if webSearchEnabled || sourceType == "knowledge_plus_web" {
 		b.WriteString("知识库 + 互联网搜索\n")
@@ -304,7 +392,7 @@ func buildSDPivotWritingPrompt(categoryLabel string, prompt string, sourceType s
 			}
 		}
 	}
-	b.WriteString("请综合知识库参考内容与互联网搜索参考内容，优先采用知识库中已有的内部事实；互联网搜索内容仅作为补充背景和公开信息来源。请生成一份结构完整、标题清晰、段落可读的 Markdown 文稿。")
+	b.WriteString("请先按上述模板优先级确定文体和结构，再综合知识库参考内容与互联网搜索参考内容。优先采用知识库中已有的内部事实；互联网搜索内容仅作为补充背景和公开信息来源。请生成一份结构完整、标题清晰、段落可读的 Markdown 文稿。")
 	return b.String()
 }
 
@@ -380,6 +468,62 @@ func (h *SDPivotWritingHandler) searchRelevantWritingChunks(tenantDB *gorm.DB, t
 	var chunks []types.SDPivotDocumentChunk
 	err := db.Order("document_chunks.created_at DESC").Limit(topK).Find(&chunks).Error
 	return chunks, err
+}
+
+func (h *SDPivotWritingHandler) searchSameTagWritingExamples(tenantDB *gorm.DB, tenantID uint64, userID string, spaceID string, tags string, topK int) ([]sdPivotWritingExample, error) {
+	tagList := normalizeWritingTags(tags)
+	if len(tagList) == 0 {
+		return nil, nil
+	}
+	if topK <= 0 || topK > 10 {
+		topK = 3
+	}
+
+	conditions := make([]string, 0, len(tagList))
+	args := make([]interface{}, 0, len(tagList))
+	for _, tag := range tagList {
+		conditions = append(conditions, "(',' || regexp_replace(lower(regexp_replace(COALESCE(documents.tags, ''), '[[:space:]]+', '', 'g')), '[,;|，；]+', ',', 'g') || ',') LIKE ?")
+		args = append(args, "%,"+escapeWritingQuery(tag)+",%")
+	}
+
+	db := tenantDB.Table("document_chunks").
+		Select("documents.id AS document_id, documents.title, documents.tags, document_chunks.content").
+		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
+		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ?", tenantID, "completed").
+		Where(strings.Join(conditions, " OR "), args...)
+	if spaceID != "" {
+		db = db.Where("documents.space_id = ?", spaceID)
+	} else {
+		db = db.Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, userID))
+	}
+	var examples []sdPivotWritingExample
+	err := db.Order("documents.updated_at DESC, document_chunks.chunk_index ASC").Limit(topK).Scan(&examples).Error
+	return examples, err
+}
+
+func normalizeWritingTags(tags string) []string {
+	parts := strings.FieldsFunc(strings.ToLower(tags), func(r rune) bool {
+		switch r {
+		case ',', ';', '|', '\n', '\r', '，', '；':
+			return true
+		default:
+			return false
+		}
+	})
+	seen := make(map[string]struct{}, len(parts))
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		result = append(result, part)
+	}
+	return result
 }
 
 func escapeWritingQuery(input string) string {

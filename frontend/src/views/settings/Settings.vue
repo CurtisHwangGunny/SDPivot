@@ -135,7 +135,7 @@
 
                   <!-- 系统管理员可见的全局运行时设置 -->
                   <div v-if="currentSection === 'system-global'" class="section">
-                    <SystemSettings />
+                    <SystemAdminSettings />
                   </div>
 
                   <div v-if="currentSection === 'system-models'" class="section">
@@ -199,7 +199,7 @@ import ParserEngineSettings from './ParserEngineSettings.vue'
 import StorageEngineSettings from './StorageEngineSettings.vue'
 import WeKnoraCloudSettings from './WeKnoraCloudSettings.vue'
 import TenantMembers from './TenantMembers.vue'
-import SystemSettings from '@/views/system/SystemSettings.vue'
+import SystemAdminSettings from '@/views/system/SystemAdminSettings.vue'
 import SystemModelConfigs from '@/views/system/SystemModelConfigs.vue'
 
 const route = useRoute()

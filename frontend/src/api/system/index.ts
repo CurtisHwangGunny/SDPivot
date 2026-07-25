@@ -433,6 +433,142 @@ export async function applyDefaultStorageQuotaToAllTenants(): Promise<ApplyDefau
   return response as unknown as ApplyDefaultStorageQuotaResult
 }
 
+// ---- Structured Platform Configuration ----
+
+export interface PlatformStorageConfig {
+  provider: 's3' | 'minio'
+  endpoint: string
+  region: string
+  bucket: string
+  access_key_id_configured: boolean
+  secret_access_key_configured: boolean
+  use_ssl: boolean
+  force_path_style: boolean
+  path_prefix: string
+}
+
+export interface PlatformStorageConfigInput {
+  provider: 's3' | 'minio'
+  endpoint: string
+  region: string
+  bucket: string
+  access_key_id?: string
+  secret_access_key?: string
+  use_ssl: boolean
+  force_path_style: boolean
+  path_prefix: string
+}
+
+export interface PlatformSMSConfig {
+  provider: 'aliyun' | 'tencent' | 'huawei' | 'custom'
+  endpoint: string
+  access_key_id_configured: boolean
+  access_key_secret_configured: boolean
+  region: string
+  sign_name: string
+  template_id: string
+  app_id: string
+  sender: string
+  custom_headers: Record<string, string>
+  timeout_seconds: number
+}
+
+export interface PlatformSMSConfigInput {
+  provider: PlatformSMSConfig['provider']
+  endpoint: string
+  access_key_id?: string
+  access_key_secret?: string
+  region: string
+  sign_name: string
+  template_id: string
+  app_id: string
+  sender: string
+  custom_headers: Record<string, string>
+  timeout_seconds: number
+}
+
+export interface PlatformWeChatLoginConfig {
+  enabled: boolean
+  app_id: string
+  app_secret_configured: boolean
+  redirect_url: string
+}
+
+export interface PlatformWeChatLoginConfigInput {
+  enabled: boolean
+  app_id: string
+  app_secret?: string
+  redirect_url: string
+}
+
+export interface PlatformTagDictionaryEntry {
+  id: string
+  name: string
+  color: string
+  sort_order: number
+}
+
+export interface PlatformTagDictionary {
+  tags: PlatformTagDictionaryEntry[]
+}
+
+export interface PlatformGlobalParams {
+  chunk_size: number
+  threshold: number
+  token_limit: number
+  concurrency: number
+}
+
+async function getPlatformConfig<T>(path: string): Promise<T> {
+  return (await get(`/api/v1/system/admin/${path}`)) as unknown as T
+}
+
+async function updatePlatformConfig<T, TInput extends object>(path: string, input: TInput): Promise<T> {
+  return (await put(`/api/v1/system/admin/${path}`, input)) as unknown as T
+}
+
+export function getPlatformStorageConfig(): Promise<PlatformStorageConfig> {
+  return getPlatformConfig('storage-config')
+}
+
+export function updatePlatformStorageConfig(input: PlatformStorageConfigInput): Promise<PlatformStorageConfig> {
+  return updatePlatformConfig('storage-config', input)
+}
+
+export function getPlatformSMSConfig(): Promise<PlatformSMSConfig> {
+  return getPlatformConfig('sms-config')
+}
+
+export function updatePlatformSMSConfig(input: PlatformSMSConfigInput): Promise<PlatformSMSConfig> {
+  return updatePlatformConfig('sms-config', input)
+}
+
+export function getPlatformWeChatLoginConfig(): Promise<PlatformWeChatLoginConfig> {
+  return getPlatformConfig('wechat-login-config')
+}
+
+export function updatePlatformWeChatLoginConfig(
+  input: PlatformWeChatLoginConfigInput,
+): Promise<PlatformWeChatLoginConfig> {
+  return updatePlatformConfig('wechat-login-config', input)
+}
+
+export function getPlatformTagDictionary(): Promise<PlatformTagDictionary> {
+  return getPlatformConfig('tag-dictionary')
+}
+
+export function updatePlatformTagDictionary(input: PlatformTagDictionary): Promise<PlatformTagDictionary> {
+  return updatePlatformConfig('tag-dictionary', input)
+}
+
+export function getPlatformGlobalParams(): Promise<PlatformGlobalParams> {
+  return getPlatformConfig('global-params')
+}
+
+export function updatePlatformGlobalParams(input: PlatformGlobalParams): Promise<PlatformGlobalParams> {
+  return updatePlatformConfig('global-params', input)
+}
+
 // ---- Platform Model Configurations ----
 
 export interface PlatformModelConfig {
