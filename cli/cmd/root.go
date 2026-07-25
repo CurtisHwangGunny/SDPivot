@@ -133,12 +133,12 @@ func NewRootCmd(f *cmdutil.Factory) *cobra.Command {
 		Use:   "weknora",
 		Short: "WeKnora CLI",
 		Long: `Command-line client for the WeKnora RAG server. Manage knowledge bases
-and documents, run hybrid search, chat with grounded answers, or expose
+and documents, run hybrid search, ask questions with grounded answers, or expose
 a curated read-only MCP tool surface for AI agents.`,
 		Example: `  weknora profile add prod --host=https://kb.example.com --use
   weknora auth login
   weknora kb list
-  weknora chat "summarise the design doc"
+  weknora ask "summarise the design doc"
   weknora doctor --format json`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -193,6 +193,7 @@ a curated read-only MCP tool surface for AI agents.`,
 	cmd.AddCommand(linkcmd.NewCmdUnlink())
 	cmd.AddCommand(doc.NewCmd(f))
 	cmd.AddCommand(apicmd.NewCmd(f))
+	cmd.AddCommand(chatcmd.NewAskCmd(f))
 	cmd.AddCommand(chatcmd.NewCmd(f))
 	cmd.AddCommand(sessioncmd.NewCmd(f))
 	cmd.AddCommand(agentcmd.NewCmd(f))

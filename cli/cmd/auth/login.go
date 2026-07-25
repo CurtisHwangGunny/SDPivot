@@ -44,6 +44,12 @@ type LoginService interface {
 	Login(ctx context.Context, req sdk.LoginRequest) (*sdk.LoginResponse, error)
 }
 
+type cliTokenIssuer func(ctx context.Context, host, jwt, name string) (*sdk.CreateAPITokenResponse, error)
+
+var defaultCLITokenIssuer cliTokenIssuer = func(ctx context.Context, host, jwt, name string) (*sdk.CreateAPITokenResponse, error) {
+	return sdk.NewClient(host, sdk.WithBearerToken(jwt)).CreateAPIToken(ctx, name)
+}
+
 // apiKeyValidator probes /auth/me with the supplied API key so a bad key
 // fails fast at `auth login --with-token` time rather than on the next
 // authenticated call.
@@ -237,7 +243,14 @@ func runLogin(ctx context.Context, opts *LoginOptions, fopts *cmdutil.FormatOpti
 		return cmdutil.NewError(cmdutil.CodeAuthBadCredential, fmt.Sprintf("login refused: %s", resp.Message))
 	}
 
-	return persistJWT(opts, fopts, f, resp)
+	apiToken, err := defaultCLITokenIssuer(ctx, opts.Host, resp.Token, "weknora-cli:"+opts.Profile)
+	if err != nil {
+		return cmdutil.WrapHTTP(err, "create CLI API token")
+	}
+	if apiToken == nil || !apiToken.Success || apiToken.Token == "" {
+		return cmdutil.NewError(cmdutil.CodeAuthBadCredential, "server did not return a CLI API token")
+	}
+	return persistCLIToken(opts, fopts, f, apiToken.Token, resp.User)
 }
 
 // persistAPIKey saves the --with-token API key and writes the profile.
@@ -290,6 +303,27 @@ func persistJWT(opts *LoginOptions, fopts *cmdutil.FormatOptions, f *cmdutil.Fac
 		applyUser(prof, resp.User)
 	}
 	return saveProfileRef(opts, fopts, f, mutate, ModeBearer, resp.User)
+}
+
+// persistCLIToken stores the durable user-scoped bearer token returned by the
+// server after password authentication. It has no refresh token.
+func persistCLIToken(opts *LoginOptions, fopts *cmdutil.FormatOptions, f *cmdutil.Factory, token string, user *sdk.AuthUser) error {
+	store, err := f.Secrets()
+	if err != nil {
+		return err
+	}
+	warnOnFileFallback(store)
+	if err := store.Set(opts.Profile, "access", token); err != nil {
+		return cmdutil.Wrapf(cmdutil.CodeLocalKeychainDenied, err, "save API token")
+	}
+	_ = store.Delete(opts.Profile, "refresh")
+	mutate := func(prof *config.Profile) {
+		prof.TokenRef = store.Ref(opts.Profile, "access")
+		prof.RefreshRef = ""
+		prof.APIKeyRef = ""
+		applyUser(prof, user)
+	}
+	return saveProfileRef(opts, fopts, f, mutate, ModeBearer, user)
 }
 
 // applyUser overwrites prof.User / prof.TenantID only when the server actually

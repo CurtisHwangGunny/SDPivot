@@ -726,6 +726,8 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 	r.POST("/auth/refresh", handler.RefreshToken)
 	r.GET("/auth/validate", handler.ValidateToken)
 	r.POST("/auth/logout", handler.Logout)
+	r.POST("/auth/tokens", handler.CreateAPIToken)
+	r.DELETE("/auth/token", handler.RevokeAPIToken)
 	r.GET("/auth/me", handler.GetCurrentUser)
 	r.PUT("/auth/me/preferences", handler.UpdateMyPreferences)
 	r.POST("/auth/change-password", handler.ChangePassword)

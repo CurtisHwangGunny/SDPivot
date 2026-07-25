@@ -100,10 +100,10 @@ type User struct {
 	// DepartmentID scopes department administrators to one tenant department.
 	DepartmentID *string `json:"department_id,omitempty" gorm:"type:varchar(36);index"`
 	// Ops admin fields (SDPivot PRD 1.1.4)
-	IsOpsAdmin         bool       `json:"is_ops_admin" gorm:"default:false;index:idx_users_ops_admin,where:is_ops_admin = true"`
-	MustChangePassword bool       `json:"must_change_password" gorm:"default:false"`
-	PasswordChangedAt  *time.Time `json:"password_changed_at"`
-	PasswordExpiresAt  *time.Time `json:"password_expires_at"`
+	IsOpsAdmin          bool       `json:"is_ops_admin" gorm:"default:false;index:idx_users_ops_admin,where:is_ops_admin = true"`
+	MustChangePassword  bool       `json:"must_change_password" gorm:"default:false"`
+	PasswordChangedAt   *time.Time `json:"password_changed_at"`
+	PasswordExpiresAt   *time.Time `json:"password_expires_at"`
 	FailedLoginAttempts int        `json:"-" gorm:"not null;default:0"`
 	LockedUntil         *time.Time `json:"-" gorm:"index"`
 
@@ -148,6 +148,32 @@ type AuthToken struct {
 
 	// Association relationship
 	User *User `json:"user,omitempty" gorm:"foreignKey:UserID"`
+}
+
+// APIToken is a long-lived, user-scoped credential intended for CLI and
+// automation use. TokenHash is persisted instead of the raw credential.
+type APIToken struct {
+	ID         string     `json:"id" gorm:"type:varchar(36);primaryKey"`
+	UserID     string     `json:"user_id" gorm:"type:varchar(36);index;not null"`
+	TenantID   uint64     `json:"tenant_id" gorm:"index;not null"`
+	Name       string     `json:"name" gorm:"type:varchar(100);not null"`
+	TokenHash  string     `json:"-" gorm:"type:char(64);uniqueIndex;not null"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty" gorm:"index"`
+}
+
+// CreateAPITokenRequest configures a new long-lived API token.
+type CreateAPITokenRequest struct {
+	Name string `json:"name"`
+}
+
+// CreateAPITokenResponse returns the raw token exactly once at creation time.
+type CreateAPITokenResponse struct {
+	Success bool      `json:"success"`
+	Token   string    `json:"token"`
+	Data    *APIToken `json:"data,omitempty"`
 }
 
 // LoginRequest represents a login request

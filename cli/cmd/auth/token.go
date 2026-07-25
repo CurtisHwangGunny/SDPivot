@@ -38,8 +38,8 @@ func NewCmdToken(f *cmdutil.Factory) *cobra.Command {
 		Long: `Print the active profile's credential to stdout, with no trailing
 newline, suitable for shell command substitution.
 
-The credential is the long-lived API key (mode: api-key) or the access JWT
-(mode: bearer), depending on how the profile was created. Run ` + "`weknora auth list`" + `
+The credential is a long-lived CLI bearer token, a legacy tenant API key, or
+an access JWT, depending on how the profile was created. Run ` + "`weknora auth list`" + `
 to see which mode each profile uses, and construct the matching HTTP header:
 
   Authorization: Bearer <token>    # bearer mode

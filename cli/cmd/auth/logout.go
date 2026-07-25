@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/cli/internal/config"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 	"github.com/Tencent/WeKnora/cli/internal/secrets"
+	sdk "github.com/Tencent/WeKnora/client"
 )
 
 type LogoutOptions struct {
@@ -30,7 +32,7 @@ type logoutResult struct {
 
 // NewCmdLogout builds `weknora auth logout`. Clears stored credentials
 // (keyring + file fallback) and removes the profile entry from config.yaml.
-// No server-side revocation - local-only credential clear.
+// CLI-issued API tokens are revoked server-side before local cleanup.
 func NewCmdLogout(f *cmdutil.Factory) *cobra.Command {
 	opts := &LogoutOptions{}
 	cmd := &cobra.Command{
@@ -39,9 +41,9 @@ func NewCmdLogout(f *cmdutil.Factory) *cobra.Command {
 		Long: `Clear keyring + file-fallback secrets for one profile (or all of
 them with --all) and drop the profile entry from ~/.config/weknora/config.yaml.
 
-Note: this does NOT revoke the credential server-side - for API keys, you
-must rotate them in the server UI; for JWT, the token will continue to be
-accepted until it expires.`,
+CLI-issued API tokens are revoked server-side before local credentials are
+removed. Legacy tenant API keys cannot be revoked here and must be rotated in
+the server UI.`,
 		Example: `  weknora auth logout                       # active profile
   weknora --profile staging auth logout     # specific profile
   weknora auth logout --all`,
@@ -78,7 +80,7 @@ accepted until it expires.`,
 					return err
 				}
 			}
-			return runLogout(opts, fopts, f)
+			return runLogoutContext(c.Context(), opts, fopts, f)
 		},
 	}
 	cmd.Flags().BoolVar(&opts.All, "all", false, "Log out of every configured profile")
@@ -94,13 +96,17 @@ accepted until it expires.`,
 		},
 		Warnings: []string{
 			"Requires explicit user approval (exit 10 / input.confirmation_required); never auto-add -y.",
-			"auth logout clears local credentials for this profile; server-side session continues until expiry.",
+			"auth logout revokes CLI-issued API tokens before clearing local credentials; legacy tenant API keys require server-side rotation.",
 		},
 	})
 	return cmd
 }
 
 func runLogout(opts *LogoutOptions, fopts *cmdutil.FormatOptions, f *cmdutil.Factory) error {
+	return runLogoutContext(context.Background(), opts, fopts, f)
+}
+
+func runLogoutContext(ctx context.Context, opts *LogoutOptions, fopts *cmdutil.FormatOptions, f *cmdutil.Factory) error {
 	cfg, err := f.Config()
 	if err != nil {
 		return err
@@ -127,6 +133,21 @@ func runLogout(opts *LogoutOptions, fopts *cmdutil.FormatOptions, f *cmdutil.Fac
 	store, err := f.Secrets()
 	if err != nil {
 		return err
+	}
+	for _, name := range targets {
+		prof := cfg.Profiles[name]
+		if prof.TokenRef == "" || prof.RefreshRef != "" {
+			continue
+		}
+		token, err := cmdutil.LoadSecret(store, name, "access")
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(token, "wkn_") {
+			if err := sdk.NewClient(prof.Host, sdk.WithBearerToken(token)).RevokeAPIToken(ctx); err != nil {
+				return cmdutil.WrapHTTP(err, "revoke API token for profile %q", name)
+			}
+		}
 	}
 	for _, name := range targets {
 		clearProfileSecrets(store, cfg.Profiles[name], name)

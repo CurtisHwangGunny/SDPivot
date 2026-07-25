@@ -22,7 +22,20 @@ func TestRoot_Help(t *testing.T) {
 	require.NoError(t, root.Execute())
 	got := out.String()
 	assert.Contains(t, got, "weknora")
+	assert.Contains(t, got, "ask")
 	assert.Contains(t, got, "version")
+}
+
+func TestRoot_AskIsFirstClassRAGCommand(t *testing.T) {
+	root := NewRootCmd(cmdutil.New())
+	ask, _, err := root.Find([]string{"ask"})
+	require.NoError(t, err)
+	require.NotNil(t, ask)
+	assert.Equal(t, "ask", ask.Name())
+	assert.Equal(t, `ask "<text>"`, ask.Use)
+	assert.NotNil(t, ask.Flags().Lookup("kb"))
+	assert.NotNil(t, ask.Flags().Lookup("session"))
+	assert.NotNil(t, ask.Flag("format"))
 }
 
 func TestVersion_JSON(t *testing.T) {

@@ -66,6 +66,10 @@ func seedActiveProfile(t *testing.T, name string, prof config.Profile) {
 
 func TestRunLogin_PasswordMode(t *testing.T) {
 	iostreams.SetForTest(t)
+	restoreIssuer := stubCLITokenIssuer(func(context.Context, string, string, string) (*sdk.CreateAPITokenResponse, error) {
+		return &sdk.CreateAPITokenResponse{Success: true, Token: "wkn-cli-token"}, nil
+	})
+	defer restoreIssuer()
 	f, store := newTestFactoryWithConfig(t, scriptedPrompter{email: "a@b.c", password: "secret"})
 	seedActiveProfile(t, "prod", config.Profile{Host: "https://kb.example.com"})
 	svc := &fakeLoginService{resp: &sdk.LoginResponse{
@@ -79,7 +83,7 @@ func TestRunLogin_PasswordMode(t *testing.T) {
 	assert.Equal(t, "secret", svc.got.password)
 
 	got, _ := store.Get("prod", "access")
-	assert.Equal(t, "jwt-access", got)
+	assert.Equal(t, "wkn-cli-token", got)
 
 	cfg, _ := f.Config()
 	assert.Equal(t, "https://kb.example.com", cfg.Profiles["prod"].Host, "host must be preserved from the seeded profile")
@@ -157,6 +161,12 @@ func stubAPIKeyValidator(fn apiKeyValidator) func() {
 	saved := defaultAPIKeyValidator
 	defaultAPIKeyValidator = fn
 	return func() { defaultAPIKeyValidator = saved }
+}
+
+func stubCLITokenIssuer(fn cliTokenIssuer) func() {
+	saved := defaultCLITokenIssuer
+	defaultCLITokenIssuer = fn
+	return func() { defaultCLITokenIssuer = saved }
 }
 
 func TestRunLogin_WithToken_Empty(t *testing.T) {

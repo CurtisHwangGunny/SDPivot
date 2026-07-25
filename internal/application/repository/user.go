@@ -15,6 +15,7 @@ var (
 	ErrUserNotFound       = errors.New("user not found")
 	ErrUserAlreadyExists  = errors.New("user already exists")
 	ErrTokenNotFound      = errors.New("token not found")
+	ErrAPITokenNotFound   = errors.New("api token not found")
 	ErrCannotRevokeSelf   = errors.New("cannot revoke your own system admin privileges")
 	ErrLastSystemAdmin    = errors.New("cannot revoke the last remaining system administrator")
 	ErrUserNotSystemAdmin = errors.New("user is not a system administrator")
@@ -23,6 +24,47 @@ var (
 // userRepository implements user repository interface
 type userRepository struct {
 	db *gorm.DB
+}
+
+type apiTokenRepository struct {
+	db *gorm.DB
+}
+
+// NewAPITokenRepository creates the repository for long-lived CLI tokens.
+func NewAPITokenRepository(db *gorm.DB) interfaces.APITokenRepository {
+	return &apiTokenRepository{db: db}
+}
+
+func (r *apiTokenRepository) Create(ctx context.Context, token *types.APIToken) error {
+	return r.db.WithContext(ctx).Create(token).Error
+}
+
+func (r *apiTokenRepository) GetByHash(ctx context.Context, tokenHash string) (*types.APIToken, error) {
+	var token types.APIToken
+	if err := r.db.WithContext(ctx).Where("token_hash = ?", tokenHash).First(&token).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAPITokenNotFound
+		}
+		return nil, err
+	}
+	return &token, nil
+}
+
+func (r *apiTokenRepository) Touch(ctx context.Context, id string, usedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&types.APIToken{}).Where("id = ?", id).Update("last_used_at", usedAt).Error
+}
+
+func (r *apiTokenRepository) RevokeByHash(ctx context.Context, tokenHash string, revokedAt time.Time) error {
+	result := r.db.WithContext(ctx).Model(&types.APIToken{}).
+		Where("token_hash = ? AND revoked_at IS NULL", tokenHash).
+		Update("revoked_at", revokedAt)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrAPITokenNotFound
+	}
+	return nil
 }
 
 // NewUserRepository creates a new user repository
@@ -148,13 +190,13 @@ func (r *userRepository) ResetLoginFailures(ctx context.Context, userID string) 
 
 func (r *userRepository) UpdatePasswordSecurity(ctx context.Context, userID, passwordHash string, changedAt time.Time, expiresAt *time.Time) error {
 	return r.db.WithContext(ctx).Model(&types.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"password_hash":          passwordHash,
-		"password_changed_at":    changedAt,
-		"password_expires_at":    expiresAt,
-		"must_change_password":   false,
-		"failed_login_attempts":  0,
-		"locked_until":           nil,
-		"updated_at":             changedAt,
+		"password_hash":         passwordHash,
+		"password_changed_at":   changedAt,
+		"password_expires_at":   expiresAt,
+		"must_change_password":  false,
+		"failed_login_attempts": 0,
+		"locked_until":          nil,
+		"updated_at":            changedAt,
 	}).Error
 }
 

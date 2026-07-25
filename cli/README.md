@@ -7,14 +7,15 @@ ask streaming RAG questions from your terminal or from an AI agent.
 ```bash
 $ weknora --help
 Command-line client for the WeKnora RAG server. Manage knowledge bases
-and documents, run hybrid search, chat with grounded answers, or expose
+and documents, run hybrid search, ask questions with grounded answers, or expose
 a curated read-only MCP tool surface for AI agents.
 
 Available Commands:
   agent       Manage custom agents (CRUD + status/check)
   api         Make a raw API request to the WeKnora server
+  ask         Ask a streaming RAG question against a knowledge base
   auth        Manage authentication credentials and profiles
-  chat        Ask a streaming RAG question against a knowledge base
+  chat        Ask a streaming RAG question against a knowledge base (compatibility command)
   chunk       Manage document chunks (RAG retrieval debug)
   completion  Generate the autocompletion script for the specified shell
   profile     Manage CLI profiles (named connection targets)
@@ -80,8 +81,8 @@ weknora doc wait doc_abc                          # exit 0 completed, 1 failed, 
 # 6. Search
 weknora search chunks "what is reciprocal rank fusion?"
 
-# 7. Ask the LLM (streams to terminal)
-weknora chat "summarise the design doc"
+# 7. Ask the LLM with RAG (streams to terminal)
+weknora ask "summarise the design doc"
 
 # 8. Manage custom agents and run them (see `weknora agent --help` / `weknora session --help`)
 weknora agent list
@@ -124,7 +125,7 @@ under [`skills/`](skills/) that teach an agent to drive WeKnora without trial an
 - [`weknora-shared`](skills/weknora-shared/SKILL.md) — **read first**: auth/profile
   sequence, `--kb` resolution, the JSON-envelope + exit-code contract, the exit-10
   protocol, `--dry-run`, and CLI-vs-MCP selection.
-- [`weknora-rag-search`](skills/weknora-rag-search/SKILL.md) — when to use `chat`
+- [`weknora-rag-search`](skills/weknora-rag-search/SKILL.md) — when to use `ask`
   vs `session ask` vs `search chunks`, plus retrieval gotchas.
 
 MVP install: symlink them into your agent's skills directory (from a source checkout):

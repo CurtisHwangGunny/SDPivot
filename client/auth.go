@@ -107,6 +107,22 @@ type RefreshTokenResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// APIToken is the metadata returned when a long-lived CLI token is created.
+type APIToken struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	TenantID  uint64    `json:"tenant_id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// CreateAPITokenResponse returns the raw token exactly once.
+type CreateAPITokenResponse struct {
+	Success bool      `json:"success"`
+	Token   string    `json:"token"`
+	Data    *APIToken `json:"data,omitempty"`
+}
+
 // Login authenticates with email + password and returns the JWT access token,
 // refresh token, and principal info. Maps to POST /api/v1/auth/login.
 //
@@ -162,4 +178,30 @@ func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*Refres
 		return nil, err
 	}
 	return &out, nil
+}
+
+// CreateAPIToken exchanges the current authenticated session for a long-lived
+// bearer token suitable for CLI use.
+func (c *Client) CreateAPIToken(ctx context.Context, name string) (*CreateAPITokenResponse, error) {
+	body := struct {
+		Name string `json:"name"`
+	}{Name: name}
+	resp, err := c.doRequest(ctx, http.MethodPost, "/api/v1/auth/tokens", body, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create api token: %w", err)
+	}
+	var out CreateAPITokenResponse
+	if err := parseResponse(resp, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RevokeAPIToken revokes the bearer token configured on this client.
+func (c *Client) RevokeAPIToken(ctx context.Context) error {
+	resp, err := c.doRequest(ctx, http.MethodDelete, "/api/v1/auth/token", nil, nil)
+	if err != nil {
+		return fmt.Errorf("revoke api token: %w", err)
+	}
+	return parseResponse(resp, nil)
 }

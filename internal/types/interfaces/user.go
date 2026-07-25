@@ -52,6 +52,12 @@ type UserService interface {
 	RefreshToken(ctx context.Context, refreshToken string) (accessToken, newRefreshToken string, err error)
 	// RevokeToken revokes a token
 	RevokeToken(ctx context.Context, token string) error
+	// CreateAPIToken creates a long-lived opaque token for the current user.
+	CreateAPIToken(ctx context.Context, name string) (string, *types.APIToken, error)
+	// ValidateAPIToken resolves an active opaque token to its user and tenant.
+	ValidateAPIToken(ctx context.Context, token string) (*types.User, uint64, error)
+	// RevokeAPIToken revokes the supplied opaque token.
+	RevokeAPIToken(ctx context.Context, token string) error
 	// GetCurrentUser gets current user from context
 	GetCurrentUser(ctx context.Context) (*types.User, error)
 	// SearchUsers searches users by username or email
@@ -123,4 +129,12 @@ type AuthTokenRepository interface {
 	DeleteExpiredTokens(ctx context.Context) error
 	// RevokeTokensByUserID revokes all tokens for a user
 	RevokeTokensByUserID(ctx context.Context, userID string) error
+}
+
+// APITokenRepository persists hashes of long-lived user API tokens.
+type APITokenRepository interface {
+	Create(ctx context.Context, token *types.APIToken) error
+	GetByHash(ctx context.Context, tokenHash string) (*types.APIToken, error)
+	Touch(ctx context.Context, id string, usedAt time.Time) error
+	RevokeByHash(ctx context.Context, tokenHash string, revokedAt time.Time) error
 }

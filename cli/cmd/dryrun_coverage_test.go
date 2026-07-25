@@ -44,7 +44,7 @@ var dryRunExpectation = map[string]bool{
 	"doctor":       false, "version": false,
 	// generate / stream ops — the session-creation side effect is incidental,
 	// not a CRUD write; a no-SDK-call preview would be meaningless.
-	"chat": false, "session ask": false, "session continue-stream": false,
+	"ask": false, "chat": false, "session ask": false, "session continue-stream": false,
 	// auth login VALIDATES credentials against the server and stores them; its
 	// whole purpose is the server round-trip, which a side-effect-free dry-run
 	// cannot exercise — so previewing it would be misleading. Exempt by design.

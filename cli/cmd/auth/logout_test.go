@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -59,6 +61,33 @@ func TestLogout_CurrentProfile(t *testing.T) {
 	if v, _ := store.Get("staging", "api_key"); v != "sk-staging" {
 		t.Errorf("staging secret unexpectedly cleared: %q", v)
 	}
+}
+
+func TestLogout_RevokesCLITokenBeforeLocalDelete(t *testing.T) {
+	isolateConfig(t)
+	_, _ = iostreams.SetForTest(t)
+	revoked := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodDelete, r.Method)
+		assert.Equal(t, "/api/v1/auth/token", r.URL.Path)
+		assert.Equal(t, "Bearer wkn_cli_secret", r.Header.Get("Authorization"))
+		revoked = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	store := secrets.NewMemStore()
+	require.NoError(t, store.Set("prod", "access", "wkn_cli_secret"))
+	cfg := &config.Config{
+		CurrentProfile: "prod",
+		Profiles: map[string]config.Profile{
+			"prod": {Host: server.URL, TokenRef: store.Ref("prod", "access")},
+		},
+	}
+	require.NoError(t, runLogoutContext(t.Context(), &LogoutOptions{Yes: true}, &cmdutil.FormatOptions{Mode: cmdutil.FormatText}, newLogoutFactory(t, cfg, store)))
+	assert.True(t, revoked)
+	_, err := store.Get("prod", "access")
+	require.Error(t, err)
 }
 
 // TestLogout_ActiveProfileViaOverride exercises targeting a non-default

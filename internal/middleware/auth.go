@@ -91,9 +91,14 @@ func Auth(
 		authHeader := c.GetHeader("Authorization")
 		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
 			token := strings.TrimPrefix(authHeader, "Bearer ")
-			user, _, err := userService.ValidateToken(c.Request.Context(), token)
+			user, targetTenantID, err := userService.ValidateToken(c.Request.Context(), token)
+			if err != nil {
+				user, targetTenantID, err = userService.ValidateAPIToken(c.Request.Context(), token)
+			}
 			if err == nil && user != nil {
-				targetTenantID := types.DefaultTenantID
+				if targetTenantID == 0 {
+					targetTenantID = user.TenantID
+				}
 				crossTenantSwitch := false
 
 				// 获取租户信息（使用目标租户ID）

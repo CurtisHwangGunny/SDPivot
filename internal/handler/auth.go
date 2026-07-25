@@ -432,6 +432,35 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	})
 }
 
+// CreateAPIToken creates a long-lived bearer token for CLI use.
+func (h *AuthHandler) CreateAPIToken(c *gin.Context) {
+	var req types.CreateAPITokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewValidationError("Invalid API token request").WithDetails(err.Error()))
+		return
+	}
+	raw, record, err := h.userService.CreateAPIToken(c.Request.Context(), req.Name)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("Failed to create API token").WithDetails(err.Error()))
+		return
+	}
+	c.JSON(http.StatusCreated, &types.CreateAPITokenResponse{Success: true, Token: raw, Data: record})
+}
+
+// RevokeAPIToken revokes the API token supplied as the current bearer token.
+func (h *AuthHandler) RevokeAPIToken(c *gin.Context) {
+	authHeader := c.GetHeader("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		c.Error(errors.NewValidationError("Authorization bearer token is required"))
+		return
+	}
+	if err := h.userService.RevokeAPIToken(c.Request.Context(), strings.TrimPrefix(authHeader, "Bearer ")); err != nil {
+		c.Error(errors.NewBadRequestError("Failed to revoke API token").WithDetails(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "API token revoked"})
+}
+
 // RefreshToken godoc
 // @Summary      刷新令牌
 // @Description  使用刷新令牌获取新的访问令牌

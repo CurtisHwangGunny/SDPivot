@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -33,8 +34,8 @@ type oidcAuthorizationState struct {
 }
 
 var (
-	jwtSecretOnce sync.Once
-	jwtSecret     string
+	jwtSecretOnce    sync.Once
+	jwtSecret        string
 	ErrAccountLocked = errors.New("account temporarily locked")
 )
 
@@ -60,6 +61,7 @@ func getJwtSecret() string {
 type userService struct {
 	userRepo      interfaces.UserRepository
 	tokenRepo     interfaces.AuthTokenRepository
+	apiTokenRepo  interfaces.APITokenRepository
 	tenantService interfaces.TenantService
 	memberService interfaces.TenantMemberService
 	settings      interfaces.SystemSettingService
@@ -71,6 +73,7 @@ func NewUserService(
 	configInfo *config.Config,
 	userRepo interfaces.UserRepository,
 	tokenRepo interfaces.AuthTokenRepository,
+	apiTokenRepo interfaces.APITokenRepository,
 	tenantService interfaces.TenantService,
 	memberService interfaces.TenantMemberService,
 	settings interfaces.SystemSettingService,
@@ -78,11 +81,74 @@ func NewUserService(
 	return &userService{
 		userRepo:      userRepo,
 		tokenRepo:     tokenRepo,
+		apiTokenRepo:  apiTokenRepo,
 		tenantService: tenantService,
 		memberService: memberService,
 		settings:      settings,
 		config:        configInfo,
 	}
+}
+
+func apiTokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", sum)
+}
+
+// CreateAPIToken creates a long-lived opaque bearer credential for the current
+// user. Only its hash is persisted; the raw value is returned once.
+func (s *userService) CreateAPIToken(ctx context.Context, name string) (string, *types.APIToken, error) {
+	user, err := s.GetCurrentUser(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	tenantID, _ := types.TenantIDFromContext(ctx)
+	if tenantID == 0 {
+		tenantID = user.TenantID
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "CLI"
+	}
+	if len(name) > 100 {
+		return "", nil, errors.New("api token name must be at most 100 characters")
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", nil, fmt.Errorf("generate api token: %w", err)
+	}
+	value := "wkn_" + base64.RawURLEncoding.EncodeToString(raw)
+	record := &types.APIToken{
+		ID:        uuid.NewString(),
+		UserID:    user.ID,
+		TenantID:  tenantID,
+		Name:      name,
+		TokenHash: apiTokenHash(value),
+		CreatedAt: time.Now(),
+	}
+	if err := s.apiTokenRepo.Create(ctx, record); err != nil {
+		return "", nil, err
+	}
+	return value, record, nil
+}
+
+// ValidateAPIToken resolves an active API token and records its last use.
+func (s *userService) ValidateAPIToken(ctx context.Context, token string) (*types.User, uint64, error) {
+	record, err := s.apiTokenRepo.GetByHash(ctx, apiTokenHash(token))
+	if err != nil || record.RevokedAt != nil || (record.ExpiresAt != nil && !record.ExpiresAt.After(time.Now())) {
+		return nil, 0, errors.New("invalid api token")
+	}
+	user, err := s.userRepo.GetUserByID(ctx, record.UserID)
+	if err != nil || !user.IsActive {
+		return nil, 0, errors.New("invalid api token user")
+	}
+	now := time.Now()
+	_ = s.apiTokenRepo.Touch(ctx, record.ID, now)
+	return user, record.TenantID, nil
+}
+
+// RevokeAPIToken revokes a long-lived opaque API token.
+func (s *userService) RevokeAPIToken(ctx context.Context, token string) error {
+	return s.apiTokenRepo.RevokeByHash(ctx, apiTokenHash(token), time.Now())
 }
 
 // Register creates a new user account
@@ -133,16 +199,16 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	// Create user
 	now := time.Now()
 	user := &types.User{
-		ID:           uuid.New().String(),
-		Username:     req.Username,
-		Email:        req.Email,
-		PasswordHash: string(hashedPassword),
-		TenantID:     createdTenant.ID,
-		IsActive:     true,
+		ID:                uuid.New().String(),
+		Username:          req.Username,
+		Email:             req.Email,
+		PasswordHash:      string(hashedPassword),
+		TenantID:          createdTenant.ID,
+		IsActive:          true,
 		PasswordChangedAt: &now,
 		PasswordExpiresAt: secutils.PasswordExpiry(now, policy.RotationDays),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 
 	err = s.userRepo.CreateUser(ctx, user)
