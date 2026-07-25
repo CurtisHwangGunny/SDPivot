@@ -41,6 +41,8 @@ func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
 		ops.POST("/users/import", h.ImportUsers)
 		ops.PUT("/users/:id/status", h.UpdateUserStatus)
 		ops.PUT("/users/:id/role", h.UpdateUserRole)
+		ops.GET("/usage-stats", h.GetUsageStats)
+		ops.GET("/usage-stats/export", h.ExportUsageStats)
 		ops.GET("/audit-logs", h.GetAuditLogs)
 		ops.GET("/audit-logs/export", h.ExportAuditLogs)
 		ops.GET("/audit-log", h.GetAuditLogs) // compat alias
@@ -257,18 +259,18 @@ func (h *SDPivotOpsAdminHandler) ListUsers(c *gin.Context) {
 	activeFilter := c.Query("is_active")
 
 	type UserRow struct {
-		ID         string    `json:"id"`
-		Username   string    `json:"username"`
-		Email      string    `json:"email"`
-		Phone      string    `json:"phone"`
-		Nickname   string    `json:"nickname"`
-		IsActive   bool      `json:"is_active"`
-		IsOpsAdmin bool      `json:"is_ops_admin" gorm:"column:is_ops_admin"`
-		AccessRole types.AccessRole `json:"access_role" gorm:"column:access_role"`
-		DepartmentID *string `json:"department_id" gorm:"column:department_id"`
-		DepartmentName string `json:"department_name" gorm:"column:department_name"`
-		TenantID   uint64    `json:"tenant_id"`
-		CreatedAt  time.Time `json:"created_at"`
+		ID             string           `json:"id"`
+		Username       string           `json:"username"`
+		Email          string           `json:"email"`
+		Phone          string           `json:"phone"`
+		Nickname       string           `json:"nickname"`
+		IsActive       bool             `json:"is_active"`
+		IsOpsAdmin     bool             `json:"is_ops_admin" gorm:"column:is_ops_admin"`
+		AccessRole     types.AccessRole `json:"access_role" gorm:"column:access_role"`
+		DepartmentID   *string          `json:"department_id" gorm:"column:department_id"`
+		DepartmentName string           `json:"department_name" gorm:"column:department_name"`
+		TenantID       uint64           `json:"tenant_id"`
+		CreatedAt      time.Time        `json:"created_at"`
 	}
 
 	q := h.db.Table("users").Select("users.id, users.username, users.email, users.is_active, users.is_ops_admin, users.access_role, users.department_id, users.tenant_id, users.created_at, COALESCE(p.phone, '') AS phone, COALESCE(p.nickname, '') AS nickname, COALESCE(d.name, '') AS department_name").
@@ -376,6 +378,191 @@ func (h *SDPivotOpsAdminHandler) UpdateUserStatus(c *gin.Context) {
 	h.writeAuditLog(c, "update_user_status", "user", userID, fmt.Sprintf("is_active: %v", req.IsActive))
 
 	c.JSON(http.StatusOK, gin.H{"message": "user status updated", "is_active": req.IsActive})
+}
+
+// ── Usage Statistics ───────────────────────────────────────
+
+type opsUsageStatsQuery struct {
+	StartDate    string
+	EndDate      string
+	UserID       string
+	DepartmentID string
+	TenantID     uint64
+}
+
+type opsUsageStatRow struct {
+	Date             string `json:"date"`
+	TenantID         uint64 `json:"tenant_id"`
+	UserID           string `json:"user_id"`
+	Username         string `json:"username"`
+	DepartmentID     string `json:"department_id"`
+	DepartmentName   string `json:"department_name"`
+	PromptTokens     int64  `json:"prompt_tokens"`
+	CompletionTokens int64  `json:"completion_tokens"`
+	TotalTokens      int64  `json:"total_tokens"`
+	RequestCount     int64  `json:"request_count"`
+}
+
+func parseOpsUsageStatsQuery(c *gin.Context) (opsUsageStatsQuery, error) {
+	query := opsUsageStatsQuery{
+		StartDate:    strings.TrimSpace(c.Query("start_date")),
+		EndDate:      strings.TrimSpace(c.Query("end_date")),
+		UserID:       strings.TrimSpace(c.Query("user_id")),
+		DepartmentID: strings.TrimSpace(c.Query("department_id")),
+	}
+
+	if query.StartDate != "" {
+		if _, err := time.Parse("2006-01-02", query.StartDate); err != nil {
+			return query, errors.New("start_date must use YYYY-MM-DD format")
+		}
+	}
+	if query.EndDate != "" {
+		if _, err := time.Parse("2006-01-02", query.EndDate); err != nil {
+			return query, errors.New("end_date must use YYYY-MM-DD format")
+		}
+	}
+	if query.StartDate != "" && query.EndDate != "" && query.StartDate > query.EndDate {
+		return query, errors.New("start_date must not be after end_date")
+	}
+
+	if rawTenantID := strings.TrimSpace(c.Query("tenant_id")); rawTenantID != "" {
+		tenantID, err := strconv.ParseUint(rawTenantID, 10, 64)
+		if err != nil || tenantID == 0 {
+			return query, errors.New("tenant_id must be a positive integer")
+		}
+		query.TenantID = tenantID
+	}
+
+	return query, nil
+}
+
+func (h *SDPivotOpsAdminHandler) usageStatsQuery(query opsUsageStatsQuery) *gorm.DB {
+	q := h.db.Table("token_usage tu").
+		Joins("LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL").
+		Joins("LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL")
+	if query.StartDate != "" {
+		q = q.Where("tu.created_at >= ?", query.StartDate)
+	}
+	if query.EndDate != "" {
+		q = q.Where("tu.created_at < (?::date + INTERVAL '1 day')", query.EndDate)
+	}
+	if query.UserID != "" {
+		q = q.Where("tu.user_id = ?", query.UserID)
+	}
+	if query.DepartmentID != "" {
+		q = q.Where("u.department_id = ?", query.DepartmentID)
+	}
+	if query.TenantID != 0 {
+		q = q.Where("tu.tenant_id = ?", query.TenantID)
+	}
+	return q
+}
+
+func selectOpsUsageStats(q *gorm.DB) *gorm.DB {
+	return q.Select(`
+		TO_CHAR(tu.created_at, 'YYYY-MM-DD') AS date,
+		tu.tenant_id,
+		COALESCE(tu.user_id, '') AS user_id,
+		COALESCE(u.username, '') AS username,
+		COALESCE(u.department_id, '') AS department_id,
+		COALESCE(d.name, '') AS department_name,
+		COALESCE(SUM(tu.input_tokens), 0) AS prompt_tokens,
+		COALESCE(SUM(tu.output_tokens), 0) AS completion_tokens,
+		COALESCE(SUM(tu.input_tokens + tu.output_tokens), 0) AS total_tokens,
+		COUNT(*) AS request_count`).
+		Group("TO_CHAR(tu.created_at, 'YYYY-MM-DD'), tu.tenant_id, tu.user_id, u.username, u.department_id, d.name")
+}
+
+func (h *SDPivotOpsAdminHandler) GetUsageStats(c *gin.Context) {
+	if denyIfNotOpsAdmin(c) {
+		return
+	}
+	h.db.Exec("SET LOCAL row_security = off")
+
+	query, err := parseOpsUsageStatsQuery(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	page, pageSize := parsePagination(c)
+	grouped := h.usageStatsQuery(query).
+		Select("1").
+		Group("TO_CHAR(tu.created_at, 'YYYY-MM-DD'), tu.tenant_id, tu.user_id, u.department_id")
+	var total int64
+	if err := h.db.Table("(?) AS usage_groups", grouped).Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count usage statistics"})
+		return
+	}
+
+	rows := make([]opsUsageStatRow, 0)
+	if err := selectOpsUsageStats(h.usageStatsQuery(query)).
+		Order("date DESC, total_tokens DESC, user_id ASC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load usage statistics"})
+		return
+	}
+
+	var summary types.SDPivotTokenUsageSummary
+	if err := h.usageStatsQuery(query).Select(`
+		COALESCE(SUM(tu.input_tokens), 0) AS total_prompt_tokens,
+		COALESCE(SUM(tu.output_tokens), 0) AS total_completion_tokens,
+		COALESCE(SUM(tu.input_tokens + tu.output_tokens), 0) AS total_tokens,
+		COUNT(*) AS request_count`).Scan(&summary).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to summarize usage statistics"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"stats":     rows,
+		"summary":   summary,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+func (h *SDPivotOpsAdminHandler) ExportUsageStats(c *gin.Context) {
+	if denyIfNotOpsAdmin(c) {
+		return
+	}
+	h.db.Exec("SET LOCAL row_security = off")
+
+	query, err := parseOpsUsageStatsQuery(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	rows := make([]opsUsageStatRow, 0)
+	if err := selectOpsUsageStats(h.usageStatsQuery(query)).
+		Order("date DESC, total_tokens DESC, user_id ASC").
+		Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to export usage statistics"})
+		return
+	}
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=usage_statistics.csv")
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"Date", "Tenant ID", "User ID", "Username", "Department ID", "Department", "Prompt Tokens", "Completion Tokens", "Total Tokens", "Request Count"})
+	for _, row := range rows {
+		_ = writer.Write([]string{
+			row.Date,
+			strconv.FormatUint(row.TenantID, 10),
+			row.UserID,
+			row.Username,
+			row.DepartmentID,
+			row.DepartmentName,
+			strconv.FormatInt(row.PromptTokens, 10),
+			strconv.FormatInt(row.CompletionTokens, 10),
+			strconv.FormatInt(row.TotalTokens, 10),
+			strconv.FormatInt(row.RequestCount, 10),
+		})
+	}
+	writer.Flush()
 }
 
 // ── Audit Logs ─────────────────────────────────────────────

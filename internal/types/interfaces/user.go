@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -100,6 +101,10 @@ type UserRepository interface {
 	RevokeSystemAdmin(ctx context.Context, userID, actorID string) (*types.User, error)
 	// SearchUsers searches users by username or email
 	SearchUsers(ctx context.Context, query string, limit int) ([]*types.User, error)
+	RecordLoginFailure(ctx context.Context, userID string, maxAttempts int, lockDuration time.Duration) (*time.Time, error)
+	ResetLoginFailures(ctx context.Context, userID string) error
+	UpdatePasswordSecurity(ctx context.Context, userID, passwordHash string, changedAt time.Time, expiresAt *time.Time) error
+	InitializePasswordSecurity(ctx context.Context, userID string, changedAt time.Time, expiresAt *time.Time) error
 }
 
 // AuthTokenRepository defines the auth token repository interface

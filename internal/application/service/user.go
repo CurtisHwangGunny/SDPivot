@@ -35,6 +35,7 @@ type oidcAuthorizationState struct {
 var (
 	jwtSecretOnce sync.Once
 	jwtSecret     string
+	ErrAccountLocked = errors.New("account temporarily locked")
 )
 
 // getJwtSecret retrieves the JWT secret from the environment, falling back to a securely generated random secret.
@@ -61,6 +62,7 @@ type userService struct {
 	tokenRepo     interfaces.AuthTokenRepository
 	tenantService interfaces.TenantService
 	memberService interfaces.TenantMemberService
+	settings      interfaces.SystemSettingService
 	config        *config.Config
 }
 
@@ -71,12 +73,14 @@ func NewUserService(
 	tokenRepo interfaces.AuthTokenRepository,
 	tenantService interfaces.TenantService,
 	memberService interfaces.TenantMemberService,
+	settings interfaces.SystemSettingService,
 ) interfaces.UserService {
 	return &userService{
 		userRepo:      userRepo,
 		tokenRepo:     tokenRepo,
 		tenantService: tenantService,
 		memberService: memberService,
+		settings:      settings,
 		config:        configInfo,
 	}
 }
@@ -88,6 +92,10 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	// Validate input
 	if req.Username == "" || req.Email == "" || req.Password == "" {
 		return nil, errors.New("username, email and password are required")
+	}
+	policy := s.passwordPolicy(ctx)
+	if err := secutils.ValidatePasswordPolicy(req.Password, policy); err != nil {
+		return nil, err
 	}
 
 	// Check if user already exists
@@ -123,6 +131,7 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	}
 
 	// Create user
+	now := time.Now()
 	user := &types.User{
 		ID:           uuid.New().String(),
 		Username:     req.Username,
@@ -130,8 +139,10 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		PasswordHash: string(hashedPassword),
 		TenantID:     createdTenant.ID,
 		IsActive:     true,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		PasswordChangedAt: &now,
+		PasswordExpiresAt: secutils.PasswordExpiry(now, policy.RotationDays),
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 
 	err = s.userRepo.CreateUser(ctx, user)
@@ -174,6 +185,10 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 			Message: "Invalid email or password",
 		}, nil
 	}
+	now := time.Now()
+	if user.LockedUntil != nil && now.Before(*user.LockedUntil) {
+		return nil, ErrAccountLocked
+	}
 
 	// Check if user is active
 	if !user.IsActive {
@@ -187,12 +202,34 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 	// Verify password
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
 	if err != nil {
+		maxAttempts, lockDuration := s.loginLockoutPolicy(ctx)
+		if maxAttempts > 0 {
+			lockedUntil, updateErr := s.userRepo.RecordLoginFailure(ctx, user.ID, maxAttempts, lockDuration)
+			if updateErr != nil {
+				return nil, fmt.Errorf("record login failure: %w", updateErr)
+			}
+			if lockedUntil != nil {
+				return nil, ErrAccountLocked
+			}
+		}
 		logger.Warn(ctx, "Password verification failed")
 		return &types.LoginResponse{
 			Success: false,
 			Message: "Invalid email or password",
 		}, nil
 	}
+	if err := s.userRepo.ResetLoginFailures(ctx, user.ID); err != nil {
+		return nil, fmt.Errorf("reset login failures: %w", err)
+	}
+	if user.PasswordChangedAt == nil {
+		policy := s.passwordPolicy(ctx)
+		user.PasswordChangedAt = &now
+		user.PasswordExpiresAt = secutils.PasswordExpiry(now, policy.RotationDays)
+		if err := s.userRepo.InitializePasswordSecurity(ctx, user.ID, now, user.PasswordExpiresAt); err != nil {
+			return nil, fmt.Errorf("initialize password rotation: %w", err)
+		}
+	}
+	user.MustChangePassword = secutils.IsPasswordExpired(now, user.PasswordExpiresAt)
 	logger.Info(ctx, "Password verification successful")
 
 	// Generate tokens. Resolve the target tenant once so the JWT claim
@@ -576,6 +613,13 @@ func (s *userService) ChangePassword(ctx context.Context, userID string, oldPass
 	if err != nil {
 		return errors.New("invalid old password")
 	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(newPassword)) == nil {
+		return errors.New("new password must differ from the current password")
+	}
+	policy := s.passwordPolicy(ctx)
+	if err := secutils.ValidatePasswordPolicy(newPassword, policy); err != nil {
+		return err
+	}
 
 	// Hash new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
@@ -583,10 +627,28 @@ func (s *userService) ChangePassword(ctx context.Context, userID string, oldPass
 		return err
 	}
 
-	user.PasswordHash = string(hashedPassword)
-	user.UpdatedAt = time.Now()
+	now := time.Now()
+	return s.userRepo.UpdatePasswordSecurity(ctx, user.ID, string(hashedPassword), now, secutils.PasswordExpiry(now, policy.RotationDays))
+}
 
-	return s.userRepo.UpdateUser(ctx, user)
+func (s *userService) passwordPolicy(ctx context.Context) secutils.PasswordPolicy {
+	if s.settings == nil {
+		return secutils.PasswordPolicy{MinLength: 8, RequireComplexity: true, RotationDays: 90}
+	}
+	return secutils.PasswordPolicy{
+		MinLength:         int(s.settings.GetInt(ctx, "auth.password.min_length", "", 8)),
+		RequireComplexity: s.settings.GetBool(ctx, "auth.password.complexity", "", true),
+		RotationDays:      int(s.settings.GetInt(ctx, "auth.password.rotation_days", "", 90)),
+	}
+}
+
+func (s *userService) loginLockoutPolicy(ctx context.Context) (int, time.Duration) {
+	if s.settings == nil {
+		return 5, 30 * time.Minute
+	}
+	maxAttempts := int(s.settings.GetInt(ctx, "auth.login.max_failed_attempts", "", 5))
+	minutes := s.settings.GetInt(ctx, "auth.login.lockout_minutes", "", 30)
+	return maxAttempts, time.Duration(minutes) * time.Minute
 }
 
 // ValidatePassword validates user password

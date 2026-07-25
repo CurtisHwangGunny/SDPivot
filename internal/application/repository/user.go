@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -105,6 +106,62 @@ func (r *userRepository) GetUserByTenantID(ctx context.Context, tenantID uint64)
 // UpdateUser updates a user
 func (r *userRepository) UpdateUser(ctx context.Context, user *types.User) error {
 	return r.db.WithContext(ctx).Save(user).Error
+}
+
+func (r *userRepository) RecordLoginFailure(ctx context.Context, userID string, maxAttempts int, lockDuration time.Duration) (*time.Time, error) {
+	var lockedUntil *time.Time
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query := tx.Where("id = ?", userID)
+		if tx.Dialector.Name() == "postgres" || tx.Dialector.Name() == "mysql" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		var user types.User
+		if err := query.First(&user).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		if user.LockedUntil != nil && !now.Before(*user.LockedUntil) {
+			user.FailedLoginAttempts = 0
+			user.LockedUntil = nil
+		}
+		user.FailedLoginAttempts++
+		if maxAttempts > 0 && user.FailedLoginAttempts >= maxAttempts {
+			until := now.Add(lockDuration)
+			user.LockedUntil = &until
+			lockedUntil = &until
+		}
+		return tx.Model(&types.User{}).Where("id = ?", userID).Updates(map[string]any{
+			"failed_login_attempts": user.FailedLoginAttempts,
+			"locked_until":          user.LockedUntil,
+			"updated_at":            now,
+		}).Error
+	})
+	return lockedUntil, err
+}
+
+func (r *userRepository) ResetLoginFailures(ctx context.Context, userID string) error {
+	return r.db.WithContext(ctx).Model(&types.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"failed_login_attempts": 0,
+		"locked_until":          nil,
+	}).Error
+}
+
+func (r *userRepository) UpdatePasswordSecurity(ctx context.Context, userID, passwordHash string, changedAt time.Time, expiresAt *time.Time) error {
+	return r.db.WithContext(ctx).Model(&types.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"password_hash":          passwordHash,
+		"password_changed_at":    changedAt,
+		"password_expires_at":    expiresAt,
+		"must_change_password":   false,
+		"failed_login_attempts":  0,
+		"locked_until":           nil,
+		"updated_at":             changedAt,
+	}).Error
+}
+
+func (r *userRepository) InitializePasswordSecurity(ctx context.Context, userID string, changedAt time.Time, expiresAt *time.Time) error {
+	return r.db.WithContext(ctx).Model(&types.User{}).
+		Where("id = ? AND password_changed_at IS NULL", userID).
+		Updates(map[string]any{"password_changed_at": changedAt, "password_expires_at": expiresAt}).Error
 }
 
 // DeleteUser deletes a user

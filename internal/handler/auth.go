@@ -5,12 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -135,7 +137,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 	req.Username = secutils.SanitizeForLog(req.Username)
 	req.Email = secutils.SanitizeForLog(req.Email)
-	req.Password = secutils.SanitizeForLog(req.Password)
 
 	// Validate required fields
 	if req.Username == "" || req.Email == "" || req.Password == "" {
@@ -201,6 +202,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Call service to authenticate user
 	response, err := h.userService.Login(ctx, &req)
 	if err != nil {
+		if stdErrors.Is(err, service.ErrAccountLocked) {
+			appErr := errors.NewTooManyRequestsError("Account temporarily locked; try again later")
+			c.Error(appErr)
+			return
+		}
 		logger.Errorf(ctx, "Failed to login user: %v", err)
 		appErr := errors.NewUnauthorizedError("Login failed").WithDetails(err.Error())
 		c.Error(appErr)
@@ -608,7 +614,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	var req struct {
 		OldPassword string `json:"old_password" binding:"required"`
-		NewPassword string `json:"new_password" binding:"required,min=6"`
+		NewPassword string `json:"new_password" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {

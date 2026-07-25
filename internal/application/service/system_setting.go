@@ -134,6 +134,42 @@ var registry = map[string]settingSpec{
 		Description: "自助注册模式。self_serve = 任何人可注册账号；invite_only = 关闭公网注册，" +
 			"仅 Owner/Admin 可邀请。修改后立即生效，但谨慎对待 self_serve（公网会接受 spam）。",
 	},
+	"security.ip_whitelist": {
+		Type:        "string_list",
+		Default:     []string{},
+		Category:    "security",
+		Description: "允许访问 WeKnora API 的客户端 IP 或 CIDR。空列表表示不启用访问限制，修改后立即生效。",
+	},
+	"auth.password.min_length": {
+		Type:        "int",
+		Default:     int64(8),
+		Category:    "security",
+		Description: "本地账号密码的最小字符数，修改后立即应用于注册和修改密码。",
+	},
+	"auth.password.complexity": {
+		Type:        "bool",
+		Default:     true,
+		Category:    "security",
+		Description: "启用后密码必须同时包含大写字母、小写字母、数字和特殊字符。",
+	},
+	"auth.password.rotation_days": {
+		Type:        "int",
+		Default:     int64(90),
+		Category:    "security",
+		Description: "本地账号密码有效期（天）。默认 90 天，0 表示不启用到期限制。",
+	},
+	"auth.login.max_failed_attempts": {
+		Type:        "int",
+		Default:     int64(5),
+		Category:    "security",
+		Description: "连续登录失败达到该次数后锁定账号。默认 5 次，0 表示不启用锁定。",
+	},
+	"auth.login.lockout_minutes": {
+		Type:        "int",
+		Default:     int64(30),
+		Category:    "security",
+		Description: "账号登录锁定时长（分钟），默认 30 分钟。",
+	},
 	// tenant.max_owned_per_user caps how many tenants a single non-superuser
 	// can create (and Own) via self-service POST /tenants. Read on every
 	// request — UI edits take effect immediately, no restart required. The
@@ -1178,6 +1214,32 @@ func validateRegistryEntry(key string, rawValue any) error {
 			return err
 		}
 		return utils.ValidateSSRFWhitelistEntries(entries)
+	case "security.ip_whitelist":
+		entries, err := coerceToStringSlice(rawValue)
+		if err != nil {
+			return err
+		}
+		_, err = utils.NormalizeIPWhitelist(entries)
+		return err
+	case "auth.password.min_length":
+		return validateIntRange(rawValue, 6, 128, "minimum password length")
+	case "auth.password.rotation_days":
+		return validateIntRange(rawValue, 0, 3650, "password rotation days")
+	case "auth.login.max_failed_attempts":
+		return validateIntRange(rawValue, 0, 100, "maximum failed login attempts")
+	case "auth.login.lockout_minutes":
+		return validateIntRange(rawValue, 1, 10080, "login lockout minutes")
+	}
+	return nil
+}
+
+func validateIntRange(rawValue any, minValue, maxValue int64, label string) error {
+	n, err := coerceToPositiveInt64(rawValue)
+	if err != nil {
+		return err
+	}
+	if n < minValue || n > maxValue {
+		return fmt.Errorf("%s must be between %d and %d", label, minValue, maxValue)
 	}
 	return nil
 }

@@ -104,6 +104,8 @@ type User struct {
 	MustChangePassword bool       `json:"must_change_password" gorm:"default:false"`
 	PasswordChangedAt  *time.Time `json:"password_changed_at"`
 	PasswordExpiresAt  *time.Time `json:"password_expires_at"`
+	FailedLoginAttempts int        `json:"-" gorm:"not null;default:0"`
+	LockedUntil         *time.Time `json:"-" gorm:"index"`
 
 	// SDPivot lifecycle fields (PRD v4.2): 30-day trial and certification extension.
 	TrialStartedAt  *time.Time `json:"trial_started_at"`
@@ -151,7 +153,7 @@ type AuthToken struct {
 // LoginRequest represents a login request
 type LoginRequest struct {
 	Email    string `json:"email"    binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required"`
 }
 
 type OIDCAuthURLResponse struct {
@@ -196,7 +198,7 @@ type OIDCUserInfo struct {
 type RegisterRequest struct {
 	Username string `json:"username" binding:"required,min=2,max=50"`
 	Email    string `json:"email"    binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
+	Password string `json:"password" binding:"required"`
 }
 
 // LoginResponse represents a login response
