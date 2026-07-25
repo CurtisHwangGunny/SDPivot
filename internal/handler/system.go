@@ -28,10 +28,12 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
+	"gorm.io/gorm"
 )
 
 // SystemHandler handles system-related requests
 type SystemHandler struct {
+	db               *gorm.DB
 	cfg              *config.Config
 	neo4jDriver      neo4j.Driver
 	documentReader   interfaces.DocumentReader
@@ -45,7 +47,8 @@ type SystemHandler struct {
 }
 
 // NewSystemHandler creates a new system handler
-func NewSystemHandler(cfg *config.Config,
+func NewSystemHandler(db *gorm.DB,
+	cfg *config.Config,
 	neo4jDriver neo4j.Driver,
 	documentReader interfaces.DocumentReader,
 	tenantSvc interfaces.TenantService,
@@ -54,6 +57,7 @@ func NewSystemHandler(cfg *config.Config,
 	auditSvc interfaces.AuditLogService,
 ) *SystemHandler {
 	return &SystemHandler{
+		db:               db,
 		cfg:              cfg,
 		neo4jDriver:      neo4jDriver,
 		documentReader:   documentReader,

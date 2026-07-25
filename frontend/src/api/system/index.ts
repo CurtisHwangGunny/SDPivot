@@ -433,6 +433,55 @@ export async function applyDefaultStorageQuotaToAllTenants(): Promise<ApplyDefau
   return response as unknown as ApplyDefaultStorageQuotaResult
 }
 
+// ---- Platform Model Configurations ----
+
+export interface PlatformModelConfig {
+  id: string
+  name: string
+  provider: string
+  endpoint: string
+  api_key_configured: boolean
+  temperature: number
+  max_tokens: number
+  top_p: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PlatformModelConfigInput {
+  name: string
+  provider: string
+  endpoint: string
+  api_key?: string
+  temperature: number
+  max_tokens: number
+  top_p: number
+}
+
+export async function listPlatformModelConfigs(): Promise<PlatformModelConfig[]> {
+  const response = await get('/api/v1/system/admin/model-configs')
+  return response as unknown as PlatformModelConfig[]
+}
+
+export async function createPlatformModelConfig(
+  input: PlatformModelConfigInput,
+): Promise<PlatformModelConfig> {
+  const response = await post('/api/v1/system/admin/model-configs', input)
+  return response as unknown as PlatformModelConfig
+}
+
+export async function updatePlatformModelConfig(
+  id: string,
+  input: PlatformModelConfigInput,
+): Promise<PlatformModelConfig> {
+  const response = await put(`/api/v1/system/admin/model-configs/${encodeURIComponent(id)}`, input)
+  return response as unknown as PlatformModelConfig
+}
+
+export async function deletePlatformModelConfig(id: string): Promise<void> {
+  await del(`/api/v1/system/admin/model-configs/${encodeURIComponent(id)}`)
+}
+
 // ---- Platform Audit Log (system-scope) ----
 
 // We reuse the AuditLog / ListAuditLogParams types from the tenant

@@ -68,6 +68,15 @@ CREATE INDEX IF NOT EXISTS idx_models_source ON models(source);
 CREATE INDEX IF NOT EXISTS idx_models_is_builtin ON models(is_builtin);
 CREATE INDEX IF NOT EXISTS idx_models_managed_by ON models(managed_by);
 
+CREATE TABLE IF NOT EXISTS system_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key VARCHAR(100) NOT NULL UNIQUE,
+    value TEXT NOT NULL DEFAULT '',
+    description VARCHAR(255) NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_bases (
     id VARCHAR(36) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,

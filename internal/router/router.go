@@ -829,6 +829,13 @@ func RegisterSystemAdminRoutes(
 		adminRoutes.PUT("/settings/:key", handler.UpdateSystemSetting)
 		adminRoutes.DELETE("/settings/:key", handler.ResetSystemSetting)
 
+		// Platform-wide upstream model provider configurations.
+		adminRoutes.GET("/model-configs", handler.ListModelConfigs)
+		adminRoutes.POST("/model-configs", handler.CreateModelConfig)
+		adminRoutes.GET("/model-configs/:id", handler.GetModelConfig)
+		adminRoutes.PUT("/model-configs/:id", handler.UpdateModelConfig)
+		adminRoutes.DELETE("/model-configs/:id", handler.DeleteModelConfig)
+
 		// Bulk action — write the current default-quota setting onto
 		// every existing tenant. Lives under /tenants instead of
 		// /settings because it changes tenants, not the setting row.
