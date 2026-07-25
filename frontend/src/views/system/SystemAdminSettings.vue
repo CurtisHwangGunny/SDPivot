@@ -99,6 +99,7 @@
             </div>
             <div v-if="tags.length === 0" class="empty-inline">{{ text.noTags }}</div>
             <div v-for="(tag, index) in tags" :key="tag.id || index" class="tag-row">
+              <t-select v-model="tag.dimension_id" :options="dimensionOptions" :placeholder="text.dimension" />
               <t-input v-model="tag.name" :placeholder="text.tagName" />
               <t-color-picker v-model="tag.color" format="HEX" :enable-alpha="false" />
               <t-input-number v-model="tag.sort_order" :step="1" />
@@ -159,11 +160,12 @@ import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getPlatformGlobalParams, getPlatformSMSConfig, getPlatformStorageConfig, getPlatformTagDictionary,
+  listTagDimensions,
   getPlatformWeChatLoginConfig, listSystemAuditLog, listSystemSettings, resetSystemSetting,
   updatePlatformGlobalParams, updatePlatformSMSConfig, updatePlatformStorageConfig,
   updatePlatformTagDictionary, updatePlatformWeChatLoginConfig, updateSystemSetting,
   type AuditLog, type PlatformGlobalParams, type PlatformSMSConfigInput, type PlatformStorageConfigInput,
-  type PlatformTagDictionaryEntry, type PlatformWeChatLoginConfigInput, type SystemSettingItem,
+  type PlatformTagDictionaryEntry, type PlatformTagDimension, type PlatformWeChatLoginConfigInput, type SystemSettingItem,
 } from '@/api/system'
 
 const { locale } = useI18n()
@@ -181,7 +183,7 @@ const en = {
   storage: 'Object storage', storageDesc: 'Platform S3 or MinIO connection and credentials.', provider: 'Provider', endpoint: 'Endpoint', region: 'Region', bucket: 'Bucket', pathPrefix: 'Path prefix', accessKey: 'Access key', secretKey: 'Secret key', useSSL: 'Use SSL', pathStyle: 'Force path-style URLs',
   wechat: 'WeChat login', wechatDesc: 'Configure the platform-wide WeChat OAuth callback.', enabled: 'Enabled', appId: 'App ID', appSecret: 'App secret', redirectUrl: 'Redirect URL',
   sms: 'SMS provider', smsDesc: 'Configure platform verification and notification delivery.', signName: 'Sign name', timeout: 'Timeout (seconds)', templateId: 'Template ID', sender: 'Sender', customHeaders: 'Custom headers (JSON)',
-  tags: 'Global tag dictionary', tagsDesc: 'Ordered tags available across platform workspaces.', addTag: 'Add tag', noTags: 'No global tags configured.', tagName: 'Tag name', remove: 'Remove',
+  tags: 'Global tag dictionary', tagsDesc: 'Manage classification values by platform dimension.', addTag: 'Add tag', noTags: 'No global tags configured.', tagName: 'Tag name', dimension: 'Dimension', remove: 'Remove',
   securityNotice: 'Security policy changes affect all users immediately. IP allowlist entries are validated by the backend, but enforcement depends on the deployed server version.',
   action: 'Action', outcome: 'Outcome', actorId: 'Actor user ID', search: 'Search', loadMore: 'Load older entries', end: 'No older entries', saved: 'Configuration saved', loadFailed: 'Failed to load configuration', saveFailed: 'Failed to save configuration', invalidHeaders: 'Custom headers must be a JSON object.', requiredFields: 'Complete all required fields before saving.',
 }
@@ -192,7 +194,7 @@ const zh = {
   storage: '对象存储', storageDesc: '平台 S3 或 MinIO 连接与凭证。', provider: '服务商', endpoint: '服务地址', region: '区域', bucket: '存储桶', pathPrefix: '路径前缀', accessKey: '访问密钥', secretKey: '密钥', useSSL: '启用 SSL', pathStyle: '强制 Path Style',
   wechat: '微信登录', wechatDesc: '配置平台统一微信 OAuth 回调。', enabled: '启用', appId: 'App ID', appSecret: 'App Secret', redirectUrl: '回调地址',
   sms: '短信服务', smsDesc: '配置平台验证码与通知发送服务。', signName: '签名', timeout: '超时（秒）', templateId: '模板 ID', sender: '发送方', customHeaders: '自定义请求头（JSON）',
-  tags: '全局标签字典', tagsDesc: '所有空间可使用的有序标签。', addTag: '添加标签', noTags: '尚未配置全局标签。', tagName: '标签名称', remove: '删除',
+  tags: '全局标签字典', tagsDesc: '按平台分类维度管理所有空间使用的标签。', addTag: '添加标签', noTags: '尚未配置全局标签。', tagName: '标签名称', dimension: '分类维度', remove: '删除',
   securityNotice: '安全策略修改会立即影响所有用户。IP 白名单由后端校验，但是否执行访问限制取决于部署的服务端版本。',
   action: '操作类型', outcome: '结果', actorId: '操作者用户 ID', search: '查询', loadMore: '加载更早记录', end: '没有更早记录', saved: '配置已保存', loadFailed: '加载配置失败', saveFailed: '保存配置失败', invalidHeaders: '自定义请求头必须是 JSON 对象。', requiredFields: '请填写所有必填项。',
 }
@@ -212,6 +214,8 @@ const wechatSecret = ref('')
 const wechatConfigured = ref(false)
 const paramsForm = reactive<PlatformGlobalParams>({ chunk_size: 512, threshold: 0.5, token_limit: 4096, concurrency: 32 })
 const tags = ref<PlatformTagDictionaryEntry[]>([])
+const dimensions = ref<PlatformTagDimension[]>([])
+const dimensionOptions = computed(() => dimensions.value.map(dimension => ({ label: dimension.name, value: dimension.id })))
 
 function secretHelp(configured: boolean) { return configured ? text.value.configured : text.value.notConfigured }
 function messageError(error: any, fallback: string) { MessagePlugin.error(error?.message || fallback) }
@@ -220,11 +224,11 @@ function assignFields<T extends object>(target: T, source: Partial<T>) { Object.
 async function loadSystem() {
   systemLoading.value = true
   try {
-    const [storage, sms, wechat, params, dictionary] = await Promise.all([getPlatformStorageConfig(), getPlatformSMSConfig(), getPlatformWeChatLoginConfig(), getPlatformGlobalParams(), getPlatformTagDictionary()])
+    const [storage, sms, wechat, params, dictionary, tagDimensions] = await Promise.all([getPlatformStorageConfig(), getPlatformSMSConfig(), getPlatformWeChatLoginConfig(), getPlatformGlobalParams(), getPlatformTagDictionary(), listTagDimensions()])
     assignFields(storageForm, storage); storageConfigured.access = storage.access_key_id_configured; storageConfigured.secret = storage.secret_access_key_configured
     assignFields(smsForm, sms); smsConfigured.access = sms.access_key_id_configured; smsConfigured.secret = sms.access_key_secret_configured; smsHeaders.value = JSON.stringify(sms.custom_headers || {}, null, 2)
     assignFields(wechatForm, wechat); wechatConfigured.value = wechat.app_secret_configured
-    assignFields(paramsForm, params); tags.value = (dictionary.tags || []).map(tag => ({ ...tag }))
+    assignFields(paramsForm, params); dimensions.value = tagDimensions || []; tags.value = (dictionary.tags || []).map(tag => ({ ...tag }))
     loadedTabs.system = true
   } catch (error) { messageError(error, text.value.loadFailed) } finally { systemLoading.value = false }
 }
@@ -259,8 +263,8 @@ async function saveWeChat() {
   if (wechatForm.enabled && (!wechatForm.app_id.trim() || !validURL(wechatForm.redirect_url))) return void MessagePlugin.warning(text.value.requiredFields)
   await withSave('wechat', async () => { const input = { ...wechatForm }; if (wechatSecret.value.trim()) input.app_secret = wechatSecret.value.trim(); const result = await updatePlatformWeChatLoginConfig(input); assignFields(wechatForm, result); wechatConfigured.value = result.app_secret_configured; wechatSecret.value = '' })
 }
-function addTag() { tags.value.push({ id: crypto.randomUUID(), name: '', color: '#0052D9', sort_order: tags.value.length * 10 }) }
-async function saveTags() { if (tags.value.some(tag => !tag.name.trim())) return void MessagePlugin.warning(text.value.requiredFields); await withSave('tags', async () => { const result = await updatePlatformTagDictionary({ tags: tags.value }); tags.value = result.tags.map(tag => ({ ...tag })) }) }
+function addTag() { tags.value.push({ id: crypto.randomUUID(), dimension_id: dimensions.value[0]?.id || '', name: '', color: '#0052D9', sort_order: tags.value.length * 10 }) }
+async function saveTags() { if (tags.value.some(tag => !tag.dimension_id || !tag.name.trim())) return void MessagePlugin.warning(text.value.requiredFields); await withSave('tags', async () => { const result = await updatePlatformTagDictionary({ tags: tags.value }); tags.value = result.tags.map(tag => ({ ...tag })) }) }
 
 const securitySettings = ref<SystemSettingItem[]>([])
 const securityValues = reactive<Record<string, any>>({})
@@ -318,7 +322,7 @@ onMounted(loadSystem)
 .switch-row { gap: 24px; }
 .switch-row label { display: flex; align-items: center; gap: 8px; color: var(--td-text-color-primary); }
 .switch-row--top { margin-bottom: 18px; }
-.tag-row { display: grid; grid-template-columns: minmax(180px, 1fr) 150px 120px auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--td-component-stroke); }
+.tag-row { display: grid; grid-template-columns: minmax(160px, .8fr) minmax(180px, 1fr) 150px 120px auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--td-component-stroke); }
 .empty-inline { padding: 24px; text-align: center; color: var(--td-text-color-placeholder); background: var(--td-bg-color-secondarycontainer); border-radius: 8px; }
 .security-notice { margin-bottom: 14px; }
 .security-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 45%); gap: 24px; align-items: center; padding: 18px 0; border-bottom: 1px solid var(--td-component-stroke); }

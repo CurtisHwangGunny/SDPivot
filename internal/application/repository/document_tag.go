@@ -36,6 +36,23 @@ func (r *documentTagRepository) ListClassificationDictionary(
 	return dimensions, tags, nil
 }
 
+func (r *documentTagRepository) ListDocumentTags(
+	ctx context.Context,
+	tenantID uint64,
+	documentID string,
+) ([]*types.DocumentClassificationTag, error) {
+	var tags []*types.DocumentClassificationTag
+	err := r.db.WithContext(ctx).
+		Table("document_tags AS dt").
+		Select("dt.tag_id, dt.dimension_id, dim.code AS dimension_code, dim.name AS dimension_name, dict.name, dict.color, dt.confidence").
+		Joins("JOIN tag_dictionary AS dict ON dict.id = dt.tag_id").
+		Joins("JOIN tag_dimensions AS dim ON dim.id = dt.dimension_id").
+		Where("dt.tenant_id = ? AND dt.document_id = ?", tenantID, documentID).
+		Order("dim.sort_order ASC, dict.sort_order ASC, dict.name ASC").
+		Scan(&tags).Error
+	return tags, err
+}
+
 func (r *documentTagRepository) ReplaceDocumentTags(
 	ctx context.Context,
 	tenantID uint64,

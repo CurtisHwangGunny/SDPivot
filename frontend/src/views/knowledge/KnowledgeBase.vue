@@ -60,6 +60,7 @@ import { formatStringDate } from '@/utils';
 import { formatFileSize } from '@/utils/files';
 import { useMarqueeSelect } from '@/hooks/useMarqueeSelect';
 import type { ParserEngineInfo } from '@/api/system';
+import { getTagDictionary, listTagDimensions, type PlatformTagDictionaryEntry, type PlatformTagDimension } from '@/api/system';
 const route = useRoute();
 const { t } = useI18n();
 const kbId = computed(() => (route.params as any).kbId as string || '');
@@ -514,6 +515,18 @@ const tagLoadingMore = ref(false);
 const tagTotal = ref(0);
 let tagSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 let docSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+const classificationDimensions = ref<PlatformTagDimension[]>([]);
+const classificationTags = ref<PlatformTagDictionaryEntry[]>([]);
+const selectedClassificationTags = ref<Record<string, string[]>>({});
+const classificationLoading = ref(false);
+const classificationFilterOptions = computed(() => classificationDimensions.value
+  .map((dimension) => ({
+    dimension,
+    options: classificationTags.value
+      .filter((tag) => tag.dimension_id === dimension.id)
+      .map((tag) => ({ label: tag.name, value: tag.id })),
+  }))
+  .filter((group) => group.options.length > 0));
 const docSearchKeyword = ref('');
 const selectedFileType = ref('');
 const fileTypeOptions = computed(() => [
@@ -568,8 +581,14 @@ const updatedTimeRange = ref<string[]>([]);
 const disableFutureDate = { after: new Date(new Date().setHours(23, 59, 59, 999)) };
 const filterParams = computed(() => {
   const [start, end] = updatedTimeRange.value || [];
+  const activeClassificationFilters = Object.fromEntries(
+    Object.entries(selectedClassificationTags.value).filter(([, tagIds]) => tagIds.length > 0),
+  );
   return {
     tag_ids: selectedTagIds.value.length > 0 ? selectedTagIds.value.join(',') : undefined,
+    tag_filters: Object.keys(activeClassificationFilters).length > 0
+      ? JSON.stringify(activeClassificationFilters)
+      : undefined,
     keyword: docSearchKeyword.value ? docSearchKeyword.value.trim() : undefined,
     file_type: selectedFileType.value || undefined,
     parse_status: selectedParseStatus.value || undefined,
@@ -660,6 +679,19 @@ const getTagName = (tagId?: string | number) => {
   if (!tagId && tagId !== 0) return '';
   const key = String(tagId);
   return tagMap.value[key]?.name || '';
+};
+
+const loadClassificationDictionary = async () => {
+  classificationLoading.value = true;
+  try {
+    const [dimensions, dictionary] = await Promise.all([listTagDimensions(), getTagDictionary()]);
+    classificationDimensions.value = dimensions || [];
+    classificationTags.value = dictionary.tags || [];
+  } catch (error) {
+    console.error('Failed to load classification dictionary', error);
+  } finally {
+    classificationLoading.value = false;
+  }
 };
 
 const formatDocTime = (time?: string) => {
@@ -866,6 +898,7 @@ const loadKnowledgeBaseInfo = async (targetKbId: string, force = false) => {
     selectedTagIds.value = [];
     tagFilterCleared.value = false;
     uiStore.clearSelectedTagIds();
+    selectedClassificationTags.value = {};
     // 重置store中的标签选择状态，避免上传文档时自动带上之前选择的标签
     uiStore.clearSelectedTagIds();
     if (!isFAQ.value) {
@@ -954,6 +987,13 @@ watch(() => kbId.value, (newKbId, oldKbId) => {
 watch(selectedTagIds, (newVal, oldVal) => {
   if (oldVal === undefined) return;
   if (kbId.value) {
+    loadKnowledgeFiles(kbId.value);
+  }
+}, { deep: true });
+
+watch(selectedClassificationTags, () => {
+  if (kbId.value) {
+    resetPage();
     loadKnowledgeFiles(kbId.value);
   }
 }, { deep: true });
@@ -1076,6 +1116,7 @@ const handleOpenKnowledgeEvent = (e: Event) => {
 };
 
 onMounted(() => {
+  void loadClassificationDictionary();
   loadKnowledgeList();
   editorResources.ensureParserEngines();
 
@@ -2315,6 +2356,26 @@ async function createNewSession(value: string): Promise<void> {
                     </button>
                   </div>
                 </t-popup>
+                <div
+                  v-for="group in classificationFilterOptions"
+                  :key="group.dimension.id"
+                  class="doc-filter-field doc-filter-field--classification"
+                >
+                  <t-select
+                    v-model="selectedClassificationTags[group.dimension.id]"
+                    :options="group.options"
+                    :placeholder="group.dimension.name || $t('knowledgeBase.classificationFilterPlaceholder')"
+                    :loading="classificationLoading"
+                    class="doc-type-select doc-filter-field__control"
+                    multiple
+                    clearable
+                    collapse-tags
+                  >
+                    <template #prefixIcon>
+                      <t-icon name="filter" size="16px" />
+                    </template>
+                  </t-select>
+                </div>
                 <div class="doc-filter-field">
                   <t-select v-model="selectedFileType" :options="fileTypeOptions"
                     :placeholder="$t('knowledgeBase.fileTypeFilter')" class="doc-type-select doc-filter-field__control"
@@ -3114,6 +3175,10 @@ async function createNewSession(value: string): Promise<void> {
 
     &--wide {
       width: 280px;
+    }
+
+    &--classification {
+      width: 176px;
     }
 
     &__control {

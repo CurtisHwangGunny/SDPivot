@@ -42,3 +42,14 @@ type DocumentTag struct {
 }
 
 func (DocumentTag) TableName() string { return "document_tags" }
+
+// DocumentClassificationTag is the display-ready form of a document tag assignment.
+type DocumentClassificationTag struct {
+	TagID         string  `json:"tag_id"`
+	DimensionID   string  `json:"dimension_id"`
+	DimensionCode string  `json:"dimension_code"`
+	DimensionName string  `json:"dimension_name"`
+	Name          string  `json:"name"`
+	Color         string  `json:"color"`
+	Confidence    float64 `json:"confidence"`
+}

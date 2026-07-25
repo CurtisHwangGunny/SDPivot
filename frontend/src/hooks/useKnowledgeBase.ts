@@ -37,6 +37,15 @@ export default function (knowledgeBaseId?: string) {
     chunkLoading: false,
     chunkLoadError: "",
     tags: [] as Array<{ id: string; name: string; color?: string }>,
+    classification_tags: [] as Array<{
+      tag_id: string;
+      dimension_id: string;
+      dimension_code: string;
+      dimension_name: string;
+      name: string;
+      color?: string;
+      confidence: number;
+    }>,
   });
   let knowledgeListGeneration = 0;
   const getKnowled = (
@@ -44,6 +53,7 @@ export default function (knowledgeBaseId?: string) {
       page: number;
       page_size: number;
       tag_ids?: string;
+      tag_filters?: string;
       keyword?: string;
       file_type?: string;
       parse_status?: string;
@@ -191,6 +201,7 @@ export default function (knowledgeBaseId?: string) {
       error_message: "",
       chunkLoadError: "",
       tags: item?.tags ? [...item.tags] : [],
+      classification_tags: [],
     });
     getKnowledgeDetails(item.id)
       .then((result: any) => {
@@ -209,6 +220,7 @@ export default function (knowledgeBaseId?: string) {
             parse_status: data.parse_status || '',
             error_message: data.error_message || '',
             tags: data.tags?.length ? data.tags : (item?.tags || []),
+            classification_tags: data.classification_tags || [],
           });
         }
       })

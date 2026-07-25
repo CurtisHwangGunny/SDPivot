@@ -87,3 +87,21 @@ func TestReplaceDocumentTags_RejectsCrossTenantDocument(t *testing.T) {
 	err := repo.ReplaceDocumentTags(context.Background(), 2, documentID, nil)
 	require.Error(t, err)
 }
+
+func TestListDocumentTags_ReturnsDictionaryMetadata(t *testing.T) {
+	db := setupKnowledgeTestDB(t)
+	require.NoError(t, db.Exec(documentTagTestDDL).Error)
+	repo := &documentTagRepository{db: db}
+	documentID, dimensionID, tagID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	require.NoError(t, db.Exec("INSERT INTO knowledges (id, tenant_id, knowledge_base_id) VALUES (?, ?, ?)", documentID, 7, uuid.NewString()).Error)
+	require.NoError(t, db.Exec("INSERT INTO tag_dimensions (id, code, name, sort_order) VALUES (?, ?, ?, ?)", dimensionID, "department", "Department", 10).Error)
+	require.NoError(t, db.Exec("INSERT INTO tag_dictionary (id, dimension_id, name, color, sort_order) VALUES (?, ?, ?, ?, ?)", tagID, dimensionID, "Legal", "#0052D9", 10).Error)
+	require.NoError(t, db.Exec("INSERT INTO document_tags (tenant_id, document_id, tag_id, dimension_id, confidence) VALUES (?, ?, ?, ?, ?)", 7, documentID, tagID, dimensionID, 0.68).Error)
+
+	tags, err := repo.ListDocumentTags(context.Background(), 7, documentID)
+	require.NoError(t, err)
+	require.Len(t, tags, 1)
+	assert.Equal(t, "Department", tags[0].DimensionName)
+	assert.Equal(t, "Legal", tags[0].Name)
+	assert.InDelta(t, 0.68, tags[0].Confidence, 0.0001)
+}

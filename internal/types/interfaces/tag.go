@@ -67,5 +67,6 @@ type KnowledgeTagRepository interface {
 // DocumentTagRepository persists platform-wide seven-dimension document classifications.
 type DocumentTagRepository interface {
 	ListClassificationDictionary(ctx context.Context) ([]*types.TagDimension, []*types.TagDictionary, error)
+	ListDocumentTags(ctx context.Context, tenantID uint64, documentID string) ([]*types.DocumentClassificationTag, error)
 	ReplaceDocumentTags(ctx context.Context, tenantID uint64, documentID string, tags []*types.DocumentTag) error
 }

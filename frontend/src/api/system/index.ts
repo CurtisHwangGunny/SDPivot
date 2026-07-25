@@ -503,9 +503,23 @@ export interface PlatformWeChatLoginConfigInput {
 
 export interface PlatformTagDictionaryEntry {
   id: string
+  dimension_id: string
+  dimension?: PlatformTagDimension
   name: string
   color: string
   sort_order: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface PlatformTagDimension {
+  id: string
+  code: string
+  name: string
+  description: string
+  sort_order: number
+  created_at?: string
+  updated_at?: string
 }
 
 export interface PlatformTagDictionary {
@@ -555,6 +569,14 @@ export function updatePlatformWeChatLoginConfig(
 
 export function getPlatformTagDictionary(): Promise<PlatformTagDictionary> {
   return getPlatformConfig('tag-dictionary')
+}
+
+export function listTagDimensions(): Promise<PlatformTagDimension[]> {
+  return get('/api/v1/system/tag-dimensions') as unknown as Promise<PlatformTagDimension[]>
+}
+
+export function getTagDictionary(): Promise<PlatformTagDictionary> {
+  return get('/api/v1/system/tag-dictionary') as unknown as Promise<PlatformTagDictionary>
 }
 
 export function updatePlatformTagDictionary(input: PlatformTagDictionary): Promise<PlatformTagDictionary> {

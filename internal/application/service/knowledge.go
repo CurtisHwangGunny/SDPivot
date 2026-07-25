@@ -51,6 +51,7 @@ type knowledgeService struct {
 	chunkRepo       interfaces.ChunkRepository
 	tagRepo         interfaces.KnowledgeTagRepository
 	tagService      interfaces.KnowledgeTagService
+	documentTags    interfaces.DocumentTagRepository
 	fileSvc         interfaces.FileService
 	modelService    interfaces.ModelService
 	task            interfaces.TaskEnqueuer
@@ -92,6 +93,7 @@ func NewKnowledgeService(
 	chunkRepo interfaces.ChunkRepository,
 	tagRepo interfaces.KnowledgeTagRepository,
 	tagService interfaces.KnowledgeTagService,
+	documentTags interfaces.DocumentTagRepository,
 	fileSvc interfaces.FileService,
 	modelService interfaces.ModelService,
 	task interfaces.TaskEnqueuer,
@@ -118,6 +120,7 @@ func NewKnowledgeService(
 		chunkRepo:       chunkRepo,
 		tagRepo:         tagRepo,
 		tagService:      tagService,
+		documentTags:    documentTags,
 		fileSvc:         fileSvc,
 		modelService:    modelService,
 		task:            task,
@@ -469,6 +472,14 @@ func (s *knowledgeService) GetKnowledgeByID(ctx context.Context, id string) (*ty
 		logger.Warnf(ctx, "Failed to load tags for knowledge %s: %v", knowledge.ID, err)
 	} else if tags, ok := tagMap[knowledge.ID]; ok {
 		knowledge.Tags = tags
+	}
+	if s.documentTags != nil {
+		classificationTags, classificationErr := s.documentTags.ListDocumentTags(ctx, tenantID, knowledge.ID)
+		if classificationErr != nil {
+			logger.Warnf(ctx, "Failed to load classification tags for knowledge %s: %v", knowledge.ID, classificationErr)
+		} else {
+			knowledge.ClassificationTags = classificationTags
+		}
 	}
 
 	logger.Infof(ctx, "Knowledge retrieved successfully, ID: %s, type: %s", knowledge.ID, knowledge.Type)

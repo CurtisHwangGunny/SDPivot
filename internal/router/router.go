@@ -65,6 +65,7 @@ type RouterParams struct {
 	AuthHandler                  *handler.AuthHandler
 	InitializationHandler        *handler.InitializationHandler
 	SystemHandler                *handler.SystemHandler
+	BackupHandler                *handler.BackupHandler
 	MCPServiceHandler            *handler.MCPServiceHandler
 	MCPCredentialsHandler        *handler.MCPCredentialsHandler
 	MCPOAuthHandler              *handler.MCPOAuthHandler
@@ -218,7 +219,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterEvaluationRoutes(v1, params.EvaluationHandler, rbacGuards)
 		RegisterInitializationRoutes(v1, params.InitializationHandler, rbacGuards)
 		RegisterSystemRoutes(v1, params.SystemHandler, rbacGuards)
-		RegisterSystemAdminRoutes(v1, params.SystemHandler, params.AuditLogHandler, rbacGuards)
+		RegisterSystemAdminRoutes(v1, params.SystemHandler, params.BackupHandler, params.AuditLogHandler, rbacGuards)
 		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler, params.MCPCredentialsHandler, params.MCPOAuthHandler, rbacGuards)
 		RegisterWebSearchRoutes(v1, params.WebSearchHandler, rbacGuards)
 		RegisterWebSearchProviderRoutes(v1, params.WebSearchProviderHandler, params.WebSearchCredentialsHandler, rbacGuards)
@@ -780,6 +781,8 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler, g 
 		systemRoutes.POST("/docreader/reconnect", g.Admin(), handler.ReconnectDocReader)
 		systemRoutes.GET("/storage-engine-status", g.Viewer(), handler.GetStorageEngineStatus)
 		systemRoutes.POST("/storage-engine-check", g.Admin(), handler.CheckStorageEngine)
+		systemRoutes.GET("/tag-dimensions", g.Viewer(), handler.ListTagDimensions)
+		systemRoutes.GET("/tag-dictionary", g.Viewer(), handler.GetTagDictionary)
 	}
 }
 
@@ -810,6 +813,7 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler, g 
 func RegisterSystemAdminRoutes(
 	r *gin.RouterGroup,
 	handler *handler.SystemHandler,
+	backupHandler *handler.BackupHandler,
 	auditLogHandler *handler.AuditLogHandler,
 	g *rbacGuards,
 ) {
@@ -854,6 +858,18 @@ func RegisterSystemAdminRoutes(
 		adminRoutes.DELETE("/tag-dictionary/:id", handler.DeleteTagDictionaryEntry)
 		adminRoutes.GET("/global-params", handler.GetGlobalParams)
 		adminRoutes.PUT("/global-params", handler.UpdateGlobalParams)
+
+		if backupHandler != nil {
+			backups := adminRoutes.Group("/backups")
+			backups.POST("", backupHandler.Create)
+			backups.GET("", backupHandler.List)
+			backups.GET("/schedule", backupHandler.GetSchedule)
+			backups.PUT("/schedule", backupHandler.UpdateSchedule)
+			backups.GET("/:id", backupHandler.Get)
+			backups.GET("/:id/download", backupHandler.Download)
+			backups.DELETE("/:id", backupHandler.Delete)
+			backups.POST("/:id/restore", backupHandler.Restore)
+		}
 
 		// Bulk action — write the current default-quota setting onto
 		// every existing tenant. Lives under /tenants instead of

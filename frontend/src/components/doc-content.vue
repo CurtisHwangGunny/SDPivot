@@ -36,6 +36,16 @@ const detailTags = computed(() => {
   return Array.isArray(tags) ? tags : [];
 });
 
+const LOW_CONFIDENCE_THRESHOLD = 0.7;
+const classificationTags = computed(() => {
+  const tags = props.details?.classification_tags;
+  return Array.isArray(tags) ? tags : [];
+});
+const hasLowConfidenceTags = computed(() =>
+  classificationTags.value.some((tag: any) => Number(tag.confidence) < LOW_CONFIDENCE_THRESHOLD),
+);
+const formatConfidence = (confidence: number) => `${Math.round(Number(confidence || 0) * 100)}%`;
+
 const headerIconName = computed(() => {
   switch (props.details?.type) {
     case 'url':
@@ -1174,7 +1184,33 @@ const handleDetailsScroll = () => {
                 </t-tag>
               </span>
             </div>
+            <div v-if="classificationTags.length > 0" class="doc-detail-row">
+              <span class="doc-detail-label">{{ $t('knowledgeBase.classificationTags') }}</span>
+              <span class="doc-detail-value doc-tag-chips">
+                <t-tooltip
+                  v-for="tag in classificationTags"
+                  :key="tag.dimension_id"
+                  :content="`${tag.dimension_name}: ${tag.name} · ${formatConfidence(tag.confidence)}`"
+                >
+                  <t-tag
+                    size="small"
+                    variant="light-outline"
+                    :theme="Number(tag.confidence) < LOW_CONFIDENCE_THRESHOLD ? 'warning' : 'primary'"
+                    class="doc-tag-chip classification-tag-chip"
+                  >
+                    <span class="tag-text">{{ tag.dimension_name }} · {{ tag.name }}</span>
+                    <span class="classification-confidence">{{ formatConfidence(tag.confidence) }}</span>
+                  </t-tag>
+                </t-tooltip>
+              </span>
+            </div>
           </div>
+          <t-alert
+            v-if="hasLowConfidenceTags"
+            theme="warning"
+            class="classification-warning"
+            :message="$t('knowledgeBase.lowConfidenceWarning')"
+          />
         </section>
 
         <section v-if="details.type === 'url'" class="setting-drawer__section">
@@ -1677,6 +1713,20 @@ const handleDetailsScroll = () => {
     vertical-align: middle;
     font-size: 11px;
   }
+}
+
+.classification-tag-chip {
+  max-width: 220px;
+}
+
+.classification-confidence {
+  margin-left: 5px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.classification-warning {
+  margin-top: 12px;
 }
 
 .chunk-count {

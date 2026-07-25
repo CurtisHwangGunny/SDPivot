@@ -127,6 +127,8 @@ type Knowledge struct {
 	KnowledgeBaseID string `json:"knowledge_base_id"`
 	// Tags holds the tags associated with this knowledge (populated on query, not persisted directly).
 	Tags []*KnowledgeTag `json:"tags"               gorm:"-"`
+	// ClassificationTags holds platform dictionary assignments and model confidence.
+	ClassificationTags []*DocumentClassificationTag `json:"classification_tags" gorm:"-"`
 	// Type of the knowledge
 	Type string `json:"type"`
 	// Title of the knowledge
