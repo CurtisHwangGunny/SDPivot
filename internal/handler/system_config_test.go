@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/middleware"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -21,8 +22,11 @@ func newSystemConfigTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&systemConfigRow{}); err != nil {
+	if err := db.AutoMigrate(&systemConfigRow{}, &types.TagDimension{}, &types.TagDictionary{}, &types.DocumentTag{}); err != nil {
 		t.Fatalf("migrate system_configs: %v", err)
+	}
+	if err := db.Create(&types.TagDimension{ID: types.DefaultTagDimensionID, Code: "topic", Name: "Topic"}).Error; err != nil {
+		t.Fatalf("seed tag dimension: %v", err)
 	}
 	h := &SystemHandler{db: db}
 	r := gin.New()
@@ -30,6 +34,10 @@ func newSystemConfigTestRouter(t *testing.T) (*gin.Engine, *gorm.DB) {
 	r.GET("/storage", h.GetStorageConfig)
 	r.PUT("/storage", h.UpdateStorageConfig)
 	r.PUT("/tags", h.UpdateTagDictionary)
+	r.GET("/tags", h.GetTagDictionary)
+	r.POST("/tags", h.CreateTagDictionaryEntry)
+	r.PUT("/tags/:id", h.UpdateTagDictionaryEntry)
+	r.DELETE("/tags/:id", h.DeleteTagDictionaryEntry)
 	r.PUT("/params", h.UpdateGlobalParams)
 	return r, db
 }
@@ -86,6 +94,40 @@ func TestUpdateTagDictionaryRejectsDuplicateNames(t *testing.T) {
 	w := performSystemConfigRequest(t, r, http.MethodPut, "/tags", `{"tags":[{"name":"Finance"},{"name":"finance"}]}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestTagDictionaryCRUD(t *testing.T) {
+	r, db := newSystemConfigTestRouter(t)
+	w := performSystemConfigRequest(t, r, http.MethodPost, "/tags", `{"name":"Finance","color":"#123456","sort_order":10}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create tag: status=%d body=%s", w.Code, w.Body.String())
+	}
+	var created types.TagDictionary
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created tag: %v", err)
+	}
+	if created.ID == "" || created.DimensionID != types.DefaultTagDimensionID {
+		t.Fatalf("unexpected created tag: %+v", created)
+	}
+
+	w = performSystemConfigRequest(t, r, http.MethodPut, "/tags/"+created.ID, `{"name":"Legal","color":"#654321","sort_order":20}`)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"name":"Legal"`) {
+		t.Fatalf("update tag: status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	w = performSystemConfigRequest(t, r, http.MethodGet, "/tags", "")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"name":"Legal"`) {
+		t.Fatalf("list tags: status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	w = performSystemConfigRequest(t, r, http.MethodDelete, "/tags/"+created.ID, "")
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete tag: status=%d body=%s", w.Code, w.Body.String())
+	}
+	var count int64
+	if err := db.Model(&types.TagDictionary{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("expected empty dictionary, count=%d err=%v", count, err)
 	}
 }
 

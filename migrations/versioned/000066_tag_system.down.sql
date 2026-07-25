@@ -1,0 +1,9 @@
+DROP INDEX IF EXISTS idx_document_tags_dimension;
+DROP INDEX IF EXISTS idx_document_tags_tag;
+DROP INDEX IF EXISTS idx_document_tags_document;
+DROP TABLE IF EXISTS document_tags;
+DROP INDEX IF EXISTS idx_tag_dictionary_dimension_sort;
+DROP INDEX IF EXISTS idx_tag_dictionary_id_dimension;
+DROP INDEX IF EXISTS idx_tag_dictionary_dimension_name;
+DROP TABLE IF EXISTS tag_dictionary;
+DROP TABLE IF EXISTS tag_dimensions;

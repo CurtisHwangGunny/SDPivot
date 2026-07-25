@@ -843,8 +843,13 @@ func RegisterSystemAdminRoutes(
 		adminRoutes.PUT("/sms-config", handler.UpdateSMSSystemConfig)
 		adminRoutes.GET("/wechat-login-config", handler.GetWeChatLoginConfig)
 		adminRoutes.PUT("/wechat-login-config", handler.UpdateWeChatLoginConfig)
+		adminRoutes.GET("/tag-dimensions", handler.ListTagDimensions)
 		adminRoutes.GET("/tag-dictionary", handler.GetTagDictionary)
+		adminRoutes.POST("/tag-dictionary", handler.CreateTagDictionaryEntry)
 		adminRoutes.PUT("/tag-dictionary", handler.UpdateTagDictionary)
+		adminRoutes.GET("/tag-dictionary/:id", handler.GetTagDictionaryEntry)
+		adminRoutes.PUT("/tag-dictionary/:id", handler.UpdateTagDictionaryEntry)
+		adminRoutes.DELETE("/tag-dictionary/:id", handler.DeleteTagDictionaryEntry)
 		adminRoutes.GET("/global-params", handler.GetGlobalParams)
 		adminRoutes.PUT("/global-params", handler.UpdateGlobalParams)
 

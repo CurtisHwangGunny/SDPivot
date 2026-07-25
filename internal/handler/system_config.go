@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -22,7 +20,6 @@ const (
 	storageConfigKey   = "storage_config"
 	smsConfigKey       = "sms_config"
 	wechatLoginKey     = "wechat_login_config"
-	tagDictionaryKey   = "tag_dictionary"
 	globalParamsKey    = "global_params"
 	defaultConfigDesc  = "Platform system configuration"
 	maxTagDictionarySz = 500
@@ -136,17 +133,6 @@ type wechatLoginConfigResponse struct {
 	AppID               string `json:"app_id"`
 	AppSecretConfigured bool   `json:"app_secret_configured"`
 	RedirectURL         string `json:"redirect_url"`
-}
-
-type tagDictionaryEntry struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Color     string `json:"color"`
-	SortOrder int    `json:"sort_order"`
-}
-
-type tagDictionaryConfig struct {
-	Tags []tagDictionaryEntry `json:"tags"`
 }
 
 type globalParamsConfig struct {
@@ -418,66 +404,6 @@ func (h *SystemHandler) UpdateWeChatLoginConfig(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, wechatLoginResponse(config))
-}
-
-// GetTagDictionary returns the global ordered tag dictionary.
-func (h *SystemHandler) GetTagDictionary(c *gin.Context) {
-	config, err := loadConfigOrDefault(h, c, tagDictionaryKey, tagDictionaryConfig{Tags: []tagDictionaryEntry{}})
-	if err != nil {
-		c.Error(apperrors.NewInternalServerError("Failed to load tag dictionary"))
-		return
-	}
-	if config.Tags == nil {
-		config.Tags = []tagDictionaryEntry{}
-	}
-	c.JSON(http.StatusOK, config)
-}
-
-// UpdateTagDictionary atomically replaces the global ordered tag dictionary.
-func (h *SystemHandler) UpdateTagDictionary(c *gin.Context) {
-	var config tagDictionaryConfig
-	if err := c.ShouldBindJSON(&config); err != nil {
-		c.Error(apperrors.NewBadRequestError(err.Error()))
-		return
-	}
-	if len(config.Tags) > maxTagDictionarySz {
-		c.Error(apperrors.NewBadRequestError("tag dictionary cannot contain more than 500 tags"))
-		return
-	}
-	seenIDs := make(map[string]struct{}, len(config.Tags))
-	seenNames := make(map[string]struct{}, len(config.Tags))
-	for i := range config.Tags {
-		config.Tags[i].ID = strings.TrimSpace(config.Tags[i].ID)
-		config.Tags[i].Name = strings.TrimSpace(config.Tags[i].Name)
-		config.Tags[i].Color = strings.TrimSpace(config.Tags[i].Color)
-		if config.Tags[i].Name == "" {
-			c.Error(apperrors.NewBadRequestError("tag name is required"))
-			return
-		}
-		if config.Tags[i].ID == "" {
-			config.Tags[i].ID = uuid.NewString()
-		}
-		nameKey := strings.ToLower(config.Tags[i].Name)
-		if _, exists := seenIDs[config.Tags[i].ID]; exists {
-			c.Error(apperrors.NewBadRequestError("tag ids must be unique"))
-			return
-		}
-		if _, exists := seenNames[nameKey]; exists {
-			c.Error(apperrors.NewBadRequestError("tag names must be unique"))
-			return
-		}
-		seenIDs[config.Tags[i].ID] = struct{}{}
-		seenNames[nameKey] = struct{}{}
-	}
-	sort.SliceStable(config.Tags, func(i, j int) bool { return config.Tags[i].SortOrder < config.Tags[j].SortOrder })
-	if config.Tags == nil {
-		config.Tags = []tagDictionaryEntry{}
-	}
-	if err := h.saveSystemConfig(c, tagDictionaryKey, "Global tag dictionary", config); err != nil {
-		c.Error(apperrors.NewInternalServerError("Failed to save tag dictionary"))
-		return
-	}
-	c.JSON(http.StatusOK, config)
 }
 
 // GetGlobalParams returns global processing defaults.
