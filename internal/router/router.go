@@ -836,6 +836,18 @@ func RegisterSystemAdminRoutes(
 		adminRoutes.PUT("/model-configs/:id", handler.UpdateModelConfig)
 		adminRoutes.DELETE("/model-configs/:id", handler.DeleteModelConfig)
 
+		// Phase 2 platform configuration resources stored in system_configs.
+		adminRoutes.GET("/storage-config", handler.GetStorageConfig)
+		adminRoutes.PUT("/storage-config", handler.UpdateStorageConfig)
+		adminRoutes.GET("/sms-config", handler.GetSMSSystemConfig)
+		adminRoutes.PUT("/sms-config", handler.UpdateSMSSystemConfig)
+		adminRoutes.GET("/wechat-login-config", handler.GetWeChatLoginConfig)
+		adminRoutes.PUT("/wechat-login-config", handler.UpdateWeChatLoginConfig)
+		adminRoutes.GET("/tag-dictionary", handler.GetTagDictionary)
+		adminRoutes.PUT("/tag-dictionary", handler.UpdateTagDictionary)
+		adminRoutes.GET("/global-params", handler.GetGlobalParams)
+		adminRoutes.PUT("/global-params", handler.UpdateGlobalParams)
+
 		// Bulk action — write the current default-quota setting onto
 		// every existing tenant. Lives under /tenants instead of
 		// /settings because it changes tenants, not the setting row.
