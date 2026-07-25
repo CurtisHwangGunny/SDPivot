@@ -126,15 +126,26 @@ for marker in required:
 PY_APP_RUNTIME_PERMISSIONS
 pass app_runtime_assets_are_readable_and_immutable
 
-/usr/bin/python3 - "$ROOT/deploy/docker-compose.op.yml" <<'PY_COMPOSE_HEALTH'
+/usr/bin/python3 - "$ROOT/deploy/docker-compose.op.yml" <<'PY_COMPOSE_BOUNDARY'
 from pathlib import Path
 import sys
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
-expected = 'test "$$(cat /proc/1/comm)" = postgres && pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
-assert text.count(expected) == 1
-PY_COMPOSE_HEALTH
-pass postgres_health_waits_for_final_pid1
+expected_health = 'test "$$(cat /proc/1/comm)" = postgres && pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+assert text.count(expected_health) == 1
+assert text.count("  networks:\n    - op-internal\n") == 1
+assert text.count("  op-internal:\n    internal: true\n") == 1
+assert text.count("  op-ingress:\n") == 1
+assert "  op-ingress:\n    internal: true\n" not in text
+frontend = text.split("  sdp-frontend:\n", 1)[1].split("\nnetworks:\n", 1)[0]
+assert frontend.count("    networks:\n      - op-internal\n      - op-ingress\n") == 1
+assert frontend.count('    ports:\n      - "${OP_HTTP_BIND:-127.0.0.1}:${OP_HTTP_PORT:-8080}:80"\n') == 1
+for service in ("postgres", "redis", "migration", "docreader", "app", "sdp-backend"):
+    block = text.split(f"  {service}:\n", 1)[1].split("\n  ", 1)[0]
+    assert "op-ingress" not in block, service
+    assert "    ports:\n" not in block, service
+PY_COMPOSE_BOUNDARY
+pass compose_frontend_ingress_boundary
 
 /usr/bin/python3 - "$ROOT/deploy/migrate-op.sh" <<'PY_MIGRATION_EXTENSION_OBJECTS'
 from pathlib import Path
@@ -326,20 +337,29 @@ if "config" in args and "--format" in args and "json" in args:
     env = dict(line.split("=", 1) for line in env_file.read_text().splitlines() if line.strip())
     dburl = "postgresql://{{}}:{{}}@postgres:5432/{{}}?sslmode=disable".format(
         env["OP_DB_USER"], env["OP_DB_PASSWORD"], env["OP_DB_NAME"])
-    print(json.dumps({{"name": "sdpivot-op", "services": {{
-        "postgres": {{"image": env["OP_POSTGRES_IMAGE"], "environment": {{"POSTGRES_PASSWORD": env["OP_DB_PASSWORD"]}}}},
-        "redis": {{"image": env["OP_REDIS_IMAGE"], "environment": {{"REDIS_PASSWORD": env["OP_REDIS_PASSWORD"]}}}},
-        "migration": {{"image": env["OP_MIGRATION_IMAGE"], "environment": {{"OP_DATABASE_URL": dburl}}}},
-        "docreader": {{"image": env["OP_DOCREADER_IMAGE"]}},
+    networks = {{
+        "op-internal": {{"name": "sdpivot-op_op-internal", "internal": True}},
+        "op-ingress": {{"name": "sdpivot-op_op-ingress"}},
+    }}
+    internal = {{"op-internal": None}}
+    frontend = {{"op-internal": None, "op-ingress": None}}
+    services = {{
+        "postgres": {{"image": env["OP_POSTGRES_IMAGE"], "environment": {{"POSTGRES_PASSWORD": env["OP_DB_PASSWORD"]}}, "networks": internal}},
+        "redis": {{"image": env["OP_REDIS_IMAGE"], "environment": {{"REDIS_PASSWORD": env["OP_REDIS_PASSWORD"]}}, "networks": internal}},
+        "migration": {{"image": env["OP_MIGRATION_IMAGE"], "environment": {{"OP_DATABASE_URL": dburl}}, "networks": internal}},
+        "docreader": {{"image": env["OP_DOCREADER_IMAGE"], "networks": internal}},
         "app": {{"image": env["OP_APP_IMAGE"], "environment": {{
             "DB_PASSWORD": env["OP_DB_PASSWORD"], "REDIS_PASSWORD": env["OP_REDIS_PASSWORD"],
             "JWT_SECRET": env["OP_JWT_SECRET"], "TENANT_AES_KEY": env["OP_TENANT_AES_KEY"],
-            "SYSTEM_AES_KEY": env["OP_SYSTEM_AES_KEY"]}}}},
+            "SYSTEM_AES_KEY": env["OP_SYSTEM_AES_KEY"]}}, "networks": internal}},
         "sdp-backend": {{"image": env["OP_SDP_BACKEND_IMAGE"], "environment": {{
             "SDP_DB_PASSWORD": env["OP_DB_PASSWORD"], "SDP_REDIS_PASSWORD": env["OP_REDIS_PASSWORD"],
-            "SDP_JWT_SECRET": env["OP_SDP_JWT_SECRET"]}}}},
-        "sdp-frontend": {{"image": env["OP_SDP_FRONTEND_IMAGE"]}}
-    }}}}))
+            "SDP_JWT_SECRET": env["OP_SDP_JWT_SECRET"]}}, "networks": internal}},
+        "sdp-frontend": {{"image": env["OP_SDP_FRONTEND_IMAGE"], "networks": frontend, "ports": [{{
+            "host_ip": env["OP_HTTP_BIND"], "published": env["OP_HTTP_PORT"], "target": 80, "protocol": "tcp"
+        }}]}}
+    }}
+    print(json.dumps({{"name": "sdpivot-op", "services": services, "networks": networks}}))
     raise SystemExit(0)
 if "build" in args:
     service = args[-1]
@@ -367,7 +387,54 @@ import json,sys
 c=json.load(open(sys.argv[1]))
 assert c['services']['app']['environment']['DB_PASSWORD']=='J7mQ2_vL9xR4-tN6.kP8'
 assert c['services']['app']['image']=='registry.internal/weknora-app:v1.2.3'
+assert c['networks']['op-internal']['internal'] is True
+assert c['networks']['op-ingress'].get('internal') in (None, False)
+assert set(c['services']['sdp-frontend']['networks']) == {'op-internal', 'op-ingress'}
+for service in {'postgres', 'redis', 'migration', 'docreader', 'app', 'sdp-backend'}:
+    assert set(c['services'][service]['networks']) == {'op-internal'}
+    assert not c['services'][service].get('ports')
+assert c['services']['sdp-frontend']['ports'] == [{
+    'host_ip': '127.0.0.1', 'published': '8080', 'target': 80, 'protocol': 'tcp'
+}]
 PY
+config_boundary_case() {
+    local name="$1"
+    local mutation="$2"
+    local candidate="$TMP_ROOT/config-$name.json"
+    /usr/bin/cp -- "$TMP_ROOT/config.json" "$candidate"
+    /usr/bin/python3 - "$candidate" "$mutation" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+mutation = sys.argv[2]
+config = json.loads(path.read_text())
+if mutation == "internal_ingress":
+    config["networks"]["op-ingress"]["internal"] = True
+elif mutation == "external_ingress":
+    config["networks"]["op-ingress"]["external"] = True
+elif mutation == "frontend_internal_only":
+    config["services"]["sdp-frontend"]["networks"] = {"op-internal": None}
+elif mutation == "backend_ingress":
+    config["services"]["sdp-backend"]["networks"]["op-ingress"] = None
+elif mutation == "backend_port":
+    config["services"]["sdp-backend"]["ports"] = [{"published": "18081", "target": 8081}]
+elif mutation == "frontend_port":
+    config["services"]["sdp-frontend"]["ports"][0]["published"] = "18080"
+else:
+    raise AssertionError(mutation)
+path.write_text(json.dumps(config))
+PY
+    /bin/chmod 600 "$candidate"
+    expect_fail "$name" "$ROOT/deploy/validate-op-deployment.sh" config "$ENV_FILE" "$candidate"
+}
+config_boundary_case compose_rejects_internal_ingress internal_ingress
+config_boundary_case compose_rejects_external_ingress external_ingress
+config_boundary_case compose_rejects_frontend_without_ingress frontend_internal_only
+config_boundary_case compose_rejects_backend_ingress backend_ingress
+config_boundary_case compose_rejects_backend_published_port backend_port
+config_boundary_case compose_rejects_frontend_port_mismatch frontend_port
 /usr/bin/cp -- "$TMP_ROOT/op-deploy.pre-config-fake" "$ROOT/deploy/op-deploy.sh"
 LAUNCHER_RESTORE=""
 pass ambient_env_isolated
@@ -779,7 +846,8 @@ reset_build_fixture
 printf '%s\n' '4096 1501 40960' '4096 1200 40960' '4096 1100 40960' > "$probe_values"
 OP_DEPLOY_TEST_LOAD_WAIT_ATTEMPTS=2 OP_DEPLOY_TEST_LOAD_WAIT_SECONDS=0 OP_DEPLOY_TEST_LOAD_STABLE_SAMPLES=1 \
     "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" compose-build >/dev/null
-[[ "$(/bin/cat "$probe_count")" == '3' && -f "$build_log" && -f "$ROOT/deploy/.op-build-receipt.json" ]] || {
+[[ "$(/bin/cat "$probe_count")" == '8' && "$(/usr/bin/wc -l < "$probe_args")" == '8' \
+    && -f "$build_log" && -f "$ROOT/deploy/.op-build-receipt.json" ]] || {
     printf 'FAIL ambient wait overrides changed production defaults\n' >&2; exit 1;
 }
 pass ambient_test_load_wait_overrides_ignored

@@ -763,6 +763,48 @@ def verify_config(snapshot, config_path):
     except Exception:
         fail("Compose config output is not valid JSON")
     services = config.get("services", {})
+    expected_services = {"postgres", "redis", "migration", "docreader", "app", "sdp-backend", "sdp-frontend"}
+    if not isinstance(services, dict) or set(services) != expected_services:
+        fail("Compose config has an unexpected service set")
+    project = config.get("name")
+    networks = config.get("networks")
+    expected_networks = {"op-internal", "op-ingress"}
+    if not isinstance(project, str) or not project or not isinstance(networks, dict) or set(networks) != expected_networks:
+        fail("Compose config has an unexpected network set")
+    for network_name in expected_networks:
+        network = networks.get(network_name)
+        if not isinstance(network, dict) or network.get("name") != f"{project}_{network_name}" or network.get("external") is True:
+            fail(f"Compose network {network_name} is not isolated by the Compose project")
+    if networks["op-internal"].get("internal") is not True:
+        fail("Compose network op-internal must be internal")
+    if networks["op-ingress"].get("internal") not in (None, False):
+        fail("Compose network op-ingress must not be internal")
+
+    def service_networks(service):
+        attached = services[service].get("networks")
+        if not isinstance(attached, dict):
+            fail(f"Compose service {service} must declare its networks explicitly")
+        return set(attached)
+
+    if service_networks("sdp-frontend") != expected_networks:
+        fail("Compose service sdp-frontend must connect only to op-internal and op-ingress")
+    for service in expected_services - {"sdp-frontend"}:
+        if service_networks(service) != {"op-internal"}:
+            fail(f"Compose service {service} must connect only to op-internal")
+
+    for service in expected_services - {"sdp-frontend"}:
+        if services[service].get("ports"):
+            fail(f"Compose service {service} must not publish ports")
+    frontend_ports = services["sdp-frontend"].get("ports")
+    if not isinstance(frontend_ports, list) or len(frontend_ports) != 1 or not isinstance(frontend_ports[0], dict):
+        fail("Compose service sdp-frontend must publish exactly one port")
+    frontend_port = frontend_ports[0]
+    if (str(frontend_port.get("host_ip", "")) != values["OP_HTTP_BIND"]
+            or str(frontend_port.get("published", "")) != values["OP_HTTP_PORT"]
+            or str(frontend_port.get("target", "")) != "80"
+            or frontend_port.get("protocol", "tcp") != "tcp"):
+        fail("Compose service sdp-frontend published port does not match the validated snapshot")
+
     expected_images = {
         "postgres": values["OP_POSTGRES_IMAGE"], "redis": values["OP_REDIS_IMAGE"],
         "app": values["OP_APP_IMAGE"], "docreader": values["OP_DOCREADER_IMAGE"],

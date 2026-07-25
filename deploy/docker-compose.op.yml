@@ -215,6 +215,9 @@ services:
     build:
       context: ../frontend/sdpivot
       dockerfile: Dockerfile.frontend
+    networks:
+      - op-internal
+      - op-ingress
     ports:
       - "${OP_HTTP_BIND:-127.0.0.1}:${OP_HTTP_PORT:-8080}:80"
     healthcheck:
@@ -233,6 +236,7 @@ services:
 networks:
   op-internal:
     internal: true
+  op-ingress:
 
 volumes:
   op-postgres-data:
