@@ -89,6 +89,16 @@ import sys
 
 module = runpy.run_path(sys.argv[1])
 assert module["FORWARDED_SIGNALS"] == (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+text = open(sys.argv[1], encoding="utf-8").read()
+for marker in (
+    "min_mem_mib = 800",
+    "max_load_milli = 1500",
+    "min_disk_mib = 20 * 1024",
+    "load_wait_attempts = 25",
+    "load_wait_seconds = 5",
+    "load_stable_samples = 2",
+):
+    assert text.count(marker) == 1, marker
 PY
 pass syntax
 
@@ -562,7 +572,11 @@ with args.open("a") as handle:
 n = int(count.read_text()) if count.exists() else 0
 n += 1
 count.write_text(str(n) + "\\n")
-lines = values.read_text().splitlines()
+text = values.read_text()
+if text.startswith("RAW:"):
+    sys.stdout.write(text[4:])
+    raise SystemExit(0)
+lines = text.splitlines()
 print(lines[n - 1] if n <= len(lines) else "4096 0 40960")
 """.format(count=str(count), values=str(values), args=str(args)))
 script.chmod(0o700)
@@ -636,6 +650,104 @@ expect_fail compose_build_mid_resource_drop run_build
 }
 pass compose_build_mid_resource_drop_no_receipt
 
+for invalid_metrics in \
+    '4096 0 40960 1' \
+    $'4096 0 40960\n0 999999 0' \
+    $'4096 0 40960\n\n0 1 0' \
+    '4096  0 40960'; do
+    reset_build_fixture
+    printf 'RAW:%s' "$invalid_metrics" > "$probe_values"
+    expect_fail compose_build_invalid_resource_metrics run_build
+    [[ "$(/bin/cat "$probe_count")" == '1' && ! -e "$build_log" && ! -e "$ROOT/deploy/.op-build-receipt.json" ]] || {
+        printf 'FAIL invalid metrics did not fail closed before build\n' >&2; exit 1;
+    }
+done
+pass compose_build_invalid_resource_metrics_no_receipt
+
+reset_build_fixture
+printf '%s\n' '4096 2200 40960' '4096 1900 40960' '4096 1200 40960' '4096 1100 40960' > "$probe_values"
+OP_DEPLOY_TEST_LOAD_WAIT_ATTEMPTS=4 OP_DEPLOY_TEST_LOAD_WAIT_SECONDS=0 \
+    OP_DEPLOY_TEST_LOAD_STABLE_SAMPLES=2 run_build >/dev/null
+/usr/bin/python3 - "$build_log" "$probe_count" "$ROOT/deploy/.op-build-receipt.json" <<'PY'
+from pathlib import Path
+import json
+import sys
+log, count, receipt = map(Path, sys.argv[1:])
+assert log.read_text().splitlines() == [
+    'build migration', 'build sdp-backend', 'build sdp-frontend', 'build app', 'build docreader']
+assert count.read_text().strip() == '9'
+assert json.loads(receipt.read_text())['version'] == 1
+PY
+pass compose_build_transient_load_waits_for_two_stable_samples
+
+reset_build_fixture
+printf '%s\n' '4096 2200 40960' '4096 1200 40960' '4096 1800 40960' '4096 1100 40960' '4096 1000 40960' > "$probe_values"
+OP_DEPLOY_TEST_LOAD_WAIT_ATTEMPTS=5 OP_DEPLOY_TEST_LOAD_WAIT_SECONDS=0 run_build >/dev/null
+[[ "$(/bin/cat "$probe_count")" == '10' ]] || { printf 'FAIL load stability counter did not reset\n' >&2; exit 1; }
+pass compose_build_load_stability_requires_consecutive_samples
+
+reset_build_fixture
+printf '%s\n' '4096 2200 40960' '4096 2100 40960' '4096 2000 40960' > "$probe_values"
+OP_DEPLOY_TEST_LOAD_WAIT_ATTEMPTS=3 OP_DEPLOY_TEST_LOAD_WAIT_SECONDS=0 \
+    expect_fail compose_build_persistent_high_load run_build
+[[ "$(/bin/cat "$probe_count")" == '3' && ! -e "$build_log" && ! -e "$ROOT/deploy/.op-build-receipt.json" ]] || {
+    printf 'FAIL persistent load did not fail closed before build\n' >&2; exit 1;
+}
+pass compose_build_persistent_high_load_no_receipt
+
+reset_build_fixture
+for _ in $(/usr/bin/seq 1 25); do printf '%s\n' '4096 1501 40960'; done > "$probe_values"
+OP_DEPLOY_TEST_LOAD_WAIT_ATTEMPTS=25 OP_DEPLOY_TEST_LOAD_WAIT_SECONDS=0 \
+    expect_fail compose_build_default_attempt_limit run_build
+[[ "$(/bin/cat "$probe_count")" == '25' && ! -e "$build_log" && ! -e "$ROOT/deploy/.op-build-receipt.json" ]] || {
+    printf 'FAIL default attempt boundary was not enforced\n' >&2; exit 1;
+}
+pass compose_build_default_attempt_limit_no_receipt
+
+reset_build_fixture
+printf '%s\n' '4096 2200 40960' '700 1200 40960' > "$probe_values"
+OP_DEPLOY_TEST_LOAD_WAIT_ATTEMPTS=4 OP_DEPLOY_TEST_LOAD_WAIT_SECONDS=0 \
+    expect_fail compose_build_memory_drop_during_load_wait run_build
+[[ "$(/bin/cat "$probe_count")" == '2' && ! -e "$build_log" && ! -e "$ROOT/deploy/.op-build-receipt.json" ]] || {
+    printf 'FAIL memory drop during load wait did not fail immediately\n' >&2; exit 1;
+}
+pass compose_build_memory_drop_during_load_wait_no_receipt
+
+reset_build_fixture
+printf '%s\n' '4096 2200 40960' '4096 1200 14336' > "$probe_values"
+OP_DEPLOY_TEST_LOAD_WAIT_ATTEMPTS=4 OP_DEPLOY_TEST_LOAD_WAIT_SECONDS=0 \
+    expect_fail compose_build_disk_drop_during_load_wait run_build
+[[ "$(/bin/cat "$probe_count")" == '2' && ! -e "$build_log" && ! -e "$ROOT/deploy/.op-build-receipt.json" ]] || {
+    printf 'FAIL disk drop during load wait did not fail immediately\n' >&2; exit 1;
+}
+pass compose_build_disk_drop_during_load_wait_no_receipt
+
+reset_build_fixture
+printf '%s\n' '799 0 40960' > "$probe_values"
+OP_DEPLOY_TEST_MIN_MEM_MIB=800 expect_fail compose_build_mem_boundary_799 run_build
+reset_build_fixture
+printf '%s\n' '800 0 40960' > "$probe_values"
+OP_DEPLOY_TEST_MIN_MEM_MIB=800 run_build >/dev/null
+pass compose_build_mem_boundary_800
+
+reset_build_fixture
+printf '%s\n' '4096 1500 40960' > "$probe_values"
+OP_DEPLOY_TEST_MAX_LOAD_MILLI=1500 run_build >/dev/null
+pass compose_build_load_boundary_1500
+reset_build_fixture
+printf '%s\n' '4096 1501 40960' '4096 1501 40960' > "$probe_values"
+OP_DEPLOY_TEST_MAX_LOAD_MILLI=1500 OP_DEPLOY_TEST_LOAD_WAIT_ATTEMPTS=2 OP_DEPLOY_TEST_LOAD_WAIT_SECONDS=0 \
+    expect_fail compose_build_load_boundary_1501 run_build
+pass compose_build_load_boundary_1501_waits_then_fails
+
+reset_build_fixture
+printf '%s\n' '4096 0 20479' > "$probe_values"
+OP_DEPLOY_TEST_MIN_DISK_MIB=20480 expect_fail compose_build_disk_boundary_20479 run_build
+reset_build_fixture
+printf '%s\n' '4096 0 20480' > "$probe_values"
+OP_DEPLOY_TEST_MIN_DISK_MIB=20480 run_build >/dev/null
+pass compose_build_disk_boundary_20480
+
 reset_build_fixture
 printf '%s\n' '4096 0 14336' > "$probe_values"
 expect_fail compose_build_default_disk_gate run_build
@@ -663,7 +775,14 @@ OP_DEPLOY_TEST_MIN_DISK_MIB=1 expect_fail ambient_test_min_disk_override_ignored
 [[ ! -e "$build_log" && ! -e "$ROOT/deploy/.op-build-receipt.json" ]] || {
     printf 'FAIL ambient threshold override bypassed default disk gate\n' >&2; exit 1;
 }
-/usr/bin/cp -- "$TMP_ROOT/op-deploy.fake-before-ambient-threshold" "$ROOT/deploy/op-deploy.sh"
+reset_build_fixture
+printf '%s\n' '4096 1501 40960' '4096 1200 40960' '4096 1100 40960' > "$probe_values"
+OP_DEPLOY_TEST_LOAD_WAIT_ATTEMPTS=2 OP_DEPLOY_TEST_LOAD_WAIT_SECONDS=0 OP_DEPLOY_TEST_LOAD_STABLE_SAMPLES=1 \
+    "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" compose-build >/dev/null
+[[ "$(/bin/cat "$probe_count")" == '3' && -f "$build_log" && -f "$ROOT/deploy/.op-build-receipt.json" ]] || {
+    printf 'FAIL ambient wait overrides changed production defaults\n' >&2; exit 1;
+}
+pass ambient_test_load_wait_overrides_ignored
 /usr/bin/cp -- "$TMP_ROOT/op-deploy.pre-build-gates" "$ROOT/deploy/op-deploy.sh"
 LAUNCHER_RESTORE=""
 pass compose_build_ambient_threshold_override_ignored
