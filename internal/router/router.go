@@ -838,6 +838,16 @@ func RegisterSystemAdminRoutes(
 		adminRoutes.PUT("/settings/:key", handler.UpdateSystemSetting)
 		adminRoutes.DELETE("/settings/:key", handler.ResetSystemSetting)
 
+		// Dedicated security configuration API backed by system_settings.
+		adminRoutes.GET("/security/ip-whitelist", handler.ListIPWhitelist)
+		adminRoutes.POST("/security/ip-whitelist", handler.CreateIPWhitelistEntry)
+		adminRoutes.PUT("/security/ip-whitelist", handler.UpdateIPWhitelist)
+		adminRoutes.DELETE("/security/ip-whitelist", handler.DeleteIPWhitelistEntry)
+		adminRoutes.GET("/security/password-policy", handler.GetPasswordPolicy)
+		adminRoutes.PUT("/security/password-policy", handler.UpdatePasswordPolicy)
+		adminRoutes.GET("/security/login-lockout", handler.GetLoginLockout)
+		adminRoutes.PUT("/security/login-lockout", handler.UpdateLoginLockout)
+
 		// Platform-wide upstream model provider configurations.
 		adminRoutes.GET("/model-configs", handler.ListModelConfigs)
 		adminRoutes.POST("/model-configs", handler.CreateModelConfig)

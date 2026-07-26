@@ -1585,3 +1585,190 @@ func (h *SystemHandler) ResetSystemSetting(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
+
+const ipWhitelistSettingKey = "security.ip_whitelist"
+
+type IPWhitelistEntryRequest struct {
+	Entry string `json:"entry" binding:"required"`
+}
+
+type IPWhitelistResponse struct {
+	Entries []string `json:"entries"`
+}
+
+type PasswordPolicyResponse struct {
+	MinLength    int64 `json:"min_length"`
+	Complexity   bool  `json:"complexity"`
+	RotationDays int64 `json:"rotation_days"`
+}
+
+type UpdatePasswordPolicyRequest struct {
+	MinLength    *int64 `json:"min_length"`
+	Complexity   *bool  `json:"complexity"`
+	RotationDays *int64 `json:"rotation_days"`
+}
+
+type LoginLockoutResponse struct {
+	MaxFailedAttempts int64 `json:"max_failed_attempts"`
+	LockoutMinutes    int64 `json:"lockout_minutes"`
+}
+
+type UpdateLoginLockoutRequest struct {
+	MaxFailedAttempts *int64 `json:"max_failed_attempts"`
+	LockoutMinutes    *int64 `json:"lockout_minutes"`
+}
+
+// ListIPWhitelist returns the normalized API client allowlist.
+func (h *SystemHandler) ListIPWhitelist(c *gin.Context) {
+	entries := h.systemSettingSvc.GetStringList(c.Request.Context(), ipWhitelistSettingKey, "", []string{})
+	normalized, err := secutils.NormalizeIPWhitelist(entries)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Stored IP whitelist is invalid"})
+		return
+	}
+	c.JSON(http.StatusOK, IPWhitelistResponse{Entries: normalized})
+}
+
+// CreateIPWhitelistEntry adds one exact IP address or CIDR to the allowlist.
+func (h *SystemHandler) CreateIPWhitelistEntry(c *gin.Context) {
+	var req IPWhitelistEntryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+	entries := h.systemSettingSvc.GetStringList(c.Request.Context(), ipWhitelistSettingKey, "", []string{})
+	entries = append(entries, req.Entry)
+	normalized, err := secutils.NormalizeIPWhitelist(entries)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := h.systemSettingSvc.Update(c.Request.Context(), ipWhitelistSettingKey, normalized); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, IPWhitelistResponse{Entries: normalized})
+}
+
+// UpdateIPWhitelist replaces the allowlist with a normalized set.
+func (h *SystemHandler) UpdateIPWhitelist(c *gin.Context) {
+	var req IPWhitelistResponse
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+	normalized, err := secutils.NormalizeIPWhitelist(req.Entries)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := h.systemSettingSvc.Update(c.Request.Context(), ipWhitelistSettingKey, normalized); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, IPWhitelistResponse{Entries: normalized})
+}
+
+// DeleteIPWhitelistEntry removes one canonical exact IP address or CIDR.
+func (h *SystemHandler) DeleteIPWhitelistEntry(c *gin.Context) {
+	var req IPWhitelistEntryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+	target, err := secutils.NormalizeIPWhitelist([]string{req.Entry})
+	if err != nil || len(target) != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "entry must be a valid IP address or CIDR"})
+		return
+	}
+	entries := h.systemSettingSvc.GetStringList(c.Request.Context(), ipWhitelistSettingKey, "", []string{})
+	normalized, err := secutils.NormalizeIPWhitelist(entries)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Stored IP whitelist is invalid"})
+		return
+	}
+	filtered := make([]string, 0, len(normalized))
+	for _, entry := range normalized {
+		if entry != target[0] {
+			filtered = append(filtered, entry)
+		}
+	}
+	if _, err := h.systemSettingSvc.Update(c.Request.Context(), ipWhitelistSettingKey, filtered); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, IPWhitelistResponse{Entries: filtered})
+}
+
+func (h *SystemHandler) GetPasswordPolicy(c *gin.Context) {
+	c.JSON(http.StatusOK, PasswordPolicyResponse{
+		MinLength:    h.systemSettingSvc.GetInt(c.Request.Context(), "auth.password.min_length", "", 8),
+		Complexity:   h.systemSettingSvc.GetBool(c.Request.Context(), "auth.password.complexity", "", true),
+		RotationDays: h.systemSettingSvc.GetInt(c.Request.Context(), "auth.password.rotation_days", "", 90),
+	})
+}
+
+func (h *SystemHandler) UpdatePasswordPolicy(c *gin.Context) {
+	var req UpdatePasswordPolicyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+	if req.MinLength == nil && req.Complexity == nil && req.RotationDays == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one password policy field is required"})
+		return
+	}
+	ctx := c.Request.Context()
+	if req.MinLength != nil {
+		if _, err := h.systemSettingSvc.Update(ctx, "auth.password.min_length", *req.MinLength); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if req.Complexity != nil {
+		if _, err := h.systemSettingSvc.Update(ctx, "auth.password.complexity", *req.Complexity); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if req.RotationDays != nil {
+		if _, err := h.systemSettingSvc.Update(ctx, "auth.password.rotation_days", *req.RotationDays); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	h.GetPasswordPolicy(c)
+}
+
+func (h *SystemHandler) GetLoginLockout(c *gin.Context) {
+	c.JSON(http.StatusOK, LoginLockoutResponse{
+		MaxFailedAttempts: h.systemSettingSvc.GetInt(c.Request.Context(), "auth.login.max_failed_attempts", "", 5),
+		LockoutMinutes:    h.systemSettingSvc.GetInt(c.Request.Context(), "auth.login.lockout_minutes", "", 30),
+	})
+}
+
+func (h *SystemHandler) UpdateLoginLockout(c *gin.Context) {
+	var req UpdateLoginLockoutRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+	if req.MaxFailedAttempts == nil && req.LockoutMinutes == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "At least one login lockout field is required"})
+		return
+	}
+	ctx := c.Request.Context()
+	if req.MaxFailedAttempts != nil {
+		if _, err := h.systemSettingSvc.Update(ctx, "auth.login.max_failed_attempts", *req.MaxFailedAttempts); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if req.LockoutMinutes != nil {
+		if _, err := h.systemSettingSvc.Update(ctx, "auth.login.lockout_minutes", *req.LockoutMinutes); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	h.GetLoginLockout(c)
+}
