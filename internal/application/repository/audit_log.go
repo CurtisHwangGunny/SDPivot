@@ -68,6 +68,12 @@ func (r *auditLogRepository) List(
 		if q.ActorUserID != "" {
 			tx = tx.Where("actor_user_id = ?", q.ActorUserID)
 		}
+		if q.StartTime != nil {
+			tx = tx.Where("created_at >= ?", *q.StartTime)
+		}
+		if q.EndTime != nil {
+			tx = tx.Where("created_at <= ?", *q.EndTime)
+		}
 	}
 
 	var entries []*types.AuditLog

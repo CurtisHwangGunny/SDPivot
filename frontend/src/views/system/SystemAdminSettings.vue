@@ -6,12 +6,15 @@
     </div>
 
     <t-tabs v-model="activeTab" class="settings-tabs">
-      <t-tab-panel value="system" :label="text.systemTab" />
+      <t-tab-panel value="overview" :label="text.overviewTab" />
+      <t-tab-panel value="platform" :label="text.systemTab" />
       <t-tab-panel value="security" :label="text.securityTab" />
       <t-tab-panel value="audit" :label="text.auditTab" />
     </t-tabs>
 
-    <div v-if="activeTab === 'system'" class="tab-content">
+    <div v-if="activeTab === 'overview'" class="tab-content"><AdminOverview /></div>
+
+    <div v-else-if="activeTab === 'platform'" class="tab-content">
       <t-loading :loading="systemLoading">
         <div class="config-grid">
           <section class="config-card config-card--wide">
@@ -110,74 +113,36 @@
       </t-loading>
     </div>
 
-    <div v-else-if="activeTab === 'security'" class="tab-content">
-      <t-loading :loading="securityLoading">
-        <t-alert theme="warning" :message="text.securityNotice" class="security-notice" />
-        <div class="config-card">
-          <div v-for="item in securitySettings" :key="item.key" class="security-row">
-            <div><h4>{{ securityLabel(item.key) }}</h4><p>{{ item.description }}</p></div>
-            <div class="security-control">
-              <t-switch v-if="item.value_type === 'bool'" v-model="securityValues[item.key]" />
-              <t-input-number v-else-if="item.value_type === 'int'" v-model="securityValues[item.key]" :min="numberMin(item.key)" :max="numberMax(item.key)" />
-              <t-tag-input v-else-if="item.value_type === 'string_list'" v-model="securityValues[item.key]" clearable />
-              <t-input v-else v-model="securityValues[item.key]" />
-              <div class="row-actions">
-                <t-button size="small" theme="primary" :loading="saving === item.key" @click="saveSecurity(item)">{{ text.save }}</t-button>
-                <t-popconfirm v-if="item.last_modified_by" :content="text.resetConfirm" @confirm="resetSecurity(item)">
-                  <t-button size="small" variant="text">{{ text.reset }}</t-button>
-                </t-popconfirm>
-              </div>
-            </div>
-          </div>
-        </div>
-      </t-loading>
-    </div>
-
-    <div v-else class="tab-content">
-      <div class="audit-toolbar">
-        <t-select v-model="auditFilters.action" clearable :placeholder="text.action" :options="auditActions" />
-        <t-select v-model="auditFilters.outcome" clearable :placeholder="text.outcome" :options="auditOutcomes" />
-        <t-input v-model="auditFilters.actor" clearable :placeholder="text.actorId" />
-        <t-button theme="primary" :loading="auditLoading" @click="loadAudit(true)">{{ text.search }}</t-button>
-      </div>
-      <t-loading :loading="auditLoading && auditEntries.length === 0">
-        <div class="audit-table">
-          <t-table :data="auditEntries" :columns="auditColumns" row-key="id" hover stripe>
-            <template #created_at="{ row }">{{ formatDate(row.created_at) }}</template>
-            <template #outcome="{ row }"><t-tag :theme="row.outcome === 'success' ? 'success' : 'danger'" variant="light">{{ row.outcome }}</t-tag></template>
-            <template #details="{ row }"><span class="details-cell">{{ formatDetails(row.details) }}</span></template>
-          </t-table>
-          <div class="load-more"><t-button v-if="auditHasMore" variant="outline" :loading="auditLoading" @click="loadAudit(false)">{{ text.loadMore }}</t-button><span v-else-if="auditEntries.length">{{ text.end }}</span></div>
-        </div>
-      </t-loading>
-    </div>
+    <div v-else-if="activeTab === 'security'" class="tab-content"><AdminSecuritySettings /></div>
+    <div v-else class="tab-content"><AdminAuditLog /></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getPlatformGlobalParams, getPlatformSMSConfig, getPlatformStorageConfig, getPlatformTagDictionary,
   listTagDimensions,
-  getPlatformWeChatLoginConfig, listSystemAuditLog, listSystemSettings, resetSystemSetting,
+  getPlatformWeChatLoginConfig,
   updatePlatformGlobalParams, updatePlatformSMSConfig, updatePlatformStorageConfig,
-  updatePlatformTagDictionary, updatePlatformWeChatLoginConfig, updateSystemSetting,
-  type AuditLog, type PlatformGlobalParams, type PlatformSMSConfigInput, type PlatformStorageConfigInput,
-  type PlatformTagDictionaryEntry, type PlatformTagDimension, type PlatformWeChatLoginConfigInput, type SystemSettingItem,
+  updatePlatformTagDictionary, updatePlatformWeChatLoginConfig,
+  type PlatformGlobalParams, type PlatformSMSConfigInput, type PlatformStorageConfigInput,
+  type PlatformTagDictionaryEntry, type PlatformTagDimension, type PlatformWeChatLoginConfigInput,
 } from '@/api/system'
+import AdminAuditLog from './AdminAuditLog.vue'
+import AdminOverview from './AdminOverview.vue'
+import AdminSecuritySettings from './AdminSecuritySettings.vue'
 
 const { locale } = useI18n()
-const activeTab = ref<'system' | 'security' | 'audit'>('system')
+const activeTab = ref<'overview' | 'platform' | 'security' | 'audit'>('overview')
 const saving = ref('')
 const systemLoading = ref(false)
-const securityLoading = ref(false)
-const auditLoading = ref(false)
-const loadedTabs = reactive({ system: false, security: false, audit: false })
+const loadedTabs = reactive({ platform: false })
 
 const en = {
-  title: 'Platform administration', description: 'Manage platform services, security policy, and system audit activity.', systemTab: 'System', securityTab: 'Security', auditTab: 'Audit',
+  title: 'Platform administration', description: 'Monitor platform health, manage services and security, and investigate system activity.', overviewTab: 'Overview', systemTab: 'Platform', securityTab: 'Security', auditTab: 'Audit log',
   save: 'Save', reset: 'Reset', resetConfirm: 'Reset this policy to its environment or built-in default?', configured: 'Configured. Leave blank to keep the current secret.', notConfigured: 'Not configured.',
   processing: 'Processing defaults', processingDesc: 'Defaults used by platform ingestion and model workloads.', chunkSize: 'Chunk size', threshold: 'Threshold', tokenLimit: 'Token limit', concurrency: 'Concurrency',
   storage: 'Object storage', storageDesc: 'Platform S3 or MinIO connection and credentials.', provider: 'Provider', endpoint: 'Endpoint', region: 'Region', bucket: 'Bucket', pathPrefix: 'Path prefix', accessKey: 'Access key', secretKey: 'Secret key', useSSL: 'Use SSL', pathStyle: 'Force path-style URLs',
@@ -188,7 +153,7 @@ const en = {
   action: 'Action', outcome: 'Outcome', actorId: 'Actor user ID', search: 'Search', loadMore: 'Load older entries', end: 'No older entries', saved: 'Configuration saved', loadFailed: 'Failed to load configuration', saveFailed: 'Failed to save configuration', invalidHeaders: 'Custom headers must be a JSON object.', requiredFields: 'Complete all required fields before saving.',
 }
 const zh = {
-  title: '平台管理', description: '管理平台服务、安全策略与系统审计记录。', systemTab: '系统配置', securityTab: '安全配置', auditTab: '审计日志',
+  title: '平台管理', description: '监控平台状态，管理服务与安全策略，并审查系统活动。', overviewTab: '概览', systemTab: '平台配置', securityTab: '安全配置', auditTab: '审计日志',
   save: '保存', reset: '恢复默认', resetConfirm: '确定恢复为环境变量或内置默认值？', configured: '已配置，留空将保留当前密钥。', notConfigured: '尚未配置。',
   processing: '全局处理参数', processingDesc: '平台文档处理与模型任务使用的默认参数。', chunkSize: '分块大小', threshold: '阈值', tokenLimit: 'Token 上限', concurrency: '并发数',
   storage: '对象存储', storageDesc: '平台 S3 或 MinIO 连接与凭证。', provider: '服务商', endpoint: '服务地址', region: '区域', bucket: '存储桶', pathPrefix: '路径前缀', accessKey: '访问密钥', secretKey: '密钥', useSSL: '启用 SSL', pathStyle: '强制 Path Style',
@@ -229,7 +194,7 @@ async function loadSystem() {
     assignFields(smsForm, sms); smsConfigured.access = sms.access_key_id_configured; smsConfigured.secret = sms.access_key_secret_configured; smsHeaders.value = JSON.stringify(sms.custom_headers || {}, null, 2)
     assignFields(wechatForm, wechat); wechatConfigured.value = wechat.app_secret_configured
     assignFields(paramsForm, params); dimensions.value = tagDimensions || []; tags.value = (dictionary.tags || []).map(tag => ({ ...tag }))
-    loadedTabs.system = true
+    loadedTabs.platform = true
   } catch (error) { messageError(error, text.value.loadFailed) } finally { systemLoading.value = false }
 }
 
@@ -266,43 +231,7 @@ async function saveWeChat() {
 function addTag() { tags.value.push({ id: crypto.randomUUID(), dimension_id: dimensions.value[0]?.id || '', name: '', color: '#0052D9', sort_order: tags.value.length * 10 }) }
 async function saveTags() { if (tags.value.some(tag => !tag.dimension_id || !tag.name.trim())) return void MessagePlugin.warning(text.value.requiredFields); await withSave('tags', async () => { const result = await updatePlatformTagDictionary({ tags: tags.value }); tags.value = result.tags.map(tag => ({ ...tag })) }) }
 
-const securitySettings = ref<SystemSettingItem[]>([])
-const securityValues = reactive<Record<string, any>>({})
-const securityKeys = new Set(['security.ip_whitelist', 'auth.password.min_length', 'auth.password.complexity', 'auth.password.rotation_days', 'auth.login.max_failed_attempts', 'auth.login.lockout_minutes'])
-const securityNames: Record<string, { en: string; zh: string }> = {
-  'security.ip_whitelist': { en: 'Administrative IP allowlist', zh: '管理端 IP 白名单' }, 'auth.password.min_length': { en: 'Minimum password length', zh: '密码最小长度' },
-  'auth.password.complexity': { en: 'Password complexity', zh: '密码复杂度' }, 'auth.password.rotation_days': { en: 'Password rotation period (days)', zh: '密码轮换周期（天）' },
-  'auth.login.max_failed_attempts': { en: 'Maximum failed login attempts', zh: '最大登录失败次数' }, 'auth.login.lockout_minutes': { en: 'Login lockout duration (minutes)', zh: '登录锁定时长（分钟）' },
-}
-function securityLabel(key: string) { const labels = securityNames[key]; return labels ? (locale.value.startsWith('zh') ? labels.zh : labels.en) : key }
-function numberMin(key: string) { return key === 'auth.password.min_length' ? 6 : key === 'auth.login.lockout_minutes' ? 1 : 0 }
-function numberMax(key: string) { return key === 'auth.password.min_length' ? 128 : key === 'auth.password.rotation_days' ? 3650 : key === 'auth.login.lockout_minutes' ? 10080 : 100 }
-async function loadSecurity() { securityLoading.value = true; try { securitySettings.value = (await listSystemSettings()).filter(item => securityKeys.has(item.key)); for (const item of securitySettings.value) securityValues[item.key] = Array.isArray(item.value) ? [...item.value] : item.value; loadedTabs.security = true } catch (error) { messageError(error, text.value.loadFailed) } finally { securityLoading.value = false } }
-async function saveSecurity(item: SystemSettingItem) { await withSave(item.key, async () => { const updated = await updateSystemSetting(item.key, securityValues[item.key]); Object.assign(item, updated); securityValues[item.key] = Array.isArray(updated.value) ? [...updated.value] : updated.value }) }
-async function resetSecurity(item: SystemSettingItem) { await withSave(item.key, async () => { await resetSystemSetting(item.key); await loadSecurity() }) }
-
-const auditEntries = ref<AuditLog[]>([])
-const auditCursor = ref(0)
-const auditHasMore = ref(true)
-const auditFilters = reactive<{ action: string; outcome: '' | 'success' | 'denied'; actor: string }>({ action: '', outcome: '', actor: '' })
-const auditActions = ['system.setting_changed', 'system.admin_promoted', 'system.admin_revoked', 'rbac.access_denied'].map(value => ({ label: value, value }))
-const auditOutcomes = [{ label: 'success', value: 'success' }, { label: 'denied', value: 'denied' }]
-const auditColumns = computed(() => [
-  { colKey: 'created_at', title: locale.value.startsWith('zh') ? '时间' : 'Time', width: 172 }, { colKey: 'actor_user_id', title: locale.value.startsWith('zh') ? '操作者' : 'Actor', ellipsis: true },
-  { colKey: 'action', title: text.value.action, width: 210 }, { colKey: 'target_id', title: locale.value.startsWith('zh') ? '目标' : 'Target', ellipsis: true },
-  { colKey: 'outcome', title: text.value.outcome, width: 90 }, { colKey: 'details', title: locale.value.startsWith('zh') ? '详情' : 'Details', ellipsis: true },
-])
-async function loadAudit(reset: boolean) {
-  if (auditLoading.value) return
-  if (reset) { auditEntries.value = []; auditCursor.value = 0; auditHasMore.value = true }
-  auditLoading.value = true
-  try { const result = await listSystemAuditLog({ after_id: auditCursor.value || undefined, limit: 50, action: auditFilters.action || undefined, outcome: auditFilters.outcome || undefined, actor: auditFilters.actor.trim() || undefined }); const rows = result.data || []; auditEntries.value.push(...rows); auditCursor.value = result.next_cursor || 0; auditHasMore.value = rows.length > 0 && auditCursor.value > 0; loadedTabs.audit = true } catch (error) { messageError(error, text.value.loadFailed) } finally { auditLoading.value = false }
-}
-function formatDate(value: string) { return new Date(value).toLocaleString(locale.value) }
-function formatDetails(value: AuditLog['details']) { if (!value) return '-'; return typeof value === 'string' ? value : JSON.stringify(value) }
-
-watch(activeTab, tab => { if (tab === 'system' && !loadedTabs.system) void loadSystem(); if (tab === 'security' && !loadedTabs.security) void loadSecurity(); if (tab === 'audit' && !loadedTabs.audit) void loadAudit(true) })
-onMounted(loadSystem)
+watch(activeTab, tab => { if (tab === 'platform' && !loadedTabs.platform) void loadSystem() })
 </script>
 
 <style scoped>

@@ -3,6 +3,8 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -34,6 +36,56 @@ type auditLogListResponse struct {
 	NextCursor uint64            `json:"next_cursor"`
 }
 
+func parseAuditLogQuery(c *gin.Context) (*interfaces.AuditLogQuery, error) {
+	var afterID uint64
+	if raw := c.Query("after_id"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			return nil, errors.NewBadRequestError("invalid after_id")
+		}
+		afterID = v
+	}
+
+	limit := 0
+	if raw := c.Query("limit"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 || v > 100 {
+			return nil, errors.NewBadRequestError("limit must be between 1 and 100")
+		}
+		limit = v
+	}
+
+	actor := strings.TrimSpace(c.Query("user"))
+	if actor == "" {
+		actor = strings.TrimSpace(c.Query("actor"))
+	}
+	q := &interfaces.AuditLogQuery{
+		AfterID:     afterID,
+		Limit:       limit,
+		Action:      types.AuditAction(strings.TrimSpace(c.Query("action"))),
+		Outcome:     types.AuditOutcome(strings.TrimSpace(c.Query("outcome"))),
+		ActorUserID: actor,
+	}
+	if raw := strings.TrimSpace(c.Query("start_time")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return nil, errors.NewBadRequestError("start_time must be RFC3339")
+		}
+		q.StartTime = &parsed
+	}
+	if raw := strings.TrimSpace(c.Query("end_time")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return nil, errors.NewBadRequestError("end_time must be RFC3339")
+		}
+		q.EndTime = &parsed
+	}
+	if q.StartTime != nil && q.EndTime != nil && q.StartTime.After(*q.EndTime) {
+		return nil, errors.NewBadRequestError("start_time must not be after end_time")
+	}
+	return q, nil
+}
+
 // ListTenantAuditLog godoc
 // @Summary      获取租户审计日志
 // @Description  返回该租户最近的审计事件，按 id 倒序。游标分页：将上次响应的 next_cursor 作为下一次请求的 after_id。
@@ -44,7 +96,9 @@ type auditLogListResponse struct {
 // @Param        limit     query  int     false  "页大小，1-100，默认 50"
 // @Param        action    query  string  false  "按 action 精确过滤（如 rbac.member_added / rbac.access_denied）"
 // @Param        outcome   query  string  false  "按 outcome 精确过滤（success / denied）"
-// @Param        actor     query  string  false  "按 actor_user_id 精确过滤"
+// @Param        user      query  string  false  "按 actor_user_id 精确过滤"
+// @Param        start_time query string  false  "起始时间（RFC3339，包含）"
+// @Param        end_time   query string  false  "结束时间（RFC3339，包含）"
 // @Success      200  {object}  auditLogListResponse
 // @Failure      400  {object}  errors.AppError
 // @Security     Bearer
@@ -58,29 +112,10 @@ func (h *AuditLogHandler) ListTenantAuditLog(c *gin.Context) {
 		return
 	}
 
-	// after_id cursor — invalid values are tolerated (treated as "from
-	// the top") so a misconfigured client doesn't see a hard 400 on
-	// the empty / first request. Tighter validation belongs at the
-	// frontend.
-	var afterID uint64
-	if raw := c.Query("after_id"); raw != "" {
-		if v, err := strconv.ParseUint(raw, 10, 64); err == nil {
-			afterID = v
-		}
-	}
-	limit := 0 // 0 lets the repository pick its default (50)
-	if raw := c.Query("limit"); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
-			limit = v
-		}
-	}
-
-	q := &interfaces.AuditLogQuery{
-		AfterID:     afterID,
-		Limit:       limit,
-		Action:      types.AuditAction(c.Query("action")),
-		Outcome:     types.AuditOutcome(c.Query("outcome")),
-		ActorUserID: c.Query("actor"),
+	q, err := parseAuditLogQuery(c)
+	if err != nil {
+		c.Error(err)
+		return
 	}
 
 	entries, err := h.auditService.List(ctx, tenantID, q)
@@ -114,7 +149,9 @@ func (h *AuditLogHandler) ListTenantAuditLog(c *gin.Context) {
 // @Param        limit     query  int     false  "页大小，1-100，默认 50"
 // @Param        action    query  string  false  "按 action 精确过滤（如 system.setting_changed）"
 // @Param        outcome   query  string  false  "按 outcome 精确过滤（success / denied）"
-// @Param        actor     query  string  false  "按 actor_user_id 精确过滤"
+// @Param        user      query  string  false  "按 actor_user_id 精确过滤"
+// @Param        start_time query string  false  "起始时间（RFC3339，包含）"
+// @Param        end_time   query string  false  "结束时间（RFC3339，包含）"
 // @Success      200  {object}  auditLogListResponse
 // @Failure      500  {object}  errors.AppError
 // @Security     Bearer
@@ -131,28 +168,10 @@ func (h *AuditLogHandler) ListTenantAuditLog(c *gin.Context) {
 func (h *AuditLogHandler) ListSystemAuditLog(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// Cursor / page-size parsing mirrors ListTenantAuditLog so the
-	// frontend can share the same call shape; tolerant of garbage
-	// because the empty / first request shouldn't bounce.
-	var afterID uint64
-	if raw := c.Query("after_id"); raw != "" {
-		if v, err := strconv.ParseUint(raw, 10, 64); err == nil {
-			afterID = v
-		}
-	}
-	limit := 0
-	if raw := c.Query("limit"); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
-			limit = v
-		}
-	}
-
-	q := &interfaces.AuditLogQuery{
-		AfterID:     afterID,
-		Limit:       limit,
-		Action:      types.AuditAction(c.Query("action")),
-		Outcome:     types.AuditOutcome(c.Query("outcome")),
-		ActorUserID: c.Query("actor"),
+	q, err := parseAuditLogQuery(c)
+	if err != nil {
+		c.Error(err)
+		return
 	}
 
 	// tenant_id=0 is the system-scope convention; see

@@ -19,6 +19,8 @@ type AuditLogQuery struct {
 	Action      types.AuditAction
 	Outcome     types.AuditOutcome
 	ActorUserID string
+	StartTime   *time.Time
+	EndTime     *time.Time
 }
 
 // AuditLogRepository is the storage primitive for the audit table.

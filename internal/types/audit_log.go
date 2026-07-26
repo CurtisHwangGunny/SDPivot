@@ -116,6 +116,18 @@ const (
 	// reader can distinguish a real revoke from a noop attempt.
 	// TenantID=0 because the change is system-scope.
 	AuditActionSystemAdminRevoked AuditAction = "system.admin_revoked"
+	// AuditActionSystemAdminOperation captures successful mutating requests
+	// under /api/v1/system/admin that do not have a more specific lifecycle
+	// event. RequestPath and RequestMethod identify the operation.
+	AuditActionSystemAdminOperation AuditAction = "system.admin_operation"
+
+	// AuditActionLogin records password and OIDC login attempts. Successful
+	// entries carry the authenticated user ID; failed attempts deliberately do
+	// not persist submitted credentials or email addresses.
+	AuditActionLogin AuditAction = "auth.login"
+	// AuditActionKnowledgeAccessed records successful reads of knowledge bases,
+	// documents, files, previews, and search endpoints.
+	AuditActionKnowledgeAccessed AuditAction = "knowledge.accessed"
 )
 
 // AuditOutcome distinguishes successful mutations from middleware-level

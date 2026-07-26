@@ -37,6 +37,9 @@ func TestAuditAction_DotNamespaceConvention(t *testing.T) {
 		AuditActionSystemSettingChanged,
 		AuditActionSystemAdminPromoted,
 		AuditActionSystemAdminRevoked,
+		AuditActionSystemAdminOperation,
+		AuditActionLogin,
+		AuditActionKnowledgeAccessed,
 	}
 	for _, a := range all {
 		s := string(a)
@@ -118,6 +121,9 @@ func TestAuditAction_NoCollisionsAcrossNamespaces(t *testing.T) {
 	register("AuditActionSystemSettingChanged", AuditActionSystemSettingChanged)
 	register("AuditActionSystemAdminPromoted", AuditActionSystemAdminPromoted)
 	register("AuditActionSystemAdminRevoked", AuditActionSystemAdminRevoked)
+	register("AuditActionSystemAdminOperation", AuditActionSystemAdminOperation)
+	register("AuditActionLogin", AuditActionLogin)
+	register("AuditActionKnowledgeAccessed", AuditActionKnowledgeAccessed)
 }
 
 // TestAuditAction_SystemNamespacePrefix pins the three system.* actions

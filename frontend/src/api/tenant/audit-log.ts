@@ -52,6 +52,10 @@ export interface ListAuditLogParams {
   // Optional filters; backend matches on equality.
   action?: AuditAction
   outcome?: AuditOutcome
+  user?: string
+  start_time?: string
+  end_time?: string
+  /** @deprecated Use `user`; retained for older servers. */
   actor?: string
 }
 
@@ -72,6 +76,9 @@ export async function listAuditLog(
   if (params.limit) qs.append('limit', String(params.limit))
   if (params.action) qs.append('action', params.action)
   if (params.outcome) qs.append('outcome', params.outcome)
+  if (params.user) qs.append('user', params.user)
+  if (params.start_time) qs.append('start_time', params.start_time)
+  if (params.end_time) qs.append('end_time', params.end_time)
   if (params.actor) qs.append('actor', params.actor)
   const tail = qs.toString()
   const url = `/api/v1/tenants/${tenantId}/audit-log${tail ? '?' + tail : ''}`

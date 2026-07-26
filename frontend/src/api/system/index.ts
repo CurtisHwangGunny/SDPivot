@@ -410,6 +410,47 @@ export async function resetSystemSetting(key: string): Promise<void> {
   await del(`/api/v1/system/admin/settings/${encodeURIComponent(key)}`)
 }
 
+// ---- Security Configuration ----
+
+export interface IPWhitelistConfig {
+  entries: string[]
+}
+
+export interface PasswordPolicy {
+  min_length: number
+  complexity: boolean
+  rotation_days: number
+}
+
+export interface LoginLockoutPolicy {
+  max_failed_attempts: number
+  lockout_minutes: number
+}
+
+export async function getIPWhitelist(): Promise<IPWhitelistConfig> {
+  return (await get('/api/v1/system/admin/security/ip-whitelist')) as unknown as IPWhitelistConfig
+}
+
+export async function updateIPWhitelist(entries: string[]): Promise<IPWhitelistConfig> {
+  return (await put('/api/v1/system/admin/security/ip-whitelist', { entries })) as unknown as IPWhitelistConfig
+}
+
+export async function getPasswordPolicy(): Promise<PasswordPolicy> {
+  return (await get('/api/v1/system/admin/security/password-policy')) as unknown as PasswordPolicy
+}
+
+export async function updatePasswordPolicy(policy: PasswordPolicy): Promise<PasswordPolicy> {
+  return (await put('/api/v1/system/admin/security/password-policy', policy)) as unknown as PasswordPolicy
+}
+
+export async function getLoginLockoutPolicy(): Promise<LoginLockoutPolicy> {
+  return (await get('/api/v1/system/admin/security/login-lockout')) as unknown as LoginLockoutPolicy
+}
+
+export async function updateLoginLockoutPolicy(policy: LoginLockoutPolicy): Promise<LoginLockoutPolicy> {
+  return (await put('/api/v1/system/admin/security/login-lockout', policy)) as unknown as LoginLockoutPolicy
+}
+
 /**
  * Result of POST /system/admin/tenants/apply-default-storage-quota.
  * `affected` is the count of tenant rows whose storage_quota was
@@ -676,6 +717,9 @@ export async function listSystemAuditLog(
   if (params.limit) qs.append('limit', String(params.limit))
   if (params.action) qs.append('action', params.action)
   if (params.outcome) qs.append('outcome', params.outcome)
+  if (params.user) qs.append('user', params.user)
+  if (params.start_time) qs.append('start_time', params.start_time)
+  if (params.end_time) qs.append('end_time', params.end_time)
   if (params.actor) qs.append('actor', params.actor)
   const tail = qs.toString()
   const url = `/api/v1/system/admin/audit-log${tail ? '?' + tail : ''}`

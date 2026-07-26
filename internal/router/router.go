@@ -304,7 +304,7 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		kb.POST("/file", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromFile)
 		kb.POST("/url", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateKnowledgeFromURL)
 		kb.POST("/manual", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateManualKnowledge)
-		kb.GET("", g.Viewer(), g.KBAccessRead("id"), handler.ListKnowledge)
+		kb.GET("", g.Viewer(), g.KBAccessRead("id"), middleware.AuditKnowledgeAccess("knowledge_base", "id"), handler.ListKnowledge)
 		// Clearing all contents under a KB is a destructive op; gate
 		// behind Admin instead of Contributor.
 		kb.DELETE("", g.Admin(), g.KBAccessWrite("id"), handler.ClearKnowledgeBaseContents)
@@ -317,17 +317,17 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		// KB — they accept arbitrary knowledge IDs and the handler must
 		// fan out the access check itself. So /batch and /search keep
 		// the role-only floor; /move and /batch-delete stay Contributor.
-		k.GET("/batch", g.Viewer(), handler.GetKnowledgeBatch)
-		k.GET("/:id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledge)
-		k.GET("/:id/stages", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
-		k.GET("/:id/spans", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.GetKnowledgeSpans)
+		k.GET("/batch", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge", ""), handler.GetKnowledgeBatch)
+		k.GET("/:id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), middleware.AuditKnowledgeAccess("knowledge", "id"), handler.GetKnowledge)
+		k.GET("/:id/stages", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), middleware.AuditKnowledgeAccess("knowledge", "id"), handler.GetKnowledgeSpans)
+		k.GET("/:id/spans", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), middleware.AuditKnowledgeAccess("knowledge", "id"), handler.GetKnowledgeSpans)
 		k.DELETE("/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.DeleteKnowledge)
 		k.PUT("/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateKnowledge)
 		k.PUT("/manual/:id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateManualKnowledge)
 		k.POST("/:id/reparse", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.ReparseKnowledge)
 		k.POST("/:id/cancel-parse", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.CancelKnowledgeParse)
-		k.GET("/:id/download", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.DownloadKnowledgeFile)
-		k.GET("/:id/preview", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), handler.PreviewKnowledgeFile)
+		k.GET("/:id/download", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), middleware.AuditKnowledgeAccess("knowledge", "id"), handler.DownloadKnowledgeFile)
+		k.GET("/:id/preview", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("id"), middleware.AuditKnowledgeAccess("knowledge", "id"), handler.PreviewKnowledgeFile)
 		k.PUT("/image/:id/:chunk_id", g.OwnedKnowledgeKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("id"), handler.UpdateImageInfo)
 		// Batch / cross-KB ops stay Contributor-gated: there is no
 		// single owning KB to walk back to. A future PR could add a
@@ -335,7 +335,7 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		// surfaces.
 		k.PUT("/tags", g.Contributor(), handler.UpdateKnowledgeTagBatch)
 		k.POST("/batch-reparse", g.Contributor(), handler.BatchReparseKnowledge)
-		k.GET("/search", g.Viewer(), handler.SearchKnowledge)
+		k.GET("/search", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_search", ""), handler.SearchKnowledge)
 		k.POST("/batch-delete", g.Contributor(), handler.BatchDeleteKnowledge)
 		k.POST("/move", g.Contributor(), handler.MoveKnowledge)
 		k.GET("/move/progress/:task_id", g.Viewer(), handler.GetKnowledgeMoveProgress)
@@ -392,7 +392,7 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// 获取知识库列表 — Viewer+ (no :id, role-only floor)
 		kb.GET("", g.Viewer(), handler.ListKnowledgeBases)
 		// 获取知识库详情 — Viewer+ 且对 KB 有 read 权限
-		kb.GET("/:id", g.Viewer(), g.KBAccessRead("id"), handler.GetKnowledgeBase)
+		kb.GET("/:id", g.Viewer(), g.KBAccessRead("id"), middleware.AuditKnowledgeAccess("knowledge_base", "id"), handler.GetKnowledgeBase)
 		// 更新知识库 — 创建者本人 OR Admin+ 且对 KB 有 write 权限
 		kb.PUT("/:id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateKnowledgeBase)
 		// 删除知识库 — 创建者本人 OR Admin+ 且对 KB 有 write 权限
@@ -407,8 +407,8 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		kb.PUT("/:id/pin", g.Viewer(), g.KBAccessRead("id"), handler.TogglePinKnowledgeBase)
 		// 混合搜索 — Viewer+ 且对 KB 有 read 权限 (read-only)
 		// POST is preferred; GET with JSON body is kept for backward compatibility (#1727).
-		kb.POST("/:id/hybrid-search", g.Viewer(), g.KBAccessRead("id"), handler.HybridSearch)
-		kb.GET("/:id/hybrid-search", g.Viewer(), g.KBAccessRead("id"), handler.HybridSearch)
+		kb.POST("/:id/hybrid-search", g.Viewer(), g.KBAccessRead("id"), middleware.AuditKnowledgeAccess("knowledge_base", "id"), handler.HybridSearch)
+		kb.GET("/:id/hybrid-search", g.Viewer(), g.KBAccessRead("id"), middleware.AuditKnowledgeAccess("knowledge_base", "id"), handler.HybridSearch)
 		// 拷贝知识库 — Contributor+ (副本归调用者所有；不需要原 KB 的所有权)
 		kb.POST("/copy", g.Contributor(), handler.CopyKnowledgeBase)
 		// 获取知识库复制进度 — Viewer+
@@ -507,7 +507,7 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler, g *rbacGua
 	// 新增知识检索接口，不需要session_id
 	knowledgeSearch := r.Group("/knowledge-search", g.Viewer())
 	{
-		knowledgeSearch.POST("", handler.SearchKnowledge)
+		knowledgeSearch.POST("", middleware.AuditKnowledgeAccess("knowledge_search", ""), handler.SearchKnowledge)
 	}
 }
 
@@ -822,7 +822,7 @@ func RegisterSystemAdminRoutes(
 ) {
 	// Apply SystemAdmin() at the group level — every route below inherits
 	// the guard, so adding new endpoints can't accidentally drop the gate.
-	adminRoutes := r.Group("/system/admin", g.SystemAdmin())
+	adminRoutes := r.Group("/system/admin", g.SystemAdmin(), middleware.AuditSystemAdminOperation())
 	{
 		// P0: SystemAdmin role management
 		adminRoutes.POST("/promote", handler.PromoteUserToSystemAdmin)
