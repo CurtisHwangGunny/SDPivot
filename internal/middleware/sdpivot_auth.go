@@ -13,10 +13,10 @@ import (
 type Permission string
 
 const (
-	PermissionUserRoleAssign Permission = "user.role.assign"
+	PermissionUserRoleAssign   Permission = "user.role.assign"
 	PermissionDepartmentManage Permission = "department.manage"
-	PermissionKnowledgeWrite Permission = "knowledge.write"
-	PermissionKnowledgeRead Permission = "knowledge.read"
+	PermissionKnowledgeWrite   Permission = "knowledge.write"
+	PermissionKnowledgeRead    Permission = "knowledge.read"
 )
 
 var accessRolePermissions = map[types.AccessRole]map[Permission]struct{}{
@@ -107,14 +107,12 @@ func SDPivotAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 
 // SDPivotPublicPaths defines routes that skip authentication.
 var sdPivotPublicPaths = map[string][]string{
-	"/api/v1/sdp/auth/register":        {"POST"},
-	"/api/v1/sdp/auth/login":           {"POST"},
-	"/api/v1/sdp/auth/refresh":         {"POST"},
-	"/api/v1/sdp/health":               {"GET"},
-	"/api/v1/smartknora/auth/register": {"POST"},
-	"/api/v1/smartknora/auth/login":    {"POST"},
-	"/api/v1/smartknora/auth/refresh":  {"POST"},
-	"/api/v1/smartknora/health":        {"GET"},
+	"/api/v1/sdp/auth/login":          {"POST"},
+	"/api/v1/sdp/auth/refresh":        {"POST"},
+	"/api/v1/sdp/health":              {"GET"},
+	"/api/v1/smartknora/auth/login":   {"POST"},
+	"/api/v1/smartknora/auth/refresh": {"POST"},
+	"/api/v1/smartknora/health":       {"GET"},
 }
 
 func isSDPivotOpsPath(path string) bool {

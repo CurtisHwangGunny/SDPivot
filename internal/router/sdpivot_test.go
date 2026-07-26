@@ -74,12 +74,23 @@ func TestSDPivotLegacyAliasToggleAndParity(t *testing.T) {
 func TestSDPivotRepresentativeRoutes(t *testing.T) {
 	r := newSDPivotTestEngine(t, config.DefaultProductConfig())
 	for _, prefix := range []string{"/api/v1/sdp", "/api/v1/smartknora"} {
+		for _, path := range []string{"/auth/register", "/ops/login"} {
+			if hasRoute(r, http.MethodPost, prefix+path) {
+				t.Fatalf("public route must not be registered: POST %s%s", prefix, path)
+			}
+			response := httptest.NewRecorder()
+			r.ServeHTTP(response, httptest.NewRequest(http.MethodPost, prefix+path, nil))
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("POST %s%s status = %d, want 404", prefix, path, response.Code)
+			}
+		}
 		for _, route := range []struct {
 			method string
 			path   string
 		}{
 			{http.MethodGet, "/health"},
-			{http.MethodPost, "/ops/login"},
+			{http.MethodPost, "/auth/logout"},
+			{http.MethodPost, "/ops/users"},
 			{http.MethodGet, "/ops/dashboard"},
 			{http.MethodGet, "/ops/announcements/active"},
 		} {

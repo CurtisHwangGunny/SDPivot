@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"errors"
+	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,7 +39,6 @@ func NewSDPivotAuthHandler(db *gorm.DB, jwtManager *auth.JWTManager, redis *redi
 func (h *SDPivotAuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	auth := rg.Group("/auth")
 	{
-		auth.POST("/register", h.Register)
 		auth.POST("/login", h.Login)
 		auth.POST("/refresh", h.RefreshToken)
 		auth.POST("/logout", h.Logout)
@@ -396,14 +398,32 @@ func (h *SDPivotAuthHandler) RefreshToken(c *gin.Context) {
 
 // Logout handles user logout (revoke refresh token).
 func (h *SDPivotAuthHandler) Logout(c *gin.Context) {
-	var req types.SDPivotRefreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	tokenHash := auth.HashRefreshToken(req.RefreshToken)
-	h.db.Where("token_hash = ?", tokenHash).Delete(&types.RefreshToken{})
+	query := h.db
+	if refreshToken := strings.TrimSpace(req.RefreshToken); refreshToken != "" {
+		query = query.Where("token_hash = ?", auth.HashRefreshToken(refreshToken))
+	} else if authorization := c.GetHeader("Authorization"); strings.HasPrefix(authorization, "Bearer ") {
+		claims, err := h.jwtManager.ValidateAccessToken(strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer ")))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			return
+		}
+		query = query.Where("user_id = ?", claims.UserID)
+	} else {
+		c.JSON(http.StatusOK, gin.H{"message": "logged out"})
+		return
+	}
+	if err := query.Delete(&types.RefreshToken{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to log out"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 }

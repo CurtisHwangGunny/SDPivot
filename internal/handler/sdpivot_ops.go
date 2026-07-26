@@ -30,7 +30,6 @@ func NewSDPivotOpsHandler(db *gorm.DB, jwtManager *auth.JWTManager) *SDPivotOpsH
 func (h *SDPivotOpsHandler) RegisterPublicRoutes(rg *gin.RouterGroup) {
 	ops := rg.Group("/ops")
 	{
-		ops.POST("/login", h.OpsLogin)
 		ops.POST("/refresh", h.OpsRefreshToken)
 	}
 }
