@@ -48,10 +48,13 @@ func TestRequirePermissionEnforcesViewerAndEditorBoundaries(t *testing.T) {
 		permission Permission
 		want       int
 	}{
+		{"viewer can read", types.AccessRoleKnowledgeViewer, PermissionKnowledgeRead, http.StatusOK},
 		{"viewer cannot edit", types.AccessRoleKnowledgeViewer, PermissionKnowledgeWrite, http.StatusForbidden},
 		{"editor can edit", types.AccessRoleKnowledgeEditor, PermissionKnowledgeWrite, http.StatusOK},
 		{"editor cannot admin", types.AccessRoleKnowledgeEditor, PermissionUserRoleAssign, http.StatusForbidden},
 		{"department admin can manage", types.AccessRoleDepartmentAdmin, PermissionDepartmentManage, http.StatusOK},
+		{"department admin cannot assign roles", types.AccessRoleDepartmentAdmin, PermissionUserRoleAssign, http.StatusForbidden},
+		{"super admin can assign roles", types.AccessRoleSuperAdmin, PermissionUserRoleAssign, http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
