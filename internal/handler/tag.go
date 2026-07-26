@@ -93,6 +93,14 @@ func (h *TagHandler) ListTags(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("分页参数不合法").WithDetails(err.Error()))
 		return
 	}
+	if _, present := c.GetQuery("page"); present && page.Page < 1 {
+		c.Error(errors.NewBadRequestError("分页参数不合法"))
+		return
+	}
+	if _, present := c.GetQuery("page_size"); present && page.PageSize < 1 {
+		c.Error(errors.NewBadRequestError("分页参数不合法"))
+		return
+	}
 
 	keyword := secutils.SanitizeForLog(c.Query("keyword"))
 

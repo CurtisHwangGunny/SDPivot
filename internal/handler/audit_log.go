@@ -39,20 +39,16 @@ type auditLogListResponse struct {
 func parseAuditLogQuery(c *gin.Context) (*interfaces.AuditLogQuery, error) {
 	var afterID uint64
 	if raw := c.Query("after_id"); raw != "" {
-		v, err := strconv.ParseUint(raw, 10, 64)
-		if err != nil {
-			return nil, errors.NewBadRequestError("invalid after_id")
+		if v, err := strconv.ParseUint(raw, 10, 64); err == nil {
+			afterID = v
 		}
-		afterID = v
 	}
 
 	limit := 0
 	if raw := c.Query("limit"); raw != "" {
-		v, err := strconv.Atoi(raw)
-		if err != nil || v < 1 || v > 100 {
-			return nil, errors.NewBadRequestError("limit must be between 1 and 100")
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			limit = v
 		}
-		limit = v
 	}
 
 	actor := strings.TrimSpace(c.Query("user"))

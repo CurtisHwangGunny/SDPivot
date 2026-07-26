@@ -120,7 +120,7 @@ func TestWriteAuditLogWritesActorAndLegacyUserID(t *testing.T) {
 
 	insertSQL := `INSERT INTO audit_logs \(\s+tenant_id, actor_user_id, actor_role, action, target_type, target_id,\s+target_user_id, request_path, request_method, outcome, details,\s+created_at, user_id, username, resource, resource_id, detail, ip\s+\) VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, CAST\(\$11 AS jsonb\), \$12, \$13, \$14, \$15, \$16, \$17, \$18\)`
 	mock.ExpectExec(insertSQL).WithArgs(
-		uint64(7), "ops-user", "ops_admin", "update_user_status", "user", "target-9",
+		uint64(7), "ops-user", string(types.AccessRoleSuperAdmin), "update_user_status", "user", "target-9",
 		"", "/ops/users/target-9/status", http.MethodPut, "success", `{"detail":"is_active: false"}`,
 		sqlmock.AnyArg(), "ops-user", "operator", "user", "target-9", "is_active: false", sqlmock.AnyArg(),
 	).WillReturnResult(sqlmock.NewResult(1, 1))
