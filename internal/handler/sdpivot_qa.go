@@ -399,8 +399,11 @@ func (h *SDPivotQAHandler) ListAllSpaces(c *gin.Context) {
 	}
 	tenantID := middleware.GetTenantID(c)
 
-	var spaces []types.KnowledgeSpace
-	tenantDB.Where("tenant_id = ?", tenantID).Order("created_at DESC").Find(&spaces)
+	spaces, err := listKnowledgeSpaces(tenantDB, tenantID, middleware.GetUserID(c), true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list spaces"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"spaces": spaces})
 }

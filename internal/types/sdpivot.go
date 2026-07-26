@@ -143,6 +143,7 @@ type KnowledgeSpace struct {
 	Name        string         `json:"name" gorm:"type:varchar(255);not null"`
 	Description string         `json:"description" gorm:"type:text"`
 	Visibility  string         `json:"visibility" gorm:"type:varchar(20);not null;default:team"`
+	OwnerID     *string        `json:"owner_id" gorm:"type:varchar(36)"`
 	Icon        string         `json:"icon" gorm:"type:varchar(50)"`
 	CreatorID   *string        `json:"creator_id" gorm:"type:varchar(36)"`
 	CreatedAt   time.Time      `json:"created_at"`

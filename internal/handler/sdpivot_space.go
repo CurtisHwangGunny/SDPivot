@@ -105,14 +105,45 @@ func (h *SDPivotSpaceHandler) ListSpaces(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
-	var spaces []types.KnowledgeSpace
-	if err := tenantDB.Where("id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, userID)).
-		Order("created_at DESC").Find(&spaces).Error; err != nil {
+	spaces, err := listKnowledgeSpaces(
+		tenantDB,
+		tenantID,
+		userID,
+		middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign),
+	)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list spaces"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"spaces": spaces})
+}
+
+func listKnowledgeSpaces(db *gorm.DB, tenantID uint64, userID string, includeAll bool) ([]types.KnowledgeSpace, error) {
+	spaces := make([]types.KnowledgeSpace, 0)
+	query := db.Table("knowledge_spaces").
+		Select(`knowledge_spaces.id,
+			knowledge_spaces.tenant_id,
+			knowledge_spaces.org_id,
+			knowledge_spaces.name,
+			COALESCE(knowledge_spaces.description, '') AS description,
+			COALESCE(knowledge_spaces.visibility, 'private') AS visibility,
+			COALESCE(knowledge_spaces.owner_id, knowledge_spaces.creator_id) AS owner_id,
+			COALESCE(knowledge_spaces.icon, '') AS icon,
+			knowledge_spaces.creator_id,
+			knowledge_spaces.created_at,
+			knowledge_spaces.updated_at,
+			knowledge_spaces.deleted_at`).
+		Where("knowledge_spaces.tenant_id = ?", tenantID).
+		Where("knowledge_spaces.deleted_at IS NULL")
+	if !includeAll {
+		query = query.
+			Joins("LEFT JOIN space_members ON space_members.space_id = knowledge_spaces.id AND space_members.user_id = ?", userID).
+			Where("knowledge_spaces.visibility IN ? OR space_members.user_id IS NOT NULL", []string{"team", "org"})
+	}
+
+	err := query.Order("knowledge_spaces.created_at DESC").Scan(&spaces).Error
+	return spaces, err
 }
 
 // GetSpace gets a specific knowledge space.
