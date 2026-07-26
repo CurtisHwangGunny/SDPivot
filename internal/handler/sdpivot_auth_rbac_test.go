@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/auth"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
@@ -63,29 +65,43 @@ func TestSDPivotRegistrationUsesCanonicalOPTenant(t *testing.T) {
 	require.Equal(t, "SDPivot OP tenant", tenant.Description)
 }
 
-func TestSDPivotLoginMapsLocalAdminFlagsToSuperAdminClaims(t *testing.T) {
+func TestSDPivotLoginEmitsLocalOPClaimsWithoutSaaSBypass(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSDPivotAuthRBACDB(t)
 	manager := auth.NewJWTManager(auth.DefaultJWTConfig("focused-auth-secret"))
 	handler := NewSDPivotAuthHandler(db, manager, nil)
 
 	for _, tc := range []struct {
-		name          string
-		email         string
-		isOpsAdmin    bool
-		isSystemAdmin bool
+		name     string
+		email    string
+		user     types.User
+		wantRole types.AccessRole
 	}{
-		{name: "bootstrapped sysadmin", email: "sysadmin@sdpivot.local", isOpsAdmin: true, isSystemAdmin: true},
-		{name: "existing ops admin", email: "admin@weknora-test.com", isOpsAdmin: true},
+		{
+			name:  "repaired OP administrator",
+			email: "sysadmin@sdpivot.local",
+			user: types.User{
+				TenantID: types.DefaultTenantID, IsSystemAdmin: true, IsOpsAdmin: true,
+				CanAccessAllTenants: false, AccessRole: types.AccessRoleSuperAdmin,
+			},
+			wantRole: types.AccessRoleSuperAdmin,
+		},
+		{
+			name:     "ordinary user",
+			email:    "member@example.com",
+			user:     types.User{TenantID: types.DefaultTenantID, AccessRole: types.AccessRoleKnowledgeViewer},
+			wantRole: types.AccessRoleKnowledgeViewer,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hash, err := bcrypt.GenerateFromPassword([]byte("ValidPass!123"), bcrypt.DefaultCost)
 			require.NoError(t, err)
-			user := types.User{
-				ID: tc.name, Username: tc.email, Email: tc.email, PasswordHash: string(hash),
-				TenantID: 99, IsActive: true, IsOpsAdmin: tc.isOpsAdmin,
-				IsSystemAdmin: tc.isSystemAdmin, AccessRole: types.AccessRoleKnowledgeViewer,
-			}
+			user := tc.user
+			user.ID = strings.ReplaceAll(tc.name, " ", "-")
+			user.Username = tc.email
+			user.Email = tc.email
+			user.PasswordHash = string(hash)
+			user.IsActive = true
 			require.NoError(t, db.Create(&user).Error)
 
 			body, err := json.Marshal(types.SDPivotLoginRequest{Email: tc.email, Password: "ValidPass!123"})
@@ -102,7 +118,15 @@ func TestSDPivotLoginMapsLocalAdminFlagsToSuperAdminClaims(t *testing.T) {
 			claims, err := manager.ValidateAccessToken(response.AccessToken)
 			require.NoError(t, err)
 			require.Equal(t, types.DefaultTenantID, claims.TenantID)
-			require.Equal(t, string(types.AccessRoleSuperAdmin), claims.Role)
+			require.Equal(t, string(tc.wantRole), claims.Role)
+
+			parsed, _, err := jwt.NewParser().ParseUnverified(response.AccessToken, jwt.MapClaims{})
+			require.NoError(t, err)
+			rawClaims, ok := parsed.Claims.(jwt.MapClaims)
+			require.True(t, ok)
+			require.NotContains(t, rawClaims, "can_access_all_tenants")
+			require.NotContains(t, rawClaims, "is_ops_admin")
+			require.NotEqual(t, "ops_admin", rawClaims["role"])
 		})
 	}
 }
