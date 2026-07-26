@@ -387,21 +387,27 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tenant_id INTEGER NOT NULL,
     actor_user_id VARCHAR(36) NOT NULL DEFAULT '',
+    user_id VARCHAR(36) NOT NULL DEFAULT '',
     actor_role VARCHAR(32) NOT NULL DEFAULT '',
     action VARCHAR(64) NOT NULL,
     target_type VARCHAR(32) NOT NULL DEFAULT '',
     target_id VARCHAR(64) NOT NULL DEFAULT '',
+    resource_type VARCHAR(32) NOT NULL DEFAULT '',
+    resource_id VARCHAR(64) NOT NULL DEFAULT '',
     target_user_id VARCHAR(36) NOT NULL DEFAULT '',
     request_path VARCHAR(512) NOT NULL DEFAULT '',
     request_method VARCHAR(16) NOT NULL DEFAULT '',
     outcome VARCHAR(16) NOT NULL DEFAULT 'success',
     details TEXT NOT NULL DEFAULT '{}',
+    ip_address VARCHAR(45) NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_id_desc
     ON audit_logs(tenant_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor
     ON audit_logs(actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id
+    ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_action
     ON audit_logs(tenant_id, action);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at

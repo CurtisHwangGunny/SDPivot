@@ -66,7 +66,7 @@ func (r *auditLogRepository) List(
 			tx = tx.Where("outcome = ?", q.Outcome)
 		}
 		if q.ActorUserID != "" {
-			tx = tx.Where("actor_user_id = ?", q.ActorUserID)
+			tx = tx.Where("user_id = ?", q.ActorUserID)
 		}
 		if q.StartTime != nil {
 			tx = tx.Where("created_at >= ?", *q.StartTime)

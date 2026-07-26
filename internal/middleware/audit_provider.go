@@ -56,8 +56,41 @@ func AuditSystemAdminOperation() gin.HandlerFunc {
 			RequestMethod: c.Request.Method,
 			Outcome:       types.AuditOutcomeSuccess,
 			Details:       types.JSON(details),
+			IPAddress:     c.ClientIP(),
 		})
 	}
+}
+
+// AuditAdminOperation records a successful tenant-scoped mutation after an
+// Admin or Owner role guard authorizes it.
+func AuditAdminOperation(c *gin.Context, requiredRole types.TenantRole) {
+	if c == nil || c.Request == nil || c.IsAborted() || c.Writer.Status() >= http.StatusBadRequest || !isMutatingMethod(c.Request.Method) {
+		return
+	}
+	svc := AuditServiceFromContext(c)
+	if svc == nil {
+		return
+	}
+	ctx := c.Request.Context()
+	tenantID, _ := types.TenantIDFromContext(ctx)
+	actorID, _ := types.UserIDFromContext(ctx)
+	details, _ := json.Marshal(map[string]any{
+		"required_role": requiredRole,
+		"status":        c.Writer.Status(),
+	})
+	_ = svc.Log(ctx, &types.AuditLog{
+		TenantID:      tenantID,
+		ActorUserID:   actorID,
+		ActorRole:     string(types.TenantRoleFromContext(ctx)),
+		Action:        types.AuditActionAdminOperation,
+		TargetType:    "admin_api",
+		TargetID:      auditTargetID(c),
+		RequestPath:   c.FullPath(),
+		RequestMethod: c.Request.Method,
+		Outcome:       types.AuditOutcomeSuccess,
+		Details:       types.JSON(details),
+		IPAddress:     c.ClientIP(),
+	})
 }
 
 // AuditKnowledgeAccess records successful knowledge read and search requests.
@@ -84,7 +117,17 @@ func AuditKnowledgeAccess(targetType, param string) gin.HandlerFunc {
 			RequestPath:   c.FullPath(),
 			RequestMethod: c.Request.Method,
 			Outcome:       types.AuditOutcomeSuccess,
+			IPAddress:     c.ClientIP(),
 		})
+	}
+}
+
+func isMutatingMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	default:
+		return true
 	}
 }
 

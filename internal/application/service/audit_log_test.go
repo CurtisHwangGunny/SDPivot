@@ -96,6 +96,26 @@ func TestAuditLog_Log_FillsCreatedAtAndOutcome(t *testing.T) {
 	if entry.Outcome != types.AuditOutcomeSuccess {
 		t.Fatalf("expected Outcome to default to success, got %q", entry.Outcome)
 	}
+	if entry.UserID != entry.ActorUserID {
+		t.Fatalf("expected canonical user_id to mirror actor_user_id, got %q", entry.UserID)
+	}
+}
+
+func TestAuditLog_Log_SynchronizesCanonicalResourceFields(t *testing.T) {
+	svc, _, _ := newSvcForTest()
+	entry := &types.AuditLog{
+		TenantID:     7,
+		UserID:       "u1",
+		Action:       types.AuditActionAdminOperation,
+		ResourceType: "model",
+		ResourceID:   "m1",
+	}
+	if err := svc.Log(context.Background(), entry); err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+	if entry.ActorUserID != "u1" || entry.TargetType != "model" || entry.TargetID != "m1" {
+		t.Fatalf("legacy fields were not synchronized: %+v", entry)
+	}
 }
 
 func TestAuditLog_Log_RejectsEmptyAction(t *testing.T) {

@@ -71,10 +71,16 @@ func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 		role := types.TenantRoleFromContext(ctx)
 		if role.HasPermission(min) {
 			c.Next()
+			if min.HasPermission(types.TenantRoleAdmin) {
+				AuditAdminOperation(c, min)
+			}
 			return
 		}
 		if IsCrossTenantSuperuser(ctx, cfg) {
 			c.Next()
+			if min.HasPermission(types.TenantRoleAdmin) {
+				AuditAdminOperation(c, min)
+			}
 			return
 		}
 		uid, _ := types.UserIDFromContext(ctx)

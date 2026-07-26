@@ -269,9 +269,9 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler, g *r
 	chunks := r.Group("/chunks")
 	{
 		// 获取分块列表 — Viewer+ 且对父 KB 有 read 权限（own / shared / via shared agent）
-		chunks.GET("/:knowledge_id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("knowledge_id"), handler.ListKnowledgeChunks)
+		chunks.GET("/:knowledge_id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("knowledge_id"), middleware.AuditKnowledgeAccess("knowledge", "knowledge_id"), handler.ListKnowledgeChunks)
 		// 通过chunk_id获取单个chunk（不需要knowledge_id） — Viewer+ 且对父 KB 有 read 权限
-		chunks.GET("/by-id/:id", g.Viewer(), g.KBAccessReadFromChunkIDParam("id"), handler.GetChunkByIDOnly)
+		chunks.GET("/by-id/:id", g.Viewer(), g.KBAccessReadFromChunkIDParam("id"), middleware.AuditKnowledgeAccess("chunk", "id"), handler.GetChunkByIDOnly)
 		// 删除分块 — KB owner OR Admin+，且对父 KB 有 write 权限
 		chunks.DELETE("/:knowledge_id/:id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunk)
 		// 删除知识下的所有分块 — KB owner OR Admin+，且对父 KB 有 write 权限
@@ -360,9 +360,9 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler, g *rbacG
 		// KBAccessRead/Write resolve own/shared/agent-visible access and
 		// rewrite the request's tenant context — handler no longer
 		// carries an effectiveCtxForKB helper.
-		faq.GET("/entries", g.Viewer(), g.KBAccessRead("id"), handler.ListEntries)
-		faq.GET("/entries/export", g.Viewer(), g.KBAccessRead("id"), handler.ExportEntries)
-		faq.GET("/entries/:entry_id", g.Viewer(), g.KBAccessRead("id"), handler.GetEntry)
+		faq.GET("/entries", g.Viewer(), g.KBAccessRead("id"), middleware.AuditKnowledgeAccess("knowledge_base", "id"), handler.ListEntries)
+		faq.GET("/entries/export", g.Viewer(), g.KBAccessRead("id"), middleware.AuditKnowledgeAccess("knowledge_base", "id"), handler.ExportEntries)
+		faq.GET("/entries/:entry_id", g.Viewer(), g.KBAccessRead("id"), middleware.AuditKnowledgeAccess("faq_entry", "entry_id"), handler.GetEntry)
 		faq.POST("/entries", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpsertEntries)
 		faq.POST("/entry", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.CreateEntry)
 		faq.PUT("/entries/:entry_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateEntry)
@@ -371,7 +371,7 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler, g *rbacG
 		faq.PUT("/entries/fields", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateEntryFieldsBatch)
 		faq.PUT("/entries/tags", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateEntryTagBatch)
 		faq.DELETE("/entries", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.DeleteEntries)
-		faq.POST("/search", g.Viewer(), g.KBAccessRead("id"), handler.SearchFAQ)
+		faq.POST("/search", g.Viewer(), g.KBAccessRead("id"), middleware.AuditKnowledgeAccess("knowledge_base", "id"), handler.SearchFAQ)
 		// FAQ import result display status
 		faq.PUT("/import/last-result/display", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), handler.UpdateLastImportResultDisplayStatus)
 	}
@@ -390,7 +390,7 @@ func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeB
 		// 创建知识库 — Contributor+ (no :id, role-only floor)
 		kb.POST("", g.Contributor(), handler.CreateKnowledgeBase)
 		// 获取知识库列表 — Viewer+ (no :id, role-only floor)
-		kb.GET("", g.Viewer(), handler.ListKnowledgeBases)
+		kb.GET("", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", ""), handler.ListKnowledgeBases)
 		// 获取知识库详情 — Viewer+ 且对 KB 有 read 权限
 		kb.GET("/:id", g.Viewer(), g.KBAccessRead("id"), middleware.AuditKnowledgeAccess("knowledge_base", "id"), handler.GetKnowledgeBase)
 		// 更新知识库 — 创建者本人 OR Admin+ 且对 KB 有 write 权限
@@ -1165,7 +1165,7 @@ func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.Organiza
 		// List agents shared to this organization — Viewer+
 		orgs.GET("/:id/agent-shares", g.Viewer(), orgHandler.ListOrgAgentShares)
 		// List all knowledge bases in this organization (including mine) for list-page space view — Viewer+
-		orgs.GET("/:id/shared-knowledge-bases", g.Viewer(), orgHandler.ListOrganizationSharedKnowledgeBases)
+		orgs.GET("/:id/shared-knowledge-bases", g.Viewer(), middleware.AuditKnowledgeAccess("organization", "id"), orgHandler.ListOrganizationSharedKnowledgeBases)
 		// List all agents in this organization (including mine) for list-page space view — Viewer+
 		orgs.GET("/:id/shared-agents", g.Viewer(), orgHandler.ListOrganizationSharedAgents)
 	}
@@ -1201,7 +1201,7 @@ func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.Organiza
 	}
 
 	// Shared knowledge bases route — Viewer+
-	r.GET("/shared-knowledge-bases", g.Viewer(), orgHandler.ListSharedKnowledgeBases)
+	r.GET("/shared-knowledge-bases", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", ""), orgHandler.ListSharedKnowledgeBases)
 	// Shared agents route — Viewer+
 	r.GET("/shared-agents", g.Viewer(), orgHandler.ListSharedAgents)
 	// "Disable by me" 是租户级偏好（写到 tenant_disabled_shared_agents），
@@ -1844,35 +1844,35 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 	wiki := r.Group("/knowledgebase/:kb_id/wiki")
 	{
 		// Page CRUD
-		wiki.GET("/pages", g.Viewer(), wikiHandler.ListPages)
+		wiki.GET("/pages", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.ListPages)
 		wiki.POST("/pages", g.OwnedWikiKBOrAdmin(), wikiHandler.CreatePage)
 		wiki.PUT("/move-page", g.OwnedWikiKBOrAdmin(), wikiHandler.MovePage)
-		wiki.GET("/pages/*slug", g.Viewer(), wikiHandler.GetPage)
+		wiki.GET("/pages/*slug", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.GetPage)
 		wiki.PUT("/pages/*slug", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdatePage)
 		wiki.DELETE("/pages/*slug", g.OwnedWikiKBOrAdmin(), wikiHandler.DeletePage)
 
 		// Folder tree (directory nodes)
-		wiki.GET("/folders", g.Viewer(), wikiHandler.ListFolders)
+		wiki.GET("/folders", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.ListFolders)
 		wiki.POST("/folders", g.OwnedWikiKBOrAdmin(), wikiHandler.CreateFolder)
 		wiki.PUT("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdateFolder)
 		wiki.DELETE("/folders/:folder_id", g.OwnedWikiKBOrAdmin(), wikiHandler.DeleteFolder)
 
 		// Special pages
-		wiki.GET("/index", g.Viewer(), wikiHandler.GetIndex)
-		wiki.GET("/log", g.Viewer(), wikiHandler.GetLog)
+		wiki.GET("/index", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.GetIndex)
+		wiki.GET("/log", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.GetLog)
 
 		// Graph and stats
-		wiki.GET("/graph", g.Viewer(), wikiHandler.GetGraph)
-		wiki.GET("/stats", g.Viewer(), wikiHandler.GetStats)
+		wiki.GET("/graph", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.GetGraph)
+		wiki.GET("/stats", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.GetStats)
 
 		// Search and maintenance
-		wiki.GET("/search", g.Viewer(), wikiHandler.SearchPages)
+		wiki.GET("/search", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.SearchPages)
 		wiki.POST("/rebuild-links", g.OwnedWikiKBOrAdmin(), wikiHandler.RebuildLinks)
-		wiki.GET("/lint", g.Viewer(), wikiHandler.Lint)
+		wiki.GET("/lint", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.Lint)
 		wiki.POST("/auto-fix", g.OwnedWikiKBOrAdmin(), wikiHandler.AutoFix)
 
 		// Issues
-		wiki.GET("/issues", g.Viewer(), wikiHandler.ListIssues)
+		wiki.GET("/issues", g.Viewer(), middleware.AuditKnowledgeAccess("knowledge_base", "kb_id"), wikiHandler.ListIssues)
 		wiki.PUT("/issues/:issue_id/status", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdateIssueStatus)
 	}
 }

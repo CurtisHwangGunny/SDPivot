@@ -55,6 +55,24 @@ func (s *auditLogService) Log(ctx context.Context, entry *types.AuditLog) error 
 	if entry.Outcome == "" {
 		entry.Outcome = types.AuditOutcomeSuccess
 	}
+	if entry.UserID == "" {
+		entry.UserID = entry.ActorUserID
+	}
+	if entry.ActorUserID == "" {
+		entry.ActorUserID = entry.UserID
+	}
+	if entry.ResourceType == "" {
+		entry.ResourceType = entry.TargetType
+	}
+	if entry.TargetType == "" {
+		entry.TargetType = entry.ResourceType
+	}
+	if entry.ResourceID == "" {
+		entry.ResourceID = entry.TargetID
+	}
+	if entry.TargetID == "" {
+		entry.TargetID = entry.ResourceID
+	}
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = s.now()
 	}
@@ -134,7 +152,15 @@ func (s *auditLogService) LogDenied(
 		RequestMethod: requestMethod,
 		Outcome:       types.AuditOutcomeDenied,
 		Details:       types.JSON(details),
+		IPAddress:     clientIP(c),
 	})
+}
+
+func clientIP(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	return c.ClientIP()
 }
 
 // List proxies to the repository. The handler layer applies the

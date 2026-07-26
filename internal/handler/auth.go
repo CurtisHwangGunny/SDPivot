@@ -29,6 +29,7 @@ type AuthHandler struct {
 	tenantService    interfaces.TenantService
 	configInfo       *config.Config
 	systemSettingSvc interfaces.SystemSettingService
+	auditSvc         interfaces.AuditLogService
 	// invitationSvc is required for the share-link registration path
 	// (POST /auth/register-by-invite). When nil — e.g. legacy test
 	// fixtures — the share-link endpoints respond 503 rather than
@@ -52,6 +53,7 @@ func NewAuthHandler(configInfo *config.Config,
 	userService interfaces.UserService, tenantService interfaces.TenantService,
 	systemSettingSvc interfaces.SystemSettingService,
 	invitationSvc interfaces.TenantInvitationService,
+	auditSvc interfaces.AuditLogService,
 ) *AuthHandler {
 	// Boot-time guard: a nil-or-empty Auth section silently disables the
 	// invite_only gate (see Register below). Emit a loud one-shot log
@@ -69,6 +71,7 @@ func NewAuthHandler(configInfo *config.Config,
 		tenantService:    tenantService,
 		systemSettingSvc: systemSettingSvc,
 		invitationSvc:    invitationSvc,
+		auditSvc:         auditSvc,
 	}
 }
 
@@ -184,6 +187,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	var req types.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logLogin(c, "password", types.AuditOutcomeDenied, "invalid_request", nil, nil)
 		logger.Error(ctx, "Failed to parse login request parameters", err)
 		appErr := errors.NewValidationError("Invalid login parameters").WithDetails(err.Error())
 		c.Error(appErr)
@@ -193,6 +197,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// Validate required fields
 	if req.Email == "" || req.Password == "" {
+		h.logLogin(c, "password", types.AuditOutcomeDenied, "missing_credentials", nil, nil)
 		logger.Error(ctx, "Missing required login fields")
 		appErr := errors.NewValidationError("Email and password are required")
 		c.Error(appErr)
@@ -203,11 +208,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	response, err := h.userService.Login(ctx, &req)
 	if err != nil {
 		if stdErrors.Is(err, service.ErrAccountLocked) {
+			h.logLogin(c, "password", types.AuditOutcomeDenied, "account_locked", nil, nil)
 			appErr := errors.NewTooManyRequestsError("Account temporarily locked; try again later")
 			c.Error(appErr)
 			return
 		}
 		logger.Errorf(ctx, "Failed to login user: %v", err)
+		h.logLogin(c, "password", types.AuditOutcomeDenied, "authentication_failed", nil, nil)
 		appErr := errors.NewUnauthorizedError("Login failed").WithDetails(err.Error())
 		c.Error(appErr)
 		return
@@ -215,6 +222,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// Check if login was successful
 	if !response.Success {
+		h.logLogin(c, "password", types.AuditOutcomeDenied, "invalid_credentials", nil, nil)
 		logger.Warnf(ctx, "Login failed: %s", response.Message)
 		c.JSON(http.StatusUnauthorized, response)
 		return
@@ -223,6 +231,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// User is already in the correct format from service
 
 	logger.Infof(ctx, "User logged in successfully, email: %s", email)
+	h.logLogin(c, "password", types.AuditOutcomeSuccess, "", response.User, response.ActiveTenant)
 	c.JSON(http.StatusOK, response)
 }
 
@@ -297,6 +306,7 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 	frontendRedirectURI := "/"
 
 	if providerError := strings.TrimSpace(c.Query("error")); providerError != "" {
+		h.logLogin(c, "oidc", types.AuditOutcomeDenied, "provider_rejected", nil, nil)
 		redirectURL := frontendRedirectURI + "#oidc_error=" + urlQueryEscape(providerError)
 		if description := strings.TrimSpace(c.Query("error_description")); description != "" {
 			redirectURL += "&oidc_error_description=" + urlQueryEscape(description)
@@ -308,6 +318,7 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 	state := strings.TrimSpace(c.Query("state"))
 	decodedState, err := decodeOIDCState(state)
 	if err != nil {
+		h.logLogin(c, "oidc", types.AuditOutcomeDenied, "invalid_state", nil, nil)
 		logger.Errorf(ctx, "Failed to decode OIDC state: %v", err)
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("invalid_state"))
 		return
@@ -315,29 +326,64 @@ func (h *AuthHandler) OIDCRedirectCallback(c *gin.Context) {
 
 	code := strings.TrimSpace(c.Query("code"))
 	if code == "" {
+		h.logLogin(c, "oidc", types.AuditOutcomeDenied, "missing_code", nil, nil)
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("missing_code"))
 		return
 	}
 
 	resp, err := h.userService.LoginWithOIDC(ctx, code, strings.TrimSpace(decodedState.RedirectURI))
 	if err != nil {
+		h.logLogin(c, "oidc", types.AuditOutcomeDenied, "authentication_failed", nil, nil)
 		logger.Errorf(ctx, "Failed to complete OIDC login via redirect callback: %v", err)
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(err.Error()))
 		return
 	}
 	if !resp.Success {
+		h.logLogin(c, "oidc", types.AuditOutcomeDenied, "authentication_failed", nil, nil)
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("login_failed")+"&oidc_error_description="+urlQueryEscape(resp.Message))
 		return
 	}
 
 	payload, err := encodeOIDCCallbackPayload(resp)
 	if err != nil {
+		h.logLogin(c, "oidc", types.AuditOutcomeDenied, "response_encode_failed", resp.User, resp.Tenant)
 		logger.Errorf(ctx, "Failed to encode OIDC callback payload: %v", err)
 		c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_error="+urlQueryEscape("payload_encode_failed"))
 		return
 	}
 
+	h.logLogin(c, "oidc", types.AuditOutcomeSuccess, "", resp.User, resp.Tenant)
 	c.Redirect(http.StatusFound, frontendRedirectURI+"#oidc_result="+urlQueryEscape(payload))
+}
+
+func (h *AuthHandler) logLogin(c *gin.Context, mechanism string, outcome types.AuditOutcome, reason string, user *types.User, tenant *types.Tenant) {
+	if h.auditSvc == nil || c == nil || c.Request == nil {
+		return
+	}
+	var userID string
+	var tenantID uint64
+	if user != nil {
+		userID = user.ID
+	}
+	if tenant != nil {
+		tenantID = tenant.ID
+	}
+	detailValues := map[string]string{"mechanism": mechanism}
+	if reason != "" {
+		detailValues["reason"] = reason
+	}
+	details, _ := json.Marshal(detailValues)
+	_ = h.auditSvc.Log(c.Request.Context(), &types.AuditLog{
+		TenantID:      tenantID,
+		ActorUserID:   userID,
+		Action:        types.AuditActionLogin,
+		TargetType:    "session",
+		RequestPath:   c.FullPath(),
+		RequestMethod: c.Request.Method,
+		Outcome:       outcome,
+		Details:       types.JSON(details),
+		IPAddress:     c.ClientIP(),
+	})
 }
 
 func encodeOIDCCallbackPayload(resp *types.OIDCCallbackResponse) (string, error) {

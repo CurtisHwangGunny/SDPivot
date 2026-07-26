@@ -120,6 +120,9 @@ const (
 	// under /api/v1/system/admin that do not have a more specific lifecycle
 	// event. RequestPath and RequestMethod identify the operation.
 	AuditActionSystemAdminOperation AuditAction = "system.admin_operation"
+	// AuditActionAdminOperation captures successful tenant-scoped requests
+	// authorized by an Admin or Owner role guard.
+	AuditActionAdminOperation AuditAction = "admin.operation"
 
 	// AuditActionLogin records password and OIDC login attempts. Successful
 	// entries carry the authenticated user ID; failed attempts deliberately do
@@ -152,15 +155,19 @@ type AuditLog struct {
 	ID            uint64       `json:"id"             gorm:"primaryKey;autoIncrement"`
 	TenantID      uint64       `json:"tenant_id"      gorm:"not null;index:idx_audit_logs_tenant_id_desc,priority:1;index:idx_audit_logs_tenant_action,priority:1"`
 	ActorUserID   string       `json:"actor_user_id"  gorm:"type:varchar(36);default:'';index:idx_audit_logs_actor"`
+	UserID        string       `json:"user_id"        gorm:"type:varchar(36);default:'';index:idx_audit_logs_user_id"`
 	ActorRole     string       `json:"actor_role"     gorm:"type:varchar(32);default:''"`
 	Action        AuditAction  `json:"action"         gorm:"type:varchar(64);not null;index:idx_audit_logs_tenant_action,priority:2"`
 	TargetType    string       `json:"target_type"    gorm:"type:varchar(32);default:''"`
 	TargetID      string       `json:"target_id"      gorm:"type:varchar(64);default:''"`
+	ResourceType  string       `json:"resource_type"  gorm:"type:varchar(32);default:''"`
+	ResourceID    string       `json:"resource_id"    gorm:"type:varchar(64);default:''"`
 	TargetUserID  string       `json:"target_user_id" gorm:"type:varchar(36);default:''"`
 	RequestPath   string       `json:"request_path"   gorm:"type:varchar(512);default:''"`
 	RequestMethod string       `json:"request_method" gorm:"type:varchar(16);default:''"`
 	Outcome       AuditOutcome `json:"outcome"        gorm:"type:varchar(16);default:success"`
 	Details       JSON         `json:"details"        gorm:"type:jsonb;default:'{}'"`
+	IPAddress     string       `json:"ip_address"     gorm:"type:varchar(45);default:''"`
 	CreatedAt     time.Time    `json:"created_at"     gorm:"index:idx_audit_logs_tenant_id_desc,priority:2,sort:desc"`
 }
 
