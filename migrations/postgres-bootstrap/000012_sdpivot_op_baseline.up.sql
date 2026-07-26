@@ -404,6 +404,8 @@ SELECT sdpivot_op_bootstrap_000012_assert_schema(FALSE);
 
 -- Shared core table extensions from the final historical SDPivot schema.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_ops_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS access_role VARCHAR(32) NOT NULL DEFAULT 'knowledge_viewer';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id VARCHAR(36);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_expires_at TIMESTAMPTZ;
@@ -426,6 +428,8 @@ BEGIN
       INTO incompatible_columns
       FROM (VALUES
           ('users', 'is_ops_admin', ARRAY['boolean']),
+          ('users', 'access_role', ARRAY['character varying']),
+          ('users', 'department_id', ARRAY['character varying']),
           ('users', 'trial_phase', ARRAY['character varying'])
       ) AS required(table_name, column_name, allowed_types)
       LEFT JOIN information_schema.columns existing
@@ -441,6 +445,8 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_users_ops_admin ON users (is_ops_admin) WHERE is_ops_admin = TRUE;
+CREATE INDEX IF NOT EXISTS idx_users_access_role ON users (access_role);
+CREATE INDEX IF NOT EXISTS idx_users_department_id ON users (department_id);
 CREATE INDEX IF NOT EXISTS idx_users_trial_phase ON users (trial_phase);
 
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS auth_status VARCHAR(20) DEFAULT 'trial';

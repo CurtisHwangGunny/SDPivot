@@ -4,7 +4,7 @@ set -Eeuo pipefail
 readonly CORE_LATEST_VERSION=63
 readonly CORE_AMBIGUOUS_VERSION=12
 readonly SDPIVOT_BASELINE_VERSION=12
-readonly SDPIVOT_LATEST_VERSION=14
+readonly SDPIVOT_LATEST_VERSION=17
 readonly CORE_MIGRATIONS_DIR=/migrations/versioned
 readonly BOOTSTRAP_MIGRATIONS_DIR=/migrations/postgres-bootstrap
 readonly SDPIVOT_MIGRATIONS_DIR=/migrations/postgres
@@ -694,8 +694,11 @@ sdpivot_v13_fingerprint() {
 }
 
 sdpivot_latest_fingerprint() {
+    local require_op_admin="${1:-true}"
     local version13
     local latest
+
+    [[ "$require_op_admin" == "true" || "$require_op_admin" == "false" ]] || return 1
 
     if ! version13="$(sdpivot_v13_fingerprint)"; then
         return 1
@@ -779,6 +782,30 @@ sdpivot_latest_fingerprint() {
             JOIN target_relations target ON target.relation_id = policy.polrelid
             WHERE policy.polpermissive
               AND policy.polname <> target.policy_name
+        ), op_admin_schema AS (
+            SELECT COUNT(*) = 2 AS valid
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'users'
+              AND column_name IN ('access_role', 'department_id')
+        ), invalid_op_admins AS (
+            SELECT 1
+            FROM users u
+            WHERE (u.is_ops_admin OR u.is_system_admin)
+              AND (
+                  u.tenant_id <> 1
+                  OR u.can_access_all_tenants
+                  OR COALESCE(to_jsonb(u)->>'access_role', '') <> 'super_admin'
+                  OR (u.deleted_at IS NULL AND u.is_active AND NOT EXISTS (
+                      SELECT 1
+                      FROM tenant_members tm
+                      WHERE tm.user_id = u.id
+                        AND tm.tenant_id = 1
+                        AND tm.role = 'owner'
+                        AND tm.status = 'active'
+                        AND tm.deleted_at IS NULL
+                  ))
+              )
         ), tenant_function AS (
             SELECT p.prorettype = 'void'::regtype
                    AND NOT p.prosecdef
@@ -801,6 +828,8 @@ sdpivot_latest_fingerprint() {
             WHEN EXISTS (SELECT 1 FROM invalid_rls)
               OR EXISTS (SELECT 1 FROM invalid_expected_policies)
               OR EXISTS (SELECT 1 FROM extra_permissive_policies)
+              OR (${require_op_admin} AND NOT EXISTS (SELECT 1 FROM op_admin_schema WHERE valid))
+              OR (${require_op_admin} AND EXISTS (SELECT 1 FROM invalid_op_admins))
               OR NOT EXISTS (SELECT 1 FROM tenant_function WHERE valid)
               OR NOT EXISTS (SELECT 1 FROM ops_function WHERE valid)
             THEN 'partial' ELSE 'complete' END
@@ -815,7 +844,8 @@ sdpivot_fingerprint_for_version() {
     case "$version" in
         12) sdpivot_v12_fingerprint ;;
         13) sdpivot_v13_fingerprint ;;
-        *) sdpivot_latest_fingerprint ;;
+        14|15|16) sdpivot_latest_fingerprint false ;;
+        *) sdpivot_latest_fingerprint true ;;
     esac
 }
 

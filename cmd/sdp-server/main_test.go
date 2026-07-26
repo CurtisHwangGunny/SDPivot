@@ -10,7 +10,12 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestValidateStandaloneConfig(t *testing.T) {
@@ -248,4 +253,56 @@ func TestTopLevelReadinessSuccess(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("readiness status = %d", response.Code)
 	}
+}
+
+func TestInitializeOPAdminFromEnvCreatesAndRepairsIdempotently(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.User{}, &types.TenantMember{}, &types.SDPivotUserProfile{}))
+
+	t.Setenv(opAdminEmailEnv, "sysadmin@sdpivot.local")
+	t.Setenv(opAdminPasswordEnv, "ValidPass!123")
+	require.NoError(t, initializeOPAdminFromEnv(db))
+
+	var user types.User
+	require.NoError(t, db.Where("email = ?", "sysadmin@sdpivot.local").First(&user).Error)
+	require.Equal(t, types.DefaultTenantID, user.TenantID)
+	require.True(t, user.IsOpsAdmin)
+	require.True(t, user.IsSystemAdmin)
+	require.False(t, user.CanAccessAllTenants)
+	require.Equal(t, types.AccessRoleSuperAdmin, user.AccessRole)
+	require.NoError(t, bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("ValidPass!123")))
+	originalHash := user.PasswordHash
+
+	require.NoError(t, initializeOPAdminFromEnv(db))
+	require.NoError(t, db.Where("email = ?", "sysadmin@sdpivot.local").First(&user).Error)
+	require.Equal(t, originalHash, user.PasswordHash, "matching passwords must not be rehashed on every restart")
+
+	var tenantCount, userCount, membershipCount int64
+	require.NoError(t, db.Model(&types.Tenant{}).Where("id = ?", types.DefaultTenantID).Count(&tenantCount).Error)
+	require.NoError(t, db.Model(&types.User{}).Where("email = ?", user.Email).Count(&userCount).Error)
+	require.NoError(t, db.Model(&types.TenantMember{}).Where("user_id = ? AND tenant_id = ? AND role = ? AND status = ?", user.ID, types.DefaultTenantID, types.TenantRoleOwner, types.TenantMemberStatusActive).Count(&membershipCount).Error)
+	require.EqualValues(t, 1, tenantCount)
+	require.EqualValues(t, 1, userCount)
+	require.EqualValues(t, 1, membershipCount)
+}
+
+func TestInitializeOPAdminFromEnvRepairsExistingPasswordAndTenant(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.User{}, &types.TenantMember{}, &types.SDPivotUserProfile{}))
+
+	oldHash, err := bcrypt.GenerateFromPassword([]byte("OldPass!123"), bcrypt.DefaultCost)
+	require.NoError(t, err)
+	user := types.User{ID: "existing-admin", Username: "sysadmin", Email: "sysadmin@sdpivot.local", PasswordHash: string(oldHash), TenantID: 99, IsActive: false, CanAccessAllTenants: true}
+	require.NoError(t, db.Create(&user).Error)
+
+	t.Setenv(opAdminEmailEnv, user.Email)
+	t.Setenv(opAdminPasswordEnv, "NewPass!123")
+	require.NoError(t, initializeOPAdminFromEnv(db))
+	require.NoError(t, db.Where("id = ?", user.ID).First(&user).Error)
+	require.Equal(t, types.DefaultTenantID, user.TenantID)
+	require.True(t, user.IsActive && user.IsOpsAdmin && user.IsSystemAdmin)
+	require.False(t, user.CanAccessAllTenants)
+	require.NoError(t, bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("NewPass!123")))
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
@@ -27,6 +28,7 @@ type User struct {
 	CanAccessAllTenants bool
 	IsSystemAdmin       bool
 	IsOpsAdmin          bool
+	AccessRole          string
 	MustChangePassword  bool
 	PasswordChangedAt   *time.Time
 	PasswordExpiresAt   *time.Time
@@ -116,11 +118,14 @@ func loadAccounts(path string) ([]Account, error) {
 				row[strings.TrimSpace(h)] = rec[idx]
 			}
 		}
-		tenantID := uint64(1)
+		tenantID := types.DefaultTenantID
 		if raw := strings.TrimSpace(row["tenant_id"]); raw != "" {
 			parsed, err := strconv.ParseUint(raw, 10, 64)
 			if err != nil || parsed == 0 {
 				return nil, fmt.Errorf("row %d invalid tenant_id: %s", i+2, raw)
+			}
+			if parsed != types.DefaultTenantID {
+				return nil, fmt.Errorf("row %d tenant_id must be %d in OP mode", i+2, types.DefaultTenantID)
 			}
 			tenantID = parsed
 		}
@@ -167,19 +172,15 @@ func main() {
 	for _, acc := range accounts {
 		now := time.Now()
 		expires := now.Add(90 * 24 * time.Hour)
-		hash, err := bcrypt.GenerateFromPassword([]byte(acc.Password), bcrypt.DefaultCost)
-		if err != nil {
-			log.Fatalf("hash password for %s: %v", acc.Email, err)
-		}
 
 		var existing User
-		err = db.Where("email = ?", acc.Email).First(&existing).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Fatalf("query user %s: %v", acc.Email, err)
+		queryErr := db.Where("email = ?", acc.Email).First(&existing).Error
+		if queryErr != nil && !errors.Is(queryErr, gorm.ErrRecordNotFound) {
+			log.Fatalf("query user %s: %v", acc.Email, queryErr)
 		}
 
 		if *dryRun {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			if errors.Is(queryErr, gorm.ErrRecordNotFound) {
 				fmt.Printf("DRY-RUN create ops account: email=%s username=%s tenant_id=%d ops=%v system=%v\n", acc.Email, acc.Username, acc.TenantID, acc.IsOpsAdmin, acc.IsSystemAdmin)
 			} else {
 				fmt.Printf("DRY-RUN update ops account: email=%s username=%s tenant_id=%d ops=%v system=%v\n", acc.Email, acc.Username, acc.TenantID, acc.IsOpsAdmin, acc.IsSystemAdmin)
@@ -187,21 +188,28 @@ func main() {
 			continue
 		}
 
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		hash, passwordChanged, err := passwordHash(existing.PasswordHash, acc.Password)
+		if err != nil {
+			log.Fatalf("hash password for %s: %v", acc.Email, err)
+		}
+
+		if errors.Is(queryErr, gorm.ErrRecordNotFound) {
 			user := User{
-				ID:                 uuid.New().String(),
-				Username:           acc.Username,
-				Email:              acc.Email,
-				PasswordHash:       string(hash),
-				TenantID:           acc.TenantID,
-				IsActive:           acc.IsActive,
-				IsSystemAdmin:      acc.IsSystemAdmin,
-				IsOpsAdmin:         acc.IsOpsAdmin,
-				MustChangePassword: acc.MustChangePassword,
-				PasswordChangedAt:  &now,
-				PasswordExpiresAt:  &expires,
-				CreatedAt:          now,
-				UpdatedAt:          now,
+				ID:                  uuid.New().String(),
+				Username:            acc.Username,
+				Email:               acc.Email,
+				PasswordHash:        string(hash),
+				TenantID:            acc.TenantID,
+				IsActive:            acc.IsActive,
+				CanAccessAllTenants: false,
+				IsSystemAdmin:       acc.IsSystemAdmin,
+				IsOpsAdmin:          acc.IsOpsAdmin,
+				AccessRole:          accountAccessRole(acc),
+				MustChangePassword:  acc.MustChangePassword,
+				PasswordChangedAt:   &now,
+				PasswordExpiresAt:   &expires,
+				CreatedAt:           now,
+				UpdatedAt:           now,
 			}
 			if err := db.Create(&user).Error; err != nil {
 				log.Fatalf("create user %s: %v", acc.Email, err)
@@ -216,16 +224,20 @@ func main() {
 			fmt.Printf("CREATED ops account: email=%s username=%s tenant_id=%d ops=%v system=%v\n", acc.Email, acc.Username, acc.TenantID, acc.IsOpsAdmin, acc.IsSystemAdmin)
 		} else {
 			updates := map[string]interface{}{
-				"username":             acc.Username,
-				"password_hash":        string(hash),
-				"tenant_id":            acc.TenantID,
-				"is_active":            acc.IsActive,
-				"is_system_admin":      acc.IsSystemAdmin,
-				"is_ops_admin":         acc.IsOpsAdmin,
-				"must_change_password": acc.MustChangePassword,
-				"password_changed_at":  now,
-				"password_expires_at":  expires,
-				"updated_at":           now,
+				"username":               acc.Username,
+				"tenant_id":              acc.TenantID,
+				"is_active":              acc.IsActive,
+				"can_access_all_tenants": false,
+				"is_system_admin":        acc.IsSystemAdmin,
+				"is_ops_admin":           acc.IsOpsAdmin,
+				"access_role":            accountAccessRole(acc),
+				"must_change_password":   acc.MustChangePassword,
+				"updated_at":             now,
+			}
+			if passwordChanged {
+				updates["password_hash"] = string(hash)
+				updates["password_changed_at"] = now
+				updates["password_expires_at"] = expires
 			}
 			if err := db.Model(&existing).Updates(updates).Error; err != nil {
 				log.Fatalf("update user %s: %v", acc.Email, err)
@@ -236,4 +248,19 @@ func main() {
 			fmt.Printf("UPDATED ops account: email=%s username=%s tenant_id=%d ops=%v system=%v\n", acc.Email, acc.Username, acc.TenantID, acc.IsOpsAdmin, acc.IsSystemAdmin)
 		}
 	}
+}
+
+func accountAccessRole(acc Account) string {
+	if acc.IsOpsAdmin || acc.IsSystemAdmin {
+		return string(types.AccessRoleSuperAdmin)
+	}
+	return string(types.AccessRoleKnowledgeViewer)
+}
+
+func passwordHash(existingHash, password string) ([]byte, bool, error) {
+	if existingHash != "" && bcrypt.CompareHashAndPassword([]byte(existingHash), []byte(password)) == nil {
+		return []byte(existingHash), false, nil
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return hash, true, err
 }

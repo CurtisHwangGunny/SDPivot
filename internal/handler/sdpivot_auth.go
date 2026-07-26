@@ -112,12 +112,11 @@ func (h *SDPivotAuthHandler) Register(c *gin.Context) {
 	// Generate ID
 	user.ID = uuid.New().String()
 
-	// Provision a dedicated tenant for every self-service registration. The
-	// database sequence is the source of truth, so concurrent registrations
-	// cannot accidentally share a tenant ID.
+	// OP uses one canonical tenant for every locally provisioned user.
 	tenant := types.Tenant{
-		Name:        user.Username + " 的工作区",
-		Description: "SDPivot 默认工作区",
+		ID:          types.DefaultTenantID,
+		Name:        "SDPivot",
+		Description: "SDPivot OP tenant",
 		APIKey:      uuid.New().String(),
 		Status:      "active",
 		Business:    "sdpivot",
@@ -161,18 +160,18 @@ func (h *SDPivotAuthHandler) Register(c *gin.Context) {
 	}
 
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&tenant).Error; err != nil {
+		if err := tx.Where("id = ?", types.DefaultTenantID).FirstOrCreate(&tenant).Error; err != nil {
 			return err
 		}
-		user.TenantID = tenant.ID
-		org.OwnerTenantID = tenant.ID
+		user.TenantID = types.DefaultTenantID
+		org.OwnerTenantID = types.DefaultTenantID
 
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&types.TenantMember{
 			UserID:    user.ID,
-			TenantID:  tenant.ID,
+			TenantID:  types.DefaultTenantID,
 			Role:      types.TenantRoleOwner,
 			Status:    types.TenantMemberStatusActive,
 			JoinedAt:  now,
@@ -186,7 +185,7 @@ func (h *SDPivotAuthHandler) Register(c *gin.Context) {
 		}
 		if err := tx.Create(&types.OrgExt{
 			OrgID:         org.ID,
-			TenantID:      tenant.ID,
+			TenantID:      types.DefaultTenantID,
 			AuthStatus:    "trial",
 			AuthExpiresAt: &trialExpiresAt,
 			CreatedAt:     nowOrg,
@@ -211,7 +210,7 @@ func (h *SDPivotAuthHandler) Register(c *gin.Context) {
 	}
 
 	// Generate tokens
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, h.resolveUserRole(user.ID))
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, h.resolveUserRole(user.ID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -295,7 +294,7 @@ func (h *SDPivotAuthHandler) Login(c *gin.Context) {
 
 	// Generate tokens
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, h.resolveUserRole(user.ID))
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, h.resolveUserRole(user.ID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -359,7 +358,7 @@ func (h *SDPivotAuthHandler) RefreshToken(c *gin.Context) {
 
 	// Generate new tokens
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, h.resolveUserRole(user.ID))
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, h.resolveUserRole(user.ID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -417,10 +416,10 @@ func generateUUID() string {
 // resolveUserRole determines the product role embedded in the JWT.
 func (h *SDPivotAuthHandler) resolveUserRole(userID string) string {
 	var user types.User
-	if err := h.db.Select("access_role, is_system_admin, is_ops_admin").Where("id = ?", userID).First(&user).Error; err == nil {
-		if user.IsSystemAdmin || user.IsOpsAdmin {
-			return string(types.AccessRoleSuperAdmin)
-		}
+	if err := h.db.Select("is_system_admin, is_ops_admin").Where("id = ?", userID).First(&user).Error; err == nil && (user.IsSystemAdmin || user.IsOpsAdmin) {
+		return string(types.AccessRoleSuperAdmin)
+	}
+	if err := h.db.Select("access_role").Where("id = ?", userID).First(&user).Error; err == nil {
 		role := types.NormalizeAccessRole(string(user.AccessRole))
 		if role.IsValid() {
 			return string(role)

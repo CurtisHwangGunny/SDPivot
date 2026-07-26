@@ -169,7 +169,7 @@ fi
 case "$class" in
   core) printf '63:f' >"$state_dir/core"; touch "$state_dir/core-migrated" ;;
   bootstrap) printf '12:f' >"$state_dir/sdpivot"; touch "$state_dir/bootstrap-migrated" ;;
-  sdpivot) printf '14:f' >"$state_dir/sdpivot" ;;
+  sdpivot) printf '17:f' >"$state_dir/sdpivot" ;;
   *) exit 8 ;;
 esac
 `)
@@ -300,7 +300,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 		},
 		{
 			name:      "already current ledgers have zero migration side effects",
-			coreState: "63:f", sdpivotState: "14:f", publicTables: "1",
+			coreState: "63:f", sdpivotState: "17:f", publicTables: "1",
 			coreFingerprint: "complete", sdpFingerprint: "complete", wantSuccess: true,
 			wantCalls: []string{
 				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44",
@@ -331,14 +331,14 @@ func TestMigrationStateMachineFailsClosedForUnsafeStates(t *testing.T) {
 		{name: "function missing or mismatched", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
 		{name: "target rls missing", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
 		{name: "document chunks not force or lacks dual tenant policy", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
-		{name: "future sdpivot version", coreState: "63:f", sdpivotState: "15:f", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{}},
-		{name: "future sdpivot version before core migration", coreState: "absent", sdpivotState: "15:f", publicTables: "0", coreFingerprint: "complete", sdpFingerprint: "empty", wantCalls: []string{}},
+		{name: "future sdpivot version", coreState: "63:f", sdpivotState: "18:f", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{}},
+		{name: "future sdpivot version before core migration", coreState: "absent", sdpivotState: "18:f", publicTables: "0", coreFingerprint: "complete", sdpFingerprint: "empty", wantCalls: []string{}},
 		{name: "v13 empty state table", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
 		{name: "v13 wrong state table structure", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
 		{name: "v13 known legacy hash still active", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Account: "partial"},
-		{name: "latest policy missing", coreState: "63:f", sdpivotState: "14:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
-		{name: "latest policy missing with check", coreState: "63:f", sdpivotState: "14:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
-		{name: "latest extra permissive policy", coreState: "63:f", sdpivotState: "14:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
+		{name: "latest policy missing", coreState: "63:f", sdpivotState: "17:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
+		{name: "latest policy missing with check", coreState: "63:f", sdpivotState: "17:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
+		{name: "latest extra permissive policy", coreState: "63:f", sdpivotState: "17:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
 	}
 
 	for _, test := range tests {

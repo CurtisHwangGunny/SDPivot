@@ -17,13 +17,16 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/router"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 func main() {
@@ -74,6 +77,9 @@ func main() {
 		return redisClient.Close()
 	})
 	log.Printf("[DB] Connected to PostgreSQL %s:%s/%s", dbHost, dbPort, dbName)
+	if err := initializeOPAdminFromEnv(db); err != nil {
+		log.Fatalf("Failed to initialize OP administrator: %v", err)
+	}
 
 	// ── Redis (optional) ───────────────────────────────────────
 	if redisAddr != "" {
@@ -148,6 +154,137 @@ func main() {
 		log.Printf("[Server] Shutdown warning: %v", err)
 	}
 	log.Println("[Server] Stopped")
+}
+
+const (
+	opAdminEmailEnv    = "SDP_BOOTSTRAP_ADMIN_EMAIL"
+	opAdminPasswordEnv = "SDP_BOOTSTRAP_ADMIN_PASSWORD"
+)
+
+func initializeOPAdminFromEnv(db *gorm.DB) error {
+	email := strings.TrimSpace(os.Getenv(opAdminEmailEnv))
+	password := os.Getenv(opAdminPasswordEnv)
+	if email == "" && password == "" {
+		return nil
+	}
+	if email == "" || password == "" {
+		return fmt.Errorf("%s and %s must be configured together", opAdminEmailEnv, opAdminPasswordEnv)
+	}
+	if len(password) < 8 {
+		return fmt.Errorf("%s must be at least 8 characters", opAdminPasswordEnv)
+	}
+
+	now := time.Now()
+	return db.Transaction(func(tx *gorm.DB) error {
+		tenant := types.Tenant{
+			ID:          types.DefaultTenantID,
+			Name:        "SDPivot",
+			Description: "SDPivot OP tenant",
+			APIKey:      uuid.NewString(),
+			Status:      "active",
+			Business:    "sdpivot",
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		if err := tx.Unscoped().Where("id = ?", types.DefaultTenantID).FirstOrCreate(&tenant).Error; err != nil {
+			return fmt.Errorf("ensure OP tenant: %w", err)
+		}
+		if err := tx.Unscoped().Model(&tenant).Updates(map[string]interface{}{
+			"status": "active", "deleted_at": nil, "updated_at": now,
+		}).Error; err != nil {
+			return fmt.Errorf("repair OP tenant: %w", err)
+		}
+
+		var user types.User
+		err := tx.Unscoped().Where("email = ?", email).First(&user).Error
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			hash, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+			if hashErr != nil {
+				return fmt.Errorf("hash OP administrator password: %w", hashErr)
+			}
+			user = types.User{
+				ID:                  uuid.NewString(),
+				Username:            email,
+				Email:               email,
+				PasswordHash:        string(hash),
+				TenantID:            types.DefaultTenantID,
+				IsActive:            true,
+				CanAccessAllTenants: false,
+				IsSystemAdmin:       true,
+				AccessRole:          types.AccessRoleSuperAdmin,
+				IsOpsAdmin:          true,
+				PasswordChangedAt:   &now,
+				CreatedAt:           now,
+				UpdatedAt:           now,
+			}
+			if err := tx.Create(&user).Error; err != nil {
+				return fmt.Errorf("create OP administrator: %w", err)
+			}
+		case err != nil:
+			return fmt.Errorf("load OP administrator: %w", err)
+		default:
+			updates := map[string]interface{}{
+				"tenant_id":              types.DefaultTenantID,
+				"is_active":              true,
+				"can_access_all_tenants": false,
+				"is_system_admin":        true,
+				"access_role":            types.AccessRoleSuperAdmin,
+				"is_ops_admin":           true,
+				"deleted_at":             nil,
+				"updated_at":             now,
+			}
+			if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+				hash, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+				if hashErr != nil {
+					return fmt.Errorf("hash OP administrator password: %w", hashErr)
+				}
+				updates["password_hash"] = string(hash)
+				updates["password_changed_at"] = now
+			}
+			if err := tx.Unscoped().Model(&user).Updates(updates).Error; err != nil {
+				return fmt.Errorf("update OP administrator: %w", err)
+			}
+		}
+
+		membership := types.TenantMember{
+			UserID:    user.ID,
+			TenantID:  types.DefaultTenantID,
+			Role:      types.TenantRoleOwner,
+			Status:    types.TenantMemberStatusActive,
+			JoinedAt:  now,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		var existing types.TenantMember
+		if err := tx.Unscoped().Where("user_id = ? AND tenant_id = ?", user.ID, types.DefaultTenantID).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			if err := tx.Create(&membership).Error; err != nil {
+				return fmt.Errorf("create OP administrator membership: %w", err)
+			}
+		} else if err != nil {
+			return fmt.Errorf("load OP administrator membership: %w", err)
+		} else if err := tx.Unscoped().Model(&existing).Updates(map[string]interface{}{
+			"role": types.TenantRoleOwner, "status": types.TenantMemberStatusActive,
+			"deleted_at": nil, "updated_at": now,
+		}).Error; err != nil {
+			return fmt.Errorf("update OP administrator membership: %w", err)
+		}
+
+		var profile types.SDPivotUserProfile
+		if err := tx.Unscoped().Where("user_id = ?", user.ID).First(&profile).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+			profile = types.SDPivotUserProfile{UserID: user.ID, Nickname: user.Username, Status: "active", CreatedAt: now, UpdatedAt: now}
+			if err := tx.Create(&profile).Error; err != nil {
+				return fmt.Errorf("create OP administrator profile: %w", err)
+			}
+		} else if err != nil {
+			return fmt.Errorf("load OP administrator profile: %w", err)
+		} else if err := tx.Unscoped().Model(&profile).Updates(map[string]interface{}{
+			"status": "active", "deleted_at": nil, "updated_at": now,
+		}).Error; err != nil {
+			return fmt.Errorf("update OP administrator profile: %w", err)
+		}
+		return nil
+	})
 }
 
 type dbPoolConfig struct {

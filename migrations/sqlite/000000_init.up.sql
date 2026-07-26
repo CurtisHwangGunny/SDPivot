@@ -326,6 +326,15 @@ CREATE TABLE IF NOT EXISTS users (
     tenant_id INTEGER,
     is_active BOOLEAN NOT NULL DEFAULT 1,
     can_access_all_tenants BOOLEAN NOT NULL DEFAULT 0,
+    is_system_admin BOOLEAN NOT NULL DEFAULT 0,
+    access_role VARCHAR(32) NOT NULL DEFAULT 'knowledge_viewer',
+    department_id VARCHAR(36),
+    is_ops_admin BOOLEAN NOT NULL DEFAULT 0,
+    must_change_password BOOLEAN NOT NULL DEFAULT 0,
+    password_changed_at DATETIME,
+    password_expires_at DATETIME,
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until DATETIME,
     -- Per-user JSON preferences (memory toggle, future UI knobs).
     -- SQLite has no JSONB; store as TEXT and let GORM (de)serialise via
     -- the driver.Valuer / sql.Scanner methods on types.UserPreferences.
@@ -338,6 +347,8 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_users_access_role ON users(access_role);
+CREATE INDEX IF NOT EXISTS idx_users_department_id ON users(department_id);
 CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at);
 
 CREATE TABLE IF NOT EXISTS auth_tokens (

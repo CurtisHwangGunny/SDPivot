@@ -78,7 +78,7 @@ func (h *SDPivotOpsHandler) OpsLogin(c *gin.Context) {
 
 	// Generate tokens with ops-admin role
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, string(types.AccessRoleSuperAdmin))
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, string(types.AccessRoleSuperAdmin))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -135,7 +135,7 @@ func (h *SDPivotOpsHandler) OpsRefreshToken(c *gin.Context) {
 		return
 	}
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, user.TenantID, string(types.AccessRoleSuperAdmin))
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, string(types.AccessRoleSuperAdmin))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
