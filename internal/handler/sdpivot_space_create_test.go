@@ -27,6 +27,7 @@ func TestCreateSpaceCreatesCanonicalSpaceAndOwner(t *testing.T) {
 	var space types.KnowledgeSpace
 	require.NoError(t, db.Where("name = ?", "Created space").First(&space).Error)
 	require.Equal(t, types.DefaultTenantID, space.TenantID)
+	require.Equal(t, types.DefaultOrganizationID, requireStringPointer(t, space.OrgID))
 	require.Equal(t, "creator", requireStringPointer(t, space.OwnerID))
 	require.Equal(t, "creator", requireStringPointer(t, space.CreatorID))
 

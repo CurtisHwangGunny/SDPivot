@@ -6,6 +6,8 @@ type ContextKey string
 const (
 	// DefaultTenantID is the only runtime tenant in single-tenant mode.
 	DefaultTenantID uint64 = 1
+	// DefaultOrganizationID is the canonical organization in single-tenant mode.
+	DefaultOrganizationID = "00000000-0000-0000-0000-000000000001"
 	// TenantIDContextKey is the context key for tenant ID
 	TenantIDContextKey ContextKey = "TenantID"
 	// TenantInfoContextKey is the context key for tenant information

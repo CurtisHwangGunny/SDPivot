@@ -258,7 +258,11 @@ func TestTopLevelReadinessSuccess(t *testing.T) {
 func TestInitializeOPAdminFromEnvCreatesAndRepairsIdempotently(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.User{}, &types.TenantMember{}, &types.SDPivotUserProfile{}))
+	require.NoError(t, db.AutoMigrate(
+		&types.Tenant{}, &types.User{}, &types.TenantMember{}, &types.SDPivotUserProfile{},
+		&types.Organization{}, &types.OrganizationTenantMember{}, &types.OrgExt{},
+		&types.SDPivotOrgMember{}, &types.KnowledgeSpace{},
+	))
 
 	t.Setenv(opAdminEmailEnv, "sysadmin@sdpivot.local")
 	t.Setenv(opAdminPasswordEnv, "ValidPass!123")
@@ -278,19 +282,89 @@ func TestInitializeOPAdminFromEnvCreatesAndRepairsIdempotently(t *testing.T) {
 	require.NoError(t, db.Where("email = ?", "sysadmin@sdpivot.local").First(&user).Error)
 	require.Equal(t, originalHash, user.PasswordHash, "matching passwords must not be rehashed on every restart")
 
-	var tenantCount, userCount, membershipCount int64
+	var tenantCount, userCount, membershipCount, orgCount, orgTenantMemberCount, orgMemberCount int64
 	require.NoError(t, db.Model(&types.Tenant{}).Where("id = ?", types.DefaultTenantID).Count(&tenantCount).Error)
 	require.NoError(t, db.Model(&types.User{}).Where("email = ?", user.Email).Count(&userCount).Error)
 	require.NoError(t, db.Model(&types.TenantMember{}).Where("user_id = ? AND tenant_id = ? AND role = ? AND status = ?", user.ID, types.DefaultTenantID, types.TenantRoleOwner, types.TenantMemberStatusActive).Count(&membershipCount).Error)
+	require.NoError(t, db.Model(&types.Organization{}).Where("id = ? AND owner_tenant_id = ?", types.DefaultOrganizationID, types.DefaultTenantID).Count(&orgCount).Error)
+	require.NoError(t, db.Model(&types.OrganizationTenantMember{}).Where("organization_id = ? AND tenant_id = ? AND role = ?", types.DefaultOrganizationID, types.DefaultTenantID, types.OrgRoleAdmin).Count(&orgTenantMemberCount).Error)
+	require.NoError(t, db.Model(&types.SDPivotOrgMember{}).Where("org_id = ? AND user_id = ? AND status = ?", types.DefaultOrganizationID, user.ID, "active").Count(&orgMemberCount).Error)
 	require.EqualValues(t, 1, tenantCount)
 	require.EqualValues(t, 1, userCount)
 	require.EqualValues(t, 1, membershipCount)
+	require.EqualValues(t, 1, orgCount)
+	require.EqualValues(t, 1, orgTenantMemberCount)
+	require.EqualValues(t, 1, orgMemberCount)
+
+	var listedOrgCount int64
+	require.NoError(t, db.Model(&types.Organization{}).
+		Joins("JOIN organization_tenant_members otm ON otm.organization_id = organizations.id").
+		Where("otm.tenant_id = ?", types.DefaultTenantID).Count(&listedOrgCount).Error)
+	require.EqualValues(t, 1, listedOrgCount)
+}
+
+func TestInitializeOPDefaultsWithoutBootstrapAccount(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(
+		&types.Tenant{}, &types.User{}, &types.TenantMember{}, &types.SDPivotUserProfile{},
+		&types.Organization{}, &types.OrganizationTenantMember{}, &types.OrgExt{},
+		&types.SDPivotOrgMember{}, &types.KnowledgeSpace{},
+	))
+	t.Setenv(opAdminEmailEnv, "")
+	t.Setenv(opAdminPasswordEnv, "")
+	now := time.Now()
+	account := types.User{
+		ID: "existing-account", Username: "existing", Email: "existing@sdpivot.local",
+		PasswordHash: "unused", TenantID: types.DefaultTenantID, IsActive: true,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, db.Create(&account).Error)
+	space := types.KnowledgeSpace{
+		ID: "existing-space", TenantID: types.DefaultTenantID, Name: "existing",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	require.NoError(t, db.Create(&space).Error)
+
+	require.NoError(t, initializeOPAdminFromEnv(db))
+	require.NoError(t, initializeOPAdminFromEnv(db))
+
+	var tenantCount, orgCount, membershipCount int64
+	require.NoError(t, db.Model(&types.Tenant{}).Where("id = ?", types.DefaultTenantID).Count(&tenantCount).Error)
+	require.NoError(t, db.Model(&types.Organization{}).Where("id = ? AND owner_tenant_id = ?", types.DefaultOrganizationID, types.DefaultTenantID).Count(&orgCount).Error)
+	require.NoError(t, db.Model(&types.OrganizationTenantMember{}).
+		Where("organization_id = ? AND tenant_id = ?", types.DefaultOrganizationID, types.DefaultTenantID).
+		Count(&membershipCount).Error)
+	require.EqualValues(t, 1, tenantCount)
+	require.EqualValues(t, 1, orgCount)
+	require.EqualValues(t, 1, membershipCount)
+
+	var org types.Organization
+	require.NoError(t, db.First(&org, "id = ?", types.DefaultOrganizationID).Error)
+	require.Equal(t, account.ID, org.OwnerID)
+	var accountMembershipCount int64
+	require.NoError(t, db.Model(&types.SDPivotOrgMember{}).
+		Where("org_id = ? AND user_id = ? AND role = ? AND status = ?", types.DefaultOrganizationID, account.ID, "owner", "active").
+		Count(&accountMembershipCount).Error)
+	require.EqualValues(t, 1, accountMembershipCount)
+	require.NoError(t, db.First(&space, "id = ?", space.ID).Error)
+	require.Equal(t, types.DefaultOrganizationID, requireStringValue(t, space.OrgID))
+}
+
+func requireStringValue(t *testing.T, value *string) string {
+	t.Helper()
+	require.NotNil(t, value)
+	return *value
 }
 
 func TestInitializeOPAdminFromEnvRepairsExistingPasswordAndTenant(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Tenant{}, &types.User{}, &types.TenantMember{}, &types.SDPivotUserProfile{}))
+	require.NoError(t, db.AutoMigrate(
+		&types.Tenant{}, &types.User{}, &types.TenantMember{}, &types.SDPivotUserProfile{},
+		&types.Organization{}, &types.OrganizationTenantMember{}, &types.OrgExt{},
+		&types.SDPivotOrgMember{}, &types.KnowledgeSpace{},
+	))
 
 	oldHash, err := bcrypt.GenerateFromPassword([]byte("OldPass!123"), bcrypt.DefaultCost)
 	require.NoError(t, err)

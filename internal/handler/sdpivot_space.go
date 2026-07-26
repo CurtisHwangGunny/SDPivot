@@ -83,6 +83,8 @@ func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+	defaultOrgID := types.DefaultOrganizationID
+	space.OrgID = &defaultOrgID
 	if req.OrgID != "" {
 		space.OrgID = &req.OrgID
 	}
