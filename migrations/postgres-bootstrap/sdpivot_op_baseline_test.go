@@ -119,43 +119,44 @@ func TestBaselineChecksExistingTableCompatibilityBeforeHelpersAndPolicies(t *tes
 	)
 }
 
-func TestBaselineRequiresExactCompatibleAuditLogsBeforeProjectionAlter(t *testing.T) {
+func TestBaselineRequiresExactAuditFingerprintBeforeProjectionAlter(t *testing.T) {
 	sql := readBaselineSQL(t, "000012_sdpivot_op_baseline.up.sql")
 	requireFragments(t, sql,
-		"to_regclass('public.audit_logs') IS NULL",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap requires Core table public.audit_logs'",
-		"target.oid = to_regclass('public.audit_logs') AND target.relkind IN ('r', 'p')",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap requires public.audit_logs to be a table'",
-		"core_column_count <> 13",
-		"sdpivot_column_count NOT IN (0, 6)",
-		"total_column_count NOT IN (13, 19)",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap found an unsupported public.audit_logs column shape'",
-		"required(column_name, allowed_types, is_nullable)",
-		"existing.data_type = ANY(required.allowed_types)",
-		"existing.is_nullable <> required.is_nullable",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap requires the completed Core audit_logs schema",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap found incompatible audit projection columns",
+		"WITH audit_contract AS MATERIALIZED",
+		"pg_catalog.pg_get_serial_sequence('public.audit_logs', 'id')::regclass AS sequence_oid",
+		"expected_columns(attname, attnum, atttypid, atttypmod, attnotnull, default_kind)",
+		"expected_projection(attname, attnum, atttypid, atttypmod)",
+		"invalid_core_columns AS",
+		"invalid_projection_columns AS",
+		"invalid_sequence AS",
+		"invalid_primary_key AS",
+		"invalid_indexes AS",
+		"WHEN NOT EXISTS (SELECT 1 FROM target) THEN 'missing'",
+		"WHEN NOT EXISTS (SELECT 1 FROM target WHERE relkind = 'r' AND relpersistence = 'p')",
+		"OR (SELECT count(*) FROM actual_columns) NOT IN (13, 19)",
+		"WHEN (SELECT count(*) FROM actual_columns) = 13 THEN 'migration44_exact'",
+		"WHEN (SELECT count(*) FROM actual_columns) = 19",
+		"AND NOT EXISTS (SELECT 1 FROM invalid_projection_columns) THEN 'baseline_exact'",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires exact Core migration 44 audit_logs contract'",
 	)
 
 	for _, spec := range []string{
-		"('id', ARRAY['bigint'], 'NO')",
-		"('actor_user_id', ARRAY['character varying'], 'NO')",
-		"('details', ARRAY['jsonb'], 'NO')",
-		"('created_at', ARRAY['timestamp with time zone'], 'NO')",
-		"('user_id', ARRAY['character varying'], 'YES')",
-		"('detail', ARRAY['text'], 'YES')",
-		"('ip', ARRAY['character varying'], 'YES')",
+		"('id', 1, 'bigint'::regtype, -1, TRUE, 'sequence')",
+		"('actor_user_id', 3, 'character varying'::regtype, 40, TRUE, 'empty_varchar')",
+		"('details', 12, 'jsonb'::regtype, -1, TRUE, 'empty_jsonb')",
+		"('created_at', 13, 'timestamp with time zone'::regtype, -1, TRUE, 'current_timestamp')",
+		"('user_id', 14, 'character varying'::regtype, 40)",
+		"('detail', 18, 'text'::regtype, -1)",
+		"('ip', 19, 'character varying'::regtype, 54)",
 	} {
 		requireFragments(t, sql, spec)
 	}
 
 	alter := "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36)"
 	requireOrder(t, sql,
-		"RAISE EXCEPTION 'SDPivot OP bootstrap requires Core table public.audit_logs'",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap requires public.audit_logs to be a table'",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap found an unsupported public.audit_logs column shape'",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap requires the completed Core audit_logs schema",
-		"RAISE EXCEPTION 'SDPivot OP bootstrap found incompatible audit projection columns",
+		"WITH audit_contract AS MATERIALIZED",
+		"SELECT * INTO audit_fingerprint FROM audit_contract",
+		"RAISE EXCEPTION 'SDPivot OP bootstrap requires exact Core migration 44 audit_logs contract'",
 		alter,
 	)
 	if strings.Contains(normalizeSQL(sql), normalizeSQL("ALTER TABLE IF EXISTS audit_logs")) {
