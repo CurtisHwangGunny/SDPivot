@@ -49,6 +49,15 @@ func (h *SDPivotSpaceHandler) RegisterRoutes(rg *gin.RouterGroup) {
 // CreateSpace creates a new knowledge space.
 func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionKnowledgeWrite) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": middleware.PermissionKnowledgeWrite})
+		return
+	}
+	if middleware.GetTenantID(c) != types.DefaultTenantID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "invalid tenant context"})
+		return
+	}
+
 	var req types.CreateSpaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -56,7 +65,6 @@ func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 	}
 
 	userID := middleware.GetUserID(c)
-	tenantID := middleware.GetTenantID(c)
 	now := time.Now()
 
 	if req.Visibility == "" {
@@ -65,10 +73,11 @@ func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 
 	space := types.KnowledgeSpace{
 		ID:          uuid.New().String(),
-		TenantID:    tenantID,
+		TenantID:    types.DefaultTenantID,
 		Name:        req.Name,
 		Description: req.Description,
 		Visibility:  req.Visibility,
+		OwnerID:     &userID,
 		Icon:        req.Icon,
 		CreatorID:   &userID,
 		CreatedAt:   now,
@@ -78,12 +87,6 @@ func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 		space.OrgID = &req.OrgID
 	}
 
-	if err := tenantDB.Create(&space).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create space"})
-		return
-	}
-
-	// Add creator as owner
 	member := types.SpaceMember{
 		ID:        uuid.New().String(),
 		SpaceID:   space.ID,
@@ -91,8 +94,22 @@ func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 		Role:      "owner",
 		CreatedAt: now,
 	}
-	if err := tenantDB.Create(&member).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create space owner"})
+	var ownerCreateFailed bool
+	if err := tenantDB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&space).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&member).Error; err != nil {
+			ownerCreateFailed = true
+			return err
+		}
+		return nil
+	}); err != nil {
+		if ownerCreateFailed {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create space owner"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create space"})
+		}
 		return
 	}
 
