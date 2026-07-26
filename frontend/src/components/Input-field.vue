@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { onBeforeRouteUpdate } from 'vue-router';
 import { MessagePlugin } from "tdesign-vue-next";
 import { useSettingsStore } from '@/stores/settings';
+import { useAuthStore } from '@/stores/auth';
 import { useUIStore } from '@/stores/ui';
 import { useMenuStore } from '@/stores/menu';
 import { listKnowledgeBases, searchKnowledge, batchQueryKnowledge, listKnowledgeTags } from '@/api/knowledge-base';
@@ -37,10 +38,12 @@ import {
 } from '@/utils/agent-readiness';
 import { formatLocalizedList } from '@/utils/format-list';
 import type { MentionItem, MentionItemType, MentionRequestItem } from '@/types/mention';
+import { getModelEmptyState } from './modelEmptyState';
 
 const route = useRoute();
 const router = useRouter();
 const settingsStore = useSettingsStore();
+const authStore = useAuthStore();
 const uiStore = useUIStore();
 const orgStore = useOrganizationStore();
 const menuStore = useMenuStore();
@@ -663,6 +666,8 @@ const modelsLoading = ref(false);
 const showModelSelector = ref(false);
 const modelButtonRef = ref<HTMLElement>();
 const modelDropdownStyle = ref<Record<string, string>>({});
+const canManageModels = computed(() => authStore.canAccessAllTenants || authStore.hasRole('admin'));
+const modelEmptyState = computed(() => getModelEmptyState(canManageModels.value));
 
 // 显示的知识库标签（最多显示2个）
 const displayedKbs = computed(() => selectedKbs.value.slice(0, 2));
@@ -970,6 +975,7 @@ watch(
 );
 
 const handleGoToConversationModels = () => {
+  if (!canManageModels.value) return;
   showModelSelector.value = false;
   router.push('/platform/settings');
   setTimeout(() => {
@@ -1856,6 +1862,14 @@ const createSession = async (val: string) => {
     await loadChatModels()
   }
 
+  if (availableModels.value.length === 0 && !settingsStore.selectedAgentSourceTenantId) {
+    MessagePlugin.warning(t(modelEmptyState.value.messageKey));
+    showModelSelector.value = true;
+    await nextTick();
+    updateModelDropdownPosition();
+    return;
+  }
+
   // 发送前校验当前选中的智能体（含默认快速问答）是否已配置完成
   const agentToCheck = selectedAgent.value;
   let actualAgent = agentToCheck;
@@ -2610,7 +2624,8 @@ defineExpose({
             <div class="model-selector-dropdown" :style="modelDropdownStyle" @click.stop>
               <div class="model-selector-header">
                 <span>{{ $t('conversationSettings.models.chatGroupLabel') }}</span>
-                <button class="model-selector-add" type="button" @click="handleModelChange('__add_model__')">
+                <button v-if="canManageModels" class="model-selector-add" type="button"
+                  @click="handleModelChange('__add_model__')">
                   <span class="add-icon">+</span>
                   <span class="add-text">{{ $t('input.addModel') }}</span>
                 </button>
@@ -2629,7 +2644,11 @@ defineExpose({
                   </div>
                 </div>
                 <div v-if="availableModels.length === 0" class="model-option empty">
-                  {{ $t('input.noModel') }}
+                  {{ $t(modelEmptyState.messageKey) }}
+                  <button v-if="modelEmptyState.canConfigure" class="model-empty-action" type="button"
+                    @click="handleGoToConversationModels">
+                    {{ $t('input.configureModels') }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -3530,6 +3549,8 @@ const getImgSrc = (url: string) => {
   }
 
   &.empty {
+    flex-direction: column;
+    gap: 10px;
     color: var(--td-text-color-placeholder);
     cursor: default;
     text-align: center;
@@ -3538,6 +3559,20 @@ const getImgSrc = (url: string) => {
     &:hover {
       background: transparent;
     }
+  }
+}
+
+.model-empty-action {
+  padding: 4px 10px;
+  border: .5px solid var(--td-brand-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--td-brand-color);
+  font-size: 12px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--td-bg-color-secondarycontainer);
   }
 }
 

@@ -1,13 +1,47 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type listModelsService struct {
+	interfaces.ModelService
+	models []*types.Model
+}
+
+func (s *listModelsService) ListModels(context.Context) ([]*types.Model, error) {
+	return s.models, nil
+}
+
+func TestListModelsAllowsUnconfiguredTenant(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/models", nil)
+	ctx.Set(types.TenantIDContextKey.String(), uint64(42))
+
+	NewModelHandler(&listModelsService{models: nil}).ListModels(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Success bool              `json:"success"`
+		Data    []json.RawMessage `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.True(t, response.Success)
+	assert.NotNil(t, response.Data)
+	assert.Empty(t, response.Data)
+}
 
 func TestModelUpdateRequestDisplayNamePresence(t *testing.T) {
 	var omitted UpdateModelRequest
