@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -33,8 +34,37 @@ func newOpsAdminContext(method, target string) (*gin.Context, *httptest.Response
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(method, target, nil)
-	c.Set("role", "ops_admin")
+	c.Set("role", string(types.AccessRoleSuperAdmin))
 	return c, w
+}
+
+func TestGetOpsDashboardAllowsLocalSuperAdmin(t *testing.T) {
+	db, mock := newOpsAdminSQLMock(t)
+	h := NewSDPivotOpsAdminHandler(db)
+
+	mock.ExpectExec(regexp.QuoteMeta("SET LOCAL row_security = off")).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "organizations" WHERE deleted_at IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE deleted_at IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "documents" WHERE deleted_at IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "token_usage"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(4))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "token_usage" WHERE created_at >= \$1`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+	mock.ExpectQuery(`SELECT COALESCE\(SUM\(file_size\), 0\) FROM "documents" WHERE deleted_at IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(6))
+
+	c, w := newOpsAdminContext(http.MethodGet, "/ops/dashboard")
+	h.GetOpsDashboard(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("database expectations: %v", err)
+	}
 }
 
 func TestGetAuditLogsReadsCoreFieldsAndFiltersActorUserID(t *testing.T) {

@@ -131,7 +131,7 @@ func TestSDPivotLoginEmitsLocalOPClaimsWithoutSaaSBypass(t *testing.T) {
 	}
 }
 
-func TestSDPivotAdminViewsAllowAdminsAndDenyNonAdmins(t *testing.T) {
+func TestSDPivotAdminViewsRequireLocalSuperAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := newSDPivotAuthRBACDB(t)
 	h := NewSDPivotQAHandler(db)
@@ -140,36 +140,55 @@ func TestSDPivotAdminViewsAllowAdminsAndDenyNonAdmins(t *testing.T) {
 	require.NoError(t, db.Create(&types.OrgExt{OrgID: "org-1", TenantID: types.DefaultTenantID, AuthStatus: "trial", CreatedAt: now, UpdatedAt: now}).Error)
 	require.NoError(t, db.Create(&types.SDPivotOrgMember{ID: "member-1", OrgID: "org-1", UserID: "user-1", Role: "owner", Status: "active", JoinedAt: now, CreatedAt: now}).Error)
 
-	tests := []struct {
-		path    string
-		handler gin.HandlerFunc
+	paths := []string{"/admin/members", "/admin/spaces", "/admin/stats"}
+	roles := []struct {
+		name string
+		role string
+		want int
 	}{
-		{path: "/admin/members", handler: h.ListAllMembers},
-		{path: "/admin/spaces", handler: h.ListAllSpaces},
-		{path: "/admin/stats", handler: h.GetAdminStats},
+		{name: "local super admin", role: string(types.AccessRoleSuperAdmin), want: http.StatusOK},
+		{name: "department admin", role: string(types.AccessRoleDepartmentAdmin), want: http.StatusForbidden},
+		{name: "member", role: "member", want: http.StatusForbidden},
+		{name: "editor", role: "editor", want: http.StatusForbidden},
+		{name: "viewer", role: "viewer", want: http.StatusForbidden},
 	}
-	for _, tc := range tests {
-		for _, role := range []types.AccessRole{types.AccessRoleSuperAdmin, types.AccessRoleDepartmentAdmin} {
-			t.Run(tc.path+"/allows/"+string(role), func(t *testing.T) {
-				c, w := newAdminViewContext(tc.path, role)
-				tc.handler(c)
-				require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	for _, path := range paths {
+		for _, role := range roles {
+			t.Run(path+"/"+role.name, func(t *testing.T) {
+				r := gin.New()
+				r.Use(func(c *gin.Context) {
+					c.Set("user_id", "admin-user")
+					c.Set("tenant_id", types.DefaultTenantID)
+					c.Set("role", role.role)
+					c.Next()
+				})
+				h.RegisterRoutes(r.Group(""))
+
+				w := httptest.NewRecorder()
+				r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				require.Equal(t, role.want, w.Code, w.Body.String())
 			})
 		}
-		t.Run(tc.path+"/denies/non-admin", func(t *testing.T) {
-			c, w := newAdminViewContext(tc.path, types.AccessRoleKnowledgeEditor)
-			tc.handler(c)
-			require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
-		})
 	}
 }
 
-func newAdminViewContext(path string, role types.AccessRole) (*gin.Context, *httptest.ResponseRecorder) {
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
-	c.Set("user_id", "admin-user")
-	c.Set("tenant_id", types.DefaultTenantID)
-	c.Set("role", string(role))
-	return c, w
+func TestSDPivotOpsDashboardAndStatisticsRequireLocalSuperAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	paths := []string{"/ops/dashboard", "/ops/usage-stats", "/ops/usage-stats/export"}
+	for _, role := range []string{"member", "editor", "viewer", string(types.AccessRoleDepartmentAdmin)} {
+		for _, path := range paths {
+			t.Run(path+"/"+role, func(t *testing.T) {
+				r := gin.New()
+				r.Use(func(c *gin.Context) {
+					c.Set("role", role)
+					c.Next()
+				})
+				NewSDPivotOpsAdminHandler(nil).RegisterOpsRoutes(r.Group(""))
+
+				w := httptest.NewRecorder()
+				r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+			})
+		}
+	}
 }

@@ -40,7 +40,7 @@ func (h *SDPivotQAHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		q.DELETE("/sessions/:id", h.DeleteSession)
 	}
 
-	admin := rg.Group("/admin")
+	admin := rg.Group("/admin", middleware.RequirePermission(middleware.PermissionUserRoleAssign))
 	{
 		admin.GET("/members", h.ListAllMembers)
 		admin.GET("/stats", h.GetAdminStats)
@@ -348,7 +348,7 @@ func (h *SDPivotQAHandler) DeleteSession(c *gin.Context) {
 // ListAllMembers lists all members across organizations (admin view).
 func (h *SDPivotQAHandler) ListAllMembers(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
-	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionDepartmentManage) {
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
 		return
 	}
@@ -365,7 +365,7 @@ func (h *SDPivotQAHandler) ListAllMembers(c *gin.Context) {
 // GetAdminStats returns admin dashboard statistics.
 func (h *SDPivotQAHandler) GetAdminStats(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
-	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionDepartmentManage) {
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
 		return
 	}
@@ -393,7 +393,7 @@ func (h *SDPivotQAHandler) GetAdminStats(c *gin.Context) {
 // ListAllSpaces lists all spaces in the tenant (admin view).
 func (h *SDPivotQAHandler) ListAllSpaces(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
-	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionDepartmentManage) {
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
 		return
 	}
