@@ -123,6 +123,16 @@ const errorMsg = ref('')
 const phoneForm = ref({ phone: '', password: '' })
 const emailForm = ref({ email: '', password: '' })
 
+function loginErrorMessage(error: any) {
+  return error.response?.data?.error || error.response?.data?.message || error.message || '登录失败，请检查账号密码'
+}
+
+async function finishLogin(data: Parameters<typeof authStore.setAuth>[0]) {
+  authStore.setAuth(data)
+  await router.replace({ name: 'spaces' })
+  MessagePlugin.success('登录成功')
+}
+
 function onPhoneInput(val: string) {
   phoneForm.value.phone = val.replace(/\D/g, '').slice(0, 11)
 }
@@ -132,11 +142,9 @@ async function handlePhoneLogin() {
   loading.value = true; errorMsg.value = ''
   try {
     const res = await login({ phone: phoneForm.value.phone, password: phoneForm.value.password })
-    authStore.setAuth(res.data)
-    MessagePlugin.success('登录成功')
-    router.push('/spaces')
+    await finishLogin(res.data)
   } catch (e: any) {
-    errorMsg.value = e.response?.data?.error || '登录失败，请检查账号密码'
+    errorMsg.value = loginErrorMessage(e)
   } finally { loading.value = false }
 }
 
@@ -145,11 +153,9 @@ async function handleEmailLogin() {
   loading.value = true; errorMsg.value = ''
   try {
     const res = await login({ email: emailForm.value.email, password: emailForm.value.password })
-    authStore.setAuth(res.data)
-    MessagePlugin.success('登录成功')
-    router.push('/spaces')
+    await finishLogin(res.data)
   } catch (e: any) {
-    errorMsg.value = e.response?.data?.error || '登录失败，请检查账号密码'
+    errorMsg.value = loginErrorMessage(e)
   } finally { loading.value = false }
 }
 </script>

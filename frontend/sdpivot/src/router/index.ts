@@ -40,6 +40,7 @@ const router = createRouter({
 if (isOpBuild) {
   router.beforeEach((to) => {
     const token = localStorage.getItem(STORAGE_KEYS.accessToken)
+    if (to.name === 'login' && token) return { name: 'spaces' }
     if (to.meta.requiresAuth !== false && !token) return { name: 'login' }
     return true
   })
@@ -52,6 +53,7 @@ if (isOpBuild) {
     }
 
     const token = localStorage.getItem(STORAGE_KEYS.accessToken)
+    if (to.name === 'login' && token) return { name: 'spaces' }
     if (to.meta.requiresAuth !== false && !token) return { name: 'login' }
     return true
   })

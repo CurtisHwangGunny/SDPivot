@@ -1,6 +1,7 @@
 export const STORAGE_KEYS = {
   accessToken: 'sdp_access_token',
   refreshToken: 'sdp_refresh_token',
+  user: 'sdp_user',
   opsAccessToken: 'sdp_ops_access_token',
   opsRefreshToken: 'sdp_ops_refresh_token',
   opsUser: 'sdp_ops_user',

@@ -16,6 +16,8 @@ client.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
+      if (error.config?.url === '/auth/login') return Promise.reject(error)
+
       const refreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken)
       if (refreshToken && !error.config._retry) {
         error.config._retry = true
