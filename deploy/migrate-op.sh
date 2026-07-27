@@ -457,10 +457,10 @@ sdpivot_v12_fingerprint() {
                      )
                   OR EXISTS (SELECT 1 FROM core_audit_invalid)
                   OR (SELECT core_count FROM audit_column_profile) <> 13
-                  OR (SELECT total_count FROM audit_column_profile) NOT IN (13, 19)
+                  OR (SELECT total_count FROM audit_column_profile) NOT IN (13, 17, 19)
                 THEN 'invalid'
                 WHEN (SELECT sdpivot_count FROM audit_column_profile) = 0
-                  AND (SELECT total_count FROM audit_column_profile) = 13
+                  AND (SELECT total_count FROM audit_column_profile) IN (13, 17)
                 THEN 'core_exact'
                 WHEN (SELECT sdpivot_count FROM audit_column_profile) = 6
                   AND (SELECT total_count FROM audit_column_profile) = 19
