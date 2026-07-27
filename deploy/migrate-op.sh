@@ -598,9 +598,6 @@ sdpivot_v12_fingerprint() {
         SELECT CASE
             WHEN (SELECT count FROM existing_markers) = 0
               AND (SELECT state FROM core_audit_shape) = 'core_exact'
-              AND to_regprocedure('public.set_tenant_context(bigint,boolean)') IS NULL
-              AND to_regprocedure('public.get_current_tenant_id()') IS NULL
-              AND to_regprocedure('public.is_ops_admin_context()') IS NULL
             THEN 'empty'
             WHEN EXISTS (
                     SELECT 1 FROM required_tables
