@@ -38,7 +38,7 @@ elif "FROM public.schema_migrations" in sql:
 elif "to_regclass('public.sdpivot_schema_migrations') IS NOT NULL" in sql:
     print("t" if baseline_done else "f")
 elif "FROM public.sdpivot_schema_migrations" in sql:
-    print(("14" if sdp_done else "12") + ":f")
+    print(("17" if sdp_done else "12") + ":f")
 elif "/* op-probe:core-v12-fp */" in sql:
     print("complete")
 elif "/* op-probe:sdpivot-flags */" in sql:
