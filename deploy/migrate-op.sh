@@ -97,8 +97,23 @@ assert_clean_min_version() {
 run_migrate() {
     local database_url="$1"
     local source_dir="$2"
+    local diagnostics authority userinfo username password
 
-    if ! "$MIGRATE_BIN" -database "$database_url" -path "$source_dir" up >/dev/null 2>&1; then
+    if ! diagnostics="$("$MIGRATE_BIN" -verbose -database "$database_url" -path "$source_dir" up 2>&1)"; then
+        diagnostics="${diagnostics//"$database_url"/[REDACTED_DATABASE_URL]}"
+        authority="${database_url#*://}"
+        authority="${authority%%/*}"
+        if [[ "$authority" == *@* ]]; then
+            userinfo="${authority%@*}"
+            username="${userinfo%%:*}"
+            password="${userinfo#*:}"
+            [[ -z "$username" ]] || diagnostics="${diagnostics//"$username"/[REDACTED_DATABASE_USER]}"
+            [[ "$password" == "$userinfo" || -z "$password" ]] || \
+                diagnostics="${diagnostics//"$password"/[REDACTED_DATABASE_PASSWORD]}"
+        fi
+        if [[ -n "$diagnostics" ]]; then
+            printf '[migration] migrate diagnostics for %s:\n%s\n' "$source_dir" "$diagnostics" >&2
+        fi
         fail "migration command failed for ${source_dir}; connection details were not logged"
     fi
 }

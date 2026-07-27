@@ -163,7 +163,8 @@ case "$path_value" in
 esac
 printf 'migrate:%s\n' "$class" >>"$log"
 if [[ "${FAKE_FAIL_AT:-}" == "migrate:$class" ]]; then
-  printf 'fake migrate error containing %s\n' "${OP_DATABASE_URL:-missing}" >&2
+  printf '2026/07/27 12:00:00 Start buffering 15/u 000015_remove_billing_subscription\n' >&2
+  printf 'error: migration failed: pq: relation "billing_subscriptions" does not exist; connection=%s; user=secret-user; password=secret-password\n' "${OP_DATABASE_URL:-missing}" >&2
   exit 9
 fi
 case "$class" in
@@ -372,6 +373,38 @@ func TestMigrationStateMachineStopsImmediatelyWhenCommandFails(t *testing.T) {
 			_, calls := runMigrationScenario(t, test)
 			assertCalls(t, calls, expectedCallsWithInitialSDPivotInspection(test, test.wantCalls))
 		})
+	}
+}
+
+func TestMigrationFailureReportsSafeDiagnosticsWithoutCredentials(t *testing.T) {
+	output, _ := runMigrationScenario(t, migrationScenario{
+		name:            "sdpivot v14 migration failure diagnostics",
+		coreState:       "63:f",
+		sdpivotState:    "14:f",
+		coreFingerprint: "complete",
+		sdpFingerprint:  "complete",
+		sdpV13Schema:    "complete",
+		sdpV13Account:   "complete",
+		failAt:          "migrate:sdpivot",
+		wantSuccess:     false,
+	})
+
+	for _, safeDetail := range []string{
+		"000015_remove_billing_subscription",
+		`pq: relation "billing_subscriptions" does not exist`,
+	} {
+		if !strings.Contains(output, safeDetail) {
+			t.Errorf("migration failure output must contain %q:\n%s", safeDetail, output)
+		}
+	}
+	for _, secret := range []string{
+		"secret-user",
+		"secret-password",
+		"postgres://secret-user:secret-password@db.internal/sdpivot",
+	} {
+		if strings.Contains(output, secret) {
+			t.Errorf("migration failure output leaked %q:\n%s", secret, output)
+		}
 	}
 }
 
