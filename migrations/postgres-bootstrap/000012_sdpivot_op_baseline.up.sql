@@ -263,6 +263,18 @@ BEGIN
                 ('resource_id', 17, 'character varying'::regtype, 68),
                 ('detail', 18, 'text'::regtype, -1),
                 ('ip', 19, 'character varying'::regtype, 54)
+        ), expected_current(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('user_id', 14, 'character varying'::regtype, 40),
+                ('resource_type', 15, 'character varying'::regtype, 36),
+                ('resource_id', 16, 'character varying'::regtype, 68),
+                ('ip_address', 17, 'character varying'::regtype, 49)
+        ), expected_current_projection(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('username', 18, 'character varying'::regtype, 104),
+                ('resource', 19, 'character varying'::regtype, 104),
+                ('detail', 20, 'text'::regtype, -1),
+                ('ip', 21, 'character varying'::regtype, 54)
         ), actual_columns AS (
             SELECT a.attname, a.attnum, a.atttypid, a.atttypmod, a.attnotnull, a.attidentity,
                    d.oid AS default_oid, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS default_expr
@@ -300,6 +312,19 @@ BEGIN
         ), invalid_projection_columns AS (
             SELECT 1
             FROM expected_projection e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR a.attnotnull OR a.default_oid IS NOT NULL
+        ), invalid_current_columns AS (
+            SELECT 1
+            FROM expected_current e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR NOT a.attnotnull
+               OR a.default_expr IS DISTINCT FROM chr(39) || chr(39) || '::character varying'
+        ), invalid_current_projection_columns AS (
+            SELECT 1
+            FROM expected_current_projection e
             LEFT JOIN actual_columns a ON a.attname = e.attname
             WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
                OR a.atttypmod <> e.atttypmod OR a.attnotnull OR a.default_oid IS NOT NULL
@@ -377,17 +402,22 @@ BEGIN
               OR EXISTS (SELECT 1 FROM invalid_sequence)
               OR EXISTS (SELECT 1 FROM invalid_primary_key)
               OR EXISTS (SELECT 1 FROM invalid_indexes)
-              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 19)
+              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 17, 19, 21)
             THEN 'invalid'
             WHEN (SELECT count(*) FROM actual_columns) = 13 THEN 'migration44_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 17
+              AND NOT EXISTS (SELECT 1 FROM invalid_current_columns) THEN 'core_current_exact'
             WHEN (SELECT count(*) FROM actual_columns) = 19
               AND NOT EXISTS (SELECT 1 FROM invalid_projection_columns) THEN 'baseline_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 21
+              AND NOT EXISTS (SELECT 1 FROM invalid_current_columns)
+              AND NOT EXISTS (SELECT 1 FROM invalid_current_projection_columns) THEN 'baseline_current_exact'
             ELSE 'invalid'
         END
     )
     SELECT * INTO audit_fingerprint FROM audit_contract;
 
-    IF audit_fingerprint NOT IN ('migration44_exact', 'baseline_exact') THEN
+    IF audit_fingerprint NOT IN ('migration44_exact', 'core_current_exact', 'baseline_exact', 'baseline_current_exact') THEN
         RAISE EXCEPTION 'SDPivot OP bootstrap requires exact Core migration 44 audit_logs contract';
     END IF;
 END;
