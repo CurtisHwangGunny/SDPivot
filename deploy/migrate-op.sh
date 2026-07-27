@@ -391,7 +391,7 @@ sdpivot_v12_fingerprint() {
                 ('space_categories'), ('documents'), ('document_chunks'),
                 ('document_versions'), ('chunk_strategies'), ('qa_sessions'),
                 ('qa_messages'), ('writing_drafts'), ('write_category_config'),
-                ('announcements'), ('audit_logs'), ('sensitive_words'),
+                ('announcements'), ('audit_logs'), ('sensitive_words')
         ), existing_markers AS (
             SELECT count(*) AS count
             FROM marker_objects
