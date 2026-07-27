@@ -47,10 +47,10 @@ SELECT
     COALESCE((tag ->> 'sort_order')::INTEGER, 0),
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
-FROM system_configs,
-     LATERAL jsonb_array_elements(value::jsonb -> 'tags') AS tag
-WHERE key = 'tag_dictionary'
-  AND jsonb_typeof(value::jsonb -> 'tags') = 'array'
+FROM system_configs AS config,
+     LATERAL jsonb_array_elements(config.value::jsonb -> 'tags') AS tag
+WHERE config.key = 'tag_dictionary'
+  AND jsonb_typeof(config.value::jsonb -> 'tags') = 'array'
   AND BTRIM(COALESCE(tag ->> 'name', '')) <> ''
 ON CONFLICT DO NOTHING;
 
