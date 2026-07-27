@@ -33,9 +33,8 @@ sql_scalar() {
     local output
 
     if ! output="$(PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-10}" \
-        "$PSQL_BIN" "$OP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atqc "$1" 2>/tmp/sql_error.log)"; then
+        "$PSQL_BIN" "$OP_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atqc "$1" 2>/dev/null)"; then
         printf '[migration] ERROR: database inspection failed; connection details were not logged\n' >&2
-        cat /tmp/sql_error.log >&2
         return 1
     fi
     printf '%s\n' "$output"
