@@ -68,9 +68,13 @@ func NewSDPivotRouter(params SDPivotRouterParams) *SDPivotRouter {
 // RegisterRoutes registers canonical SDPivot routes and the optional legacy alias.
 func (sr *SDPivotRouter) RegisterRoutes(r *gin.Engine) {
 	sr.registerRoutes(r.Group("/api/v1/sdp"))
-	// Register auth routes under the canonical REST path for external API consumers.
-	authHandler := handler.NewSDPivotAuthHandler(sr.db, sr.jwtManager, sr.redis)
-	authHandler.RegisterRoutes(r.Group("/api/v1/auth"))
+	// Register auth routes under the REST canonical path without extra prefix.
+	authGroup := r.Group("/api/v1/auth")
+	{
+		authGroup.POST("/login", handler.NewSDPivotAuthHandler(sr.db, sr.jwtManager, sr.redis).Login)
+		authGroup.POST("/refresh", handler.NewSDPivotAuthHandler(sr.db, sr.jwtManager, sr.redis).RefreshToken)
+		authGroup.POST("/logout", handler.NewSDPivotAuthHandler(sr.db, sr.jwtManager, sr.redis).Logout)
+	}
 	if sr.product != nil && sr.product.EnableLegacyAlias {
 		sr.registerRoutes(r.Group("/api/v1/smartknora"))
 	}
