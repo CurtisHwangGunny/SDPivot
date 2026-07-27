@@ -160,11 +160,13 @@ const (
 	opAdminEmailEnv    = "SDP_BOOTSTRAP_ADMIN_EMAIL"
 	opAdminPasswordEnv = "SDP_BOOTSTRAP_ADMIN_PASSWORD"
 )
+	opSysAdminEmailEnv    = "SDP_BOOTSTRAP_SYSADMIN_EMAIL"
+	opSysAdminPasswordEnv = "SDP_BOOTSTRAP_SYSADMIN_PASSWORD"
 
 func initializeOPAdminFromEnv(db *gorm.DB) error {
 	email := strings.TrimSpace(os.Getenv(opAdminEmailEnv))
 	password := os.Getenv(opAdminPasswordEnv)
-	if email == "" || password == "" {
+{} == "" {
 		if email != "" || password != "" {
 			return fmt.Errorf("%s and %s must be configured together", opAdminEmailEnv, opAdminPasswordEnv)
 		}
