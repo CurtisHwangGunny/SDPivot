@@ -515,7 +515,7 @@ sdpivot_v12_fingerprint() {
                 ('audit_logs', 'tenant_id', ARRAY['bigint']),
                 ('audit_logs', 'action', ARRAY['character varying']),
                 ('sensitive_words', 'word', ARRAY['character varying']),
-                ('sensitive_words', 'status', ARRAY['character varying']),
+                ('sensitive_words', 'status', ARRAY['character varying'])
         ), invalid_columns AS (
             SELECT 1
             FROM required_columns required
