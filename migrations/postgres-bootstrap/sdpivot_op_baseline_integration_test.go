@@ -85,7 +85,7 @@ func historicalUUIDDefinition(t *testing.T, definition string) string {
 	return converted
 }
 
-func historicalBootstrapFixture(t *testing.T, migration string, mixed bool) string {
+func historicalBootstrapFixture(t *testing.T, migration string, mixed, currentAudit bool) string {
 	t.Helper()
 	parts := []string{`
 		CREATE TABLE users (
@@ -116,7 +116,21 @@ func historicalBootstrapFixture(t *testing.T, migration string, mixed bool) stri
 			outcome VARCHAR(16) NOT NULL DEFAULT 'success',
 			details JSONB NOT NULL DEFAULT '{}'::JSONB,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);`}
+		);
+		CREATE INDEX idx_audit_logs_tenant_id_desc ON audit_logs (tenant_id, id DESC);
+		CREATE INDEX idx_audit_logs_actor ON audit_logs (actor_user_id);
+		CREATE INDEX idx_audit_logs_tenant_action ON audit_logs (tenant_id, action);
+		CREATE INDEX idx_audit_logs_created_at ON audit_logs (created_at);`}
+	if currentAudit {
+		parts = append(parts, `
+			CREATE INDEX idx_audit_logs_tenant_created_at ON audit_logs (tenant_id, created_at DESC);
+			ALTER TABLE audit_logs
+				ADD COLUMN user_id VARCHAR(36) NOT NULL DEFAULT '',
+				ADD COLUMN resource_type VARCHAR(32) NOT NULL DEFAULT '',
+				ADD COLUMN resource_id VARCHAR(64) NOT NULL DEFAULT '',
+				ADD COLUMN ip_address VARCHAR(45) NOT NULL DEFAULT '';
+			CREATE INDEX idx_audit_logs_user_id ON audit_logs (user_id);`)
+	}
 	for _, table := range []string{"org_ext", "knowledge_spaces", "documents", "document_chunks", "document_versions", "chunk_strategies"} {
 		definition := extractBootstrapTable(t, migration, table)
 		if table == "document_chunks" || table == "document_versions" || (table == "chunk_strategies" && !mixed) {
@@ -135,29 +149,34 @@ func TestSDPivotBootstrapAuditLogsPostgreSQLContract(t *testing.T) {
 	migration := string(migrationBytes)
 
 	tests := []struct {
-		name       string
-		mutate     string
-		wantError  string
-		wantColumn int
+		name         string
+		currentAudit bool
+		mutate       string
+		wantError    string
+		wantColumn   int
 	}{
-		{name: "accepts exact Core audit schema", wantColumn: 19},
-		{name: "rejects missing audit table", mutate: "DROP TABLE audit_logs", wantError: "requires core table public.audit_logs"},
-		{name: "rejects wrong Core column type", mutate: "ALTER TABLE audit_logs ALTER COLUMN actor_user_id TYPE TEXT", wantError: "requires the completed core audit_logs schema"},
-		{name: "rejects partial compatibility columns", mutate: "ALTER TABLE audit_logs ADD COLUMN user_id VARCHAR(36)", wantError: "unsupported public.audit_logs column shape"},
-		{name: "rejects wrong compatibility column type", mutate: `
-			ALTER TABLE audit_logs ADD COLUMN user_id VARCHAR(36);
+		{name: "accepts exact migration 44 audit schema", wantColumn: 19},
+		{name: "accepts exact current Core audit schema", currentAudit: true, wantColumn: 21},
+		{name: "rejects missing audit table", mutate: "DROP TABLE audit_logs", wantError: "requires exact Core migration 44 audit_logs contract"},
+		{name: "rejects wrong Core column type", mutate: "ALTER TABLE audit_logs ALTER COLUMN actor_user_id TYPE TEXT", wantError: "requires exact Core migration 44 audit_logs contract"},
+		{name: "rejects partial canonical projection", mutate: "ALTER TABLE audit_logs ADD COLUMN user_id VARCHAR(36)", wantError: "requires exact Core migration 44 audit_logs contract"},
+		{name: "rejects wrong canonical projection type", mutate: `
+			ALTER TABLE audit_logs ADD COLUMN user_id VARCHAR(36) NOT NULL DEFAULT '';
+			ALTER TABLE audit_logs ADD COLUMN resource_type VARCHAR(32) NOT NULL DEFAULT '';
+			ALTER TABLE audit_logs ADD COLUMN resource_id VARCHAR(64) NOT NULL DEFAULT '';
+			ALTER TABLE audit_logs ADD COLUMN ip_address VARCHAR(46) NOT NULL DEFAULT '';`, wantError: "requires exact Core migration 44 audit_logs contract"},
+		{name: "rejects wrong legacy projection type", currentAudit: true, mutate: `
 			ALTER TABLE audit_logs ADD COLUMN username VARCHAR(100);
 			ALTER TABLE audit_logs ADD COLUMN resource VARCHAR(100);
-			ALTER TABLE audit_logs ADD COLUMN resource_id VARCHAR(64);
 			ALTER TABLE audit_logs ADD COLUMN detail VARCHAR(255);
-			ALTER TABLE audit_logs ADD COLUMN ip VARCHAR(50);`, wantError: "incompatible audit projection columns"},
-		{name: "rejects unknown audit column", mutate: "ALTER TABLE audit_logs ADD COLUMN unexpected TEXT", wantError: "unsupported public.audit_logs column shape"},
+			ALTER TABLE audit_logs ADD COLUMN ip VARCHAR(50);`, wantError: "requires exact Core migration 44 audit_logs contract"},
+		{name: "rejects unknown audit column", currentAudit: true, mutate: "ALTER TABLE audit_logs ADD COLUMN unexpected TEXT", wantError: "requires exact Core migration 44 audit_logs contract"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			withBootstrapContractDatabase(t, func(ctx context.Context, conn *pgx.Conn) {
-				if err := execBootstrapSQL(ctx, conn, historicalBootstrapFixture(t, migration, false)); err != nil {
+				if err := execBootstrapSQL(ctx, conn, historicalBootstrapFixture(t, migration, false, tt.currentAudit)); err != nil {
 					t.Fatalf("create Core audit fixture: %v", err)
 				}
 				if tt.mutate != "" {
@@ -203,7 +222,7 @@ func TestSDPivotBootstrapHistoricalUUIDPostgreSQLContract(t *testing.T) {
 
 	t.Run("preserves complete historical UUID profile", func(t *testing.T) {
 		withBootstrapContractDatabase(t, func(ctx context.Context, conn *pgx.Conn) {
-			if err := execBootstrapSQL(ctx, conn, historicalBootstrapFixture(t, migration, false)); err != nil {
+			if err := execBootstrapSQL(ctx, conn, historicalBootstrapFixture(t, migration, false, false)); err != nil {
 				t.Fatalf("create historical UUID fixture: %v", err)
 			}
 			if err := execBootstrapSQL(ctx, conn, migration); err != nil {
@@ -246,7 +265,7 @@ func TestSDPivotBootstrapHistoricalUUIDPostgreSQLContract(t *testing.T) {
 
 	t.Run("fails closed for mixed ID profile", func(t *testing.T) {
 		withBootstrapContractDatabase(t, func(ctx context.Context, conn *pgx.Conn) {
-			if err := execBootstrapSQL(ctx, conn, historicalBootstrapFixture(t, migration, true)); err != nil {
+			if err := execBootstrapSQL(ctx, conn, historicalBootstrapFixture(t, migration, true, false)); err != nil {
 				t.Fatalf("create mixed ID fixture: %v", err)
 			}
 			err := execBootstrapSQL(ctx, conn, migration)
