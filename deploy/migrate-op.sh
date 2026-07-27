@@ -416,10 +416,8 @@ sdpivot_v12_fingerprint() {
         ), sdpivot_audit_required(column_name, allowed_types, is_nullable) AS (
             VALUES
                 ('user_id', ARRAY['character varying'], 'YES'),
-                ('username', ARRAY['character varying'], 'YES'),
                 ('resource', ARRAY['character varying'], 'YES'),
                 ('resource_id', ARRAY['character varying'], 'YES'),
-                ('detail', ARRAY['text'], 'YES'),
                 ('ip', ARRAY['character varying'], 'YES')
         ), core_audit_invalid AS (
             SELECT 1
