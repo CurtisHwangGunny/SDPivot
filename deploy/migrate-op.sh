@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly CORE_LATEST_VERSION=63
+readonly CORE_LATEST_VERSION=72
 readonly CORE_AMBIGUOUS_VERSION=12
 readonly SDPIVOT_BASELINE_VERSION=12
 readonly SDPIVOT_LATEST_VERSION=17
@@ -159,6 +159,18 @@ core_audit_m44_fingerprint() {
                 ('resource_id', 17, 'character varying'::regtype, 68),
                 ('detail', 18, 'text'::regtype, -1),
                 ('ip', 19, 'character varying'::regtype, 54)
+        ), expected_current(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('user_id', 14, 'character varying'::regtype, 40),
+                ('resource_type', 15, 'character varying'::regtype, 36),
+                ('resource_id', 16, 'character varying'::regtype, 68),
+                ('ip_address', 17, 'character varying'::regtype, 49)
+        ), expected_current_projection(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('username', 18, 'character varying'::regtype, 104),
+                ('resource', 19, 'character varying'::regtype, 104),
+                ('detail', 20, 'text'::regtype, -1),
+                ('ip', 21, 'character varying'::regtype, 54)
         ), actual_columns AS (
             SELECT a.attname, a.attnum, a.atttypid, a.atttypmod, a.attnotnull, a.attidentity,
                    d.oid AS default_oid, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS default_expr
@@ -196,6 +208,19 @@ core_audit_m44_fingerprint() {
         ), invalid_projection_columns AS (
             SELECT 1
             FROM expected_projection e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR a.attnotnull OR a.default_oid IS NOT NULL
+        ), invalid_current_columns AS (
+            SELECT 1
+            FROM expected_current e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR NOT a.attnotnull
+               OR a.default_expr IS DISTINCT FROM chr(39) || chr(39) || '::character varying'
+        ), invalid_current_projection_columns AS (
+            SELECT 1
+            FROM expected_current_projection e
             LEFT JOIN actual_columns a ON a.attname = e.attname
             WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
                OR a.atttypmod <> e.atttypmod OR a.attnotnull OR a.default_oid IS NOT NULL
@@ -273,11 +298,16 @@ core_audit_m44_fingerprint() {
               OR EXISTS (SELECT 1 FROM invalid_sequence)
               OR EXISTS (SELECT 1 FROM invalid_primary_key)
               OR EXISTS (SELECT 1 FROM invalid_indexes)
-              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 19)
+              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 17, 19, 21)
             THEN 'invalid'
             WHEN (SELECT count(*) FROM actual_columns) = 13 THEN 'migration44_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 17
+              AND NOT EXISTS (SELECT 1 FROM invalid_current_columns) THEN 'core_current_exact'
             WHEN (SELECT count(*) FROM actual_columns) = 19
               AND NOT EXISTS (SELECT 1 FROM invalid_projection_columns) THEN 'baseline_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 21
+              AND NOT EXISTS (SELECT 1 FROM invalid_current_columns)
+              AND NOT EXISTS (SELECT 1 FROM invalid_current_projection_columns) THEN 'baseline_current_exact'
             ELSE 'invalid'
         END
     "
@@ -896,7 +926,7 @@ if ! core_audit_fingerprint="$(core_audit_m44_fingerprint)"; then
     fail "failed to inspect the Core migration 44 audit_logs fingerprint"
 fi
 case "$core_audit_fingerprint" in
-    missing|migration44_exact|baseline_exact|invalid) ;;
+    missing|migration44_exact|core_current_exact|baseline_exact|baseline_current_exact|invalid) ;;
     *) fail "Core migration 44 audit_logs fingerprint returned an unknown state" ;;
 esac
 if [[ "$core_state" == "absent" ]]; then
@@ -941,7 +971,7 @@ else
             "audit_logs must be missing before Core migration 44"
     elif (( core_version < CORE_LATEST_VERSION )); then
         [[ "$core_audit_fingerprint" == "migration44_exact" ]] || fail \
-            "Core versions 44-62 require the exact migration 44 audit_logs contract"
+            "Core versions 44-71 require the exact migration 44 audit_logs contract"
     fi
 
     if (( core_version == CORE_AMBIGUOUS_VERSION )); then
@@ -972,7 +1002,7 @@ if ! current_audit_fingerprint="$(core_audit_m44_fingerprint)"; then
     fail "failed to inspect the current Core migration 44 audit_logs fingerprint"
 fi
 case "$current_audit_fingerprint" in
-    migration44_exact|baseline_exact) ;;
+    core_current_exact|baseline_current_exact) ;;
     *) fail "current Core migrations require an exact audit_logs contract" ;;
 esac
 
@@ -998,12 +1028,12 @@ if [[ "$sdpivot_state" == "absent" ]]; then
     fi
     case "$sdpivot_fingerprint" in
         empty)
-            [[ "$current_audit_fingerprint" == "migration44_exact" ]] || fail \
-                "greenfield SDPivot baseline requires the exact Core migration 44 audit_logs contract"
+            [[ "$current_audit_fingerprint" == "core_current_exact" ]] || fail \
+                "greenfield SDPivot baseline requires the exact current Core audit_logs contract"
             log "recognized a greenfield SDPivot database; applying the secure baseline"
             ;;
         complete)
-            [[ "$current_audit_fingerprint" == "baseline_exact" ]] || fail \
+            [[ "$current_audit_fingerprint" == "baseline_current_exact" ]] || fail \
                 "complete SDPivot version 12 objects require the exact baseline audit_logs contract"
             log "recognized complete SDPivot version 12 objects without a dedicated ledger; adopting through the idempotent baseline"
             ;;
@@ -1018,7 +1048,7 @@ else
     if ! sdpivot_fingerprint="$(sdpivot_fingerprint_for_version "$sdpivot_version")"; then
         fail "failed to inspect the SDPivot version ${sdpivot_version} structure fingerprint"
     fi
-    [[ "$current_audit_fingerprint" == "baseline_exact" ]] || fail \
+    [[ "$current_audit_fingerprint" == "baseline_current_exact" ]] || fail \
         "existing SDPivot migrations require the exact baseline audit_logs contract"
     [[ "$sdpivot_fingerprint" == "complete" ]] || fail \
         "sdpivot_schema_migrations version ${sdpivot_version} objects are partial or drifted"

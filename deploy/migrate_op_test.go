@@ -90,13 +90,17 @@ case "$sql" in
   *"op-probe:core-audit-m44"*)
     class=core-audit-m44
     if [[ -e "$state_dir/core-migrated" ]]; then
-      output=migration44_exact
+      output=core_current_exact
     elif [[ -e "$state_dir/bootstrap-migrated" ]]; then
-      output=baseline_exact
+      output=baseline_current_exact
     elif [[ -n "${FAKE_CORE_AUDIT_SHAPE+x}" ]]; then
       output="$FAKE_CORE_AUDIT_SHAPE"
     elif [[ "$(<"$state_dir/core")" == absent || "${FAKE_CORE_VERSION_NUM:-0}" -lt 44 ]]; then
       output=missing
+    elif [[ "${FAKE_CORE_VERSION_NUM:-0}" -ge 72 && ( "$(<"$state_dir/sdpivot")" != absent || "${FAKE_SDP_FINGERPRINT:-complete}" == complete ) ]]; then
+      output=baseline_current_exact
+    elif [[ "${FAKE_CORE_VERSION_NUM:-0}" -ge 72 ]]; then
+      output=core_current_exact
     elif [[ "$(<"$state_dir/sdpivot")" != absent || "${FAKE_SDP_FINGERPRINT:-complete}" == complete ]]; then
       output=baseline_exact
     else
@@ -168,7 +172,7 @@ if [[ "${FAKE_FAIL_AT:-}" == "migrate:$class" ]]; then
   exit 9
 fi
 case "$class" in
-  core) printf '63:f' >"$state_dir/core"; touch "$state_dir/core-migrated" ;;
+  core) printf '72:f' >"$state_dir/core"; touch "$state_dir/core-migrated" ;;
   bootstrap) printf '12:f' >"$state_dir/sdpivot"; touch "$state_dir/bootstrap-migrated" ;;
   sdpivot) printf '17:f' >"$state_dir/sdpivot" ;;
   *) exit 8 ;;
@@ -252,7 +256,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 		},
 		{
 			name:            "complete historical v12 without dedicated ledger",
-			coreState:       "63:f",
+			coreState:       "72:f",
 			sdpivotState:    "absent",
 			publicTables:    "1",
 			coreFingerprint: "complete",
@@ -267,7 +271,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 		},
 		{
 			name:      "dedicated sdpivot ledger at v12",
-			coreState: "63:f", sdpivotState: "12:f", publicTables: "1",
+			coreState: "72:f", sdpivotState: "12:f", publicTables: "1",
 			coreFingerprint: "complete", sdpFingerprint: "complete", wantSuccess: true,
 			wantCalls: []string{
 				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-state",
@@ -277,7 +281,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 		},
 		{
 			name:      "dedicated sdpivot ledger at v13",
-			coreState: "63:f", sdpivotState: "13:f", publicTables: "1",
+			coreState: "72:f", sdpivotState: "13:f", publicTables: "1",
 			coreFingerprint: "complete", sdpFingerprint: "complete", wantSuccess: true,
 			wantCalls: []string{
 				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44",
@@ -301,7 +305,7 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 		},
 		{
 			name:      "already current ledgers have zero migration side effects",
-			coreState: "63:f", sdpivotState: "17:f", publicTables: "1",
+			coreState: "72:f", sdpivotState: "17:f", publicTables: "1",
 			coreFingerprint: "complete", sdpFingerprint: "complete", wantSuccess: true,
 			wantCalls: []string{
 				"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44",
@@ -324,22 +328,22 @@ func TestMigrationStateMachineSuccessPaths(t *testing.T) {
 func TestMigrationStateMachineFailsClosedForUnsafeStates(t *testing.T) {
 	tests := []migrationScenario{
 		{name: "core dirty", coreState: "12:t", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "empty", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44"}},
-		{name: "sdpivot dirty", coreState: "63:f", sdpivotState: "12:t", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{}},
+		{name: "sdpivot dirty", coreState: "72:f", sdpivotState: "12:t", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{}},
 		{name: "default ledger v12 ownership ambiguous", coreState: "12:f", sdpivotState: "absent", coreFingerprint: "invalid", sdpFingerprint: "complete", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-fingerprint"}},
 		{name: "core incomplete with sdpivot markers", coreState: "12:f", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "partial", sdpMarkers: "1", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-fingerprint", "psql:sdp-exists", "psql:sdp-flags"}},
-		{name: "partial table set", coreState: "63:f", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "partial"},
-		{name: "critical column missing", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
-		{name: "function missing or mismatched", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
-		{name: "target rls missing", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
-		{name: "document chunks not force or lacks dual tenant policy", coreState: "63:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
-		{name: "future sdpivot version", coreState: "63:f", sdpivotState: "18:f", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{}},
+		{name: "partial table set", coreState: "72:f", sdpivotState: "absent", coreFingerprint: "complete", sdpFingerprint: "partial"},
+		{name: "critical column missing", coreState: "72:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
+		{name: "function missing or mismatched", coreState: "72:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
+		{name: "target rls missing", coreState: "72:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
+		{name: "document chunks not force or lacks dual tenant policy", coreState: "72:f", sdpivotState: "12:f", coreFingerprint: "complete", sdpFingerprint: "partial"},
+		{name: "future sdpivot version", coreState: "72:f", sdpivotState: "18:f", coreFingerprint: "complete", sdpFingerprint: "complete", wantCalls: []string{}},
 		{name: "future sdpivot version before core migration", coreState: "absent", sdpivotState: "18:f", publicTables: "0", coreFingerprint: "complete", sdpFingerprint: "empty", wantCalls: []string{}},
-		{name: "v13 empty state table", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
-		{name: "v13 wrong state table structure", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
-		{name: "v13 known legacy hash still active", coreState: "63:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Account: "partial"},
-		{name: "latest policy missing", coreState: "63:f", sdpivotState: "17:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
-		{name: "latest policy missing with check", coreState: "63:f", sdpivotState: "17:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
-		{name: "latest extra permissive policy", coreState: "63:f", sdpivotState: "17:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
+		{name: "v13 empty state table", coreState: "72:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
+		{name: "v13 wrong state table structure", coreState: "72:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Schema: "partial"},
+		{name: "v13 known legacy hash still active", coreState: "72:f", sdpivotState: "13:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpV13Account: "partial"},
+		{name: "latest policy missing", coreState: "72:f", sdpivotState: "17:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
+		{name: "latest policy missing with check", coreState: "72:f", sdpivotState: "17:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
+		{name: "latest extra permissive policy", coreState: "72:f", sdpivotState: "17:f", coreFingerprint: "complete", sdpFingerprint: "complete", sdpLatest: "partial"},
 	}
 
 	for _, test := range tests {
@@ -362,9 +366,9 @@ func TestMigrationStateMachineStopsImmediatelyWhenCommandFails(t *testing.T) {
 	tests := []migrationScenario{
 		{name: "initial inspection fails", coreState: "absent", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "psql:core-exists", wantCalls: []string{"psql:core-exists"}},
 		{name: "core migration fails", coreState: "absent", sdpivotState: "absent", publicTables: "0", sdpFingerprint: "empty", failAt: "migrate:core", wantCalls: []string{"psql:core-exists", "psql:core-audit-m44", "psql:public-count", "migrate:core"}},
-		{name: "fingerprint inspection fails", coreState: "63:f", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "psql:sdp-fingerprint", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-fingerprint"}},
-		{name: "bootstrap migration fails", coreState: "63:f", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "migrate:bootstrap", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-fingerprint", "migrate:bootstrap"}},
-		{name: "security migration fails", coreState: "63:f", sdpivotState: "12:f", sdpFingerprint: "complete", failAt: "migrate:sdpivot", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "migrate:sdpivot"}},
+		{name: "fingerprint inspection fails", coreState: "72:f", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "psql:sdp-fingerprint", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-fingerprint"}},
+		{name: "bootstrap migration fails", coreState: "72:f", sdpivotState: "absent", sdpFingerprint: "empty", failAt: "migrate:bootstrap", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-fingerprint", "migrate:bootstrap"}},
+		{name: "security migration fails", coreState: "72:f", sdpivotState: "12:f", sdpFingerprint: "complete", failAt: "migrate:sdpivot", wantCalls: []string{"psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:core-exists", "psql:core-state", "psql:core-audit-m44", "psql:sdp-exists", "psql:sdp-state", "psql:sdp-fingerprint", "migrate:sdpivot"}},
 	}
 
 	for _, test := range tests {
@@ -379,7 +383,7 @@ func TestMigrationStateMachineStopsImmediatelyWhenCommandFails(t *testing.T) {
 func TestMigrationFailureReportsSafeDiagnosticsWithoutCredentials(t *testing.T) {
 	output, _ := runMigrationScenario(t, migrationScenario{
 		name:            "sdpivot v14 migration failure diagnostics",
-		coreState:       "63:f",
+		coreState:       "72:f",
 		sdpivotState:    "14:f",
 		coreFingerprint: "complete",
 		sdpFingerprint:  "complete",
@@ -476,6 +480,7 @@ func TestMigrationFingerprintCoversVersion13AndLatestContracts(t *testing.T) {
 		"pg_get_expr(policy.polqual", "pg_get_expr(policy.polwithcheck", "'::text', '', 'g'", "'public.', ''", "extra_permissive_policies",
 		"policy.using_expression <> 'existsselect1fromdocumentsdwhered.id=document_chunks.document_idandd.tenant_id=document_chunks.tenant_idandd.tenant_id=get_current_tenant_id'",
 		"p.proconfig = array['search_path=pg_catalog, public']", "regexp_replace(lower(p.prosrc)",
+		"core_current_exact", "baseline_current_exact",
 		"sdpivot_schema_migrations version ${sdpivot_version} is newer than supported",
 	} {
 		if !strings.Contains(script, fragment) {
