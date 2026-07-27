@@ -415,9 +415,9 @@ sdpivot_v12_fingerprint() {
                 ('created_at', ARRAY['timestamp with time zone'], 'NO')
         ), sdpivot_audit_required(column_name, allowed_types, is_nullable) AS (
             VALUES
-                ('user_id', ARRAY['character varying'], 'YES'),
+                ('username', ARRAY['character varying'], 'YES'),
                 ('resource', ARRAY['character varying'], 'YES'),
-                ('resource_id', ARRAY['character varying'], 'YES'),
+                ('detail', ARRAY['text'], 'YES'),
                 ('ip', ARRAY['character varying'], 'YES')
         ), core_audit_invalid AS (
             SELECT 1
@@ -456,13 +456,13 @@ sdpivot_v12_fingerprint() {
                      )
                   OR EXISTS (SELECT 1 FROM core_audit_invalid)
                   OR (SELECT core_count FROM audit_column_profile) <> 13
-                  OR (SELECT total_count FROM audit_column_profile) NOT IN (13, 17, 19)
+                  OR (SELECT total_count FROM audit_column_profile) NOT IN (13, 17, 21)
                 THEN 'invalid'
                 WHEN (SELECT sdpivot_count FROM audit_column_profile) = 0
                   AND (SELECT total_count FROM audit_column_profile) IN (13, 17)
                 THEN 'core_exact'
-                WHEN (SELECT sdpivot_count FROM audit_column_profile) = 6
-                  AND (SELECT total_count FROM audit_column_profile) = 19
+                WHEN (SELECT sdpivot_count FROM audit_column_profile) = 4
+                  AND (SELECT total_count FROM audit_column_profile) = 21
                   AND NOT EXISTS (SELECT 1 FROM sdpivot_audit_invalid)
                 THEN 'baseline_exact'
                 ELSE 'invalid'
