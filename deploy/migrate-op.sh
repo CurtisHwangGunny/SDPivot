@@ -319,7 +319,7 @@ sdpivot_marker_count() {
         SELECT count(*)
         FROM (VALUES
             ('org_ext'), ('knowledge_spaces'), ('documents'), ('document_chunks'),
-            ('write_category_config'), ('sensitive_words'), ('billing_plans')
+            ('write_category_config'), ('sensitive_words')
         ) AS markers(object_name)
         WHERE to_regclass(format('public.%I', object_name)) IS NOT NULL
     "
@@ -353,7 +353,7 @@ core_v12_fingerprint() {
         ), sdpivot_markers(object_name) AS (
             VALUES
                 ('org_ext'), ('knowledge_spaces'), ('documents'), ('document_chunks'),
-                ('write_category_config'), ('sensitive_words'), ('billing_plans')
+                ('write_category_config'), ('sensitive_words')
         ), core_v13_drift AS (
             SELECT 1
             FROM information_schema.columns
@@ -383,7 +383,6 @@ sdpivot_v12_fingerprint() {
                 ('document_versions'), ('chunk_strategies'), ('qa_sessions'),
                 ('qa_messages'), ('writing_drafts'), ('write_category_config'),
                 ('announcements'), ('sensitive_words'),
-                ('billing_plans'), ('enterprise_subscriptions'), ('invoices'),
                 ('sdpivot_brand_migration_000011'), ('sdpivot_rls_migration_000012_state')
         ), required_tables(table_name) AS (
             VALUES
@@ -393,7 +392,6 @@ sdpivot_v12_fingerprint() {
                 ('document_versions'), ('chunk_strategies'), ('qa_sessions'),
                 ('qa_messages'), ('writing_drafts'), ('write_category_config'),
                 ('announcements'), ('audit_logs'), ('sensitive_words'),
-                ('billing_plans'), ('enterprise_subscriptions'), ('invoices')
         ), existing_markers AS (
             SELECT count(*) AS count
             FROM marker_objects
@@ -517,13 +515,6 @@ sdpivot_v12_fingerprint() {
                 ('audit_logs', 'action', ARRAY['character varying']),
                 ('sensitive_words', 'word', ARRAY['character varying']),
                 ('sensitive_words', 'status', ARRAY['character varying']),
-                ('billing_plans', 'status', ARRAY['character varying']),
-                ('enterprise_subscriptions', 'org_id', ARRAY['character varying']),
-                ('enterprise_subscriptions', 'plan_id', ARRAY['character varying']),
-                ('invoices', 'org_id', ARRAY['character varying']),
-                ('invoices', 'status', ARRAY['character varying']),
-                ('invoices', 'period_start', ARRAY['timestamp with time zone']),
-                ('invoices', 'period_end', ARRAY['timestamp with time zone'])
         ), invalid_columns AS (
             SELECT 1
             FROM required_columns required
