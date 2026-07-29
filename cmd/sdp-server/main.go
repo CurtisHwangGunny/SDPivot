@@ -166,7 +166,7 @@ const (
 func initializeOPAdminFromEnv(db *gorm.DB) error {
 	email := strings.TrimSpace(os.Getenv(opAdminEmailEnv))
 	password := os.Getenv(opAdminPasswordEnv)
-{} == "" {
+if email == "" {
 		if email != "" || password != "" {
 			return fmt.Errorf("%s and %s must be configured together", opAdminEmailEnv, opAdminPasswordEnv)
 		}
