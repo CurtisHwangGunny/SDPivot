@@ -484,6 +484,11 @@ def artifact_manifest():
     dist = os.path.join(REPO_ROOT, "frontend/sdpivot/dist")
     if os.path.lexists(os.path.join(dist, "ops.html")):
         fail("frontend/sdpivot/dist/ops.html must not exist, including as a dangling symlink")
+    assets = os.path.join(dist, "assets")
+    if os.path.isdir(assets) and any(
+        "OpsPage" in name or "OpsLoginPage" in name for name in os.listdir(assets)
+    ):
+        fail("OP build contains ops page chunks")
     index = os.path.join(dist, "index.html")
     validate_secure_regular(index, base=REPO_ROOT, label="frontend/sdpivot/dist/index.html")
     rows = []
