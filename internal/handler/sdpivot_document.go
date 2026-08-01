@@ -185,7 +185,7 @@ func (h *SDPivotDocumentHandler) UploadDocument(c *gin.Context) {
 		CreatedBy:  userID,
 	}
 	if err := createSDPivotDocumentWithVersion(tenantDB, &doc, &version); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document record and version"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document record and version", "detail": err.Error()})
 		return
 	}
 
@@ -720,12 +720,12 @@ func (h *SDPivotDocumentHandler) UploadManualDocument(c *gin.Context) {
 		CreatedBy:  userID,
 	}
 	if err := createSDPivotDocumentWithVersion(tenantDB, &doc, &version); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document and version"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document and version", "detail": err.Error()})
 		return
 	}
 
 	if err := h.parseAndStoreDocument(tenantDB, &doc, []byte(req.Content)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse manual document"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse manual document", "detail": err.Error()})
 		return
 	}
 
