@@ -145,10 +145,13 @@ async function loadSessions() {
 }
 
 async function loadMessages(sessionId: string) {
+  const requestedSessionId = sessionId
   try {
-    const res = await getMessages(sessionId)
+    const res = await getMessages(requestedSessionId)
+    if (activeSessionId.value !== requestedSessionId) return
     messages.value = res.data.messages || []
   } catch {
+    if (activeSessionId.value !== requestedSessionId) return
     messages.value = []
   }
 }

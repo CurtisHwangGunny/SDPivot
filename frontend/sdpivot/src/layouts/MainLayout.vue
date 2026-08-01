@@ -153,7 +153,9 @@ async function onUserMenuClick(val: string) {
     }
     try {
       await logout()
-    } catch {}
+    } catch {
+      MessagePlugin.error('操作失败')
+    }
     authStore.clearAuth()
     MessagePlugin.success('已退出登录')
     router.push('/login')

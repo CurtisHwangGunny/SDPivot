@@ -6,6 +6,16 @@ const client = axios.create({
   timeout: 30000,
 })
 
+let refreshPromise: Promise<void> | null = null
+
+async function refreshAccessToken() {
+  const refreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken)
+  if (!refreshToken) throw new Error('missing refresh token')
+  const res = await axios.post('/api/v1/sdp/auth/refresh', { refresh_token: refreshToken })
+  localStorage.setItem(STORAGE_KEYS.accessToken, res.data.access_token)
+  localStorage.setItem(STORAGE_KEYS.refreshToken, res.data.refresh_token)
+}
+
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem(STORAGE_KEYS.accessToken)
   if (token) config.headers.Authorization = `Bearer ${token}`
@@ -18,14 +28,12 @@ client.interceptors.response.use(
     if (error.response?.status === 401) {
       if (error.config?.url === '/auth/login') return Promise.reject(error)
 
-      const refreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken)
-      if (refreshToken && !error.config._retry) {
+      if (localStorage.getItem(STORAGE_KEYS.refreshToken) && !error.config._retry) {
         error.config._retry = true
         try {
-          const res = await axios.post('/api/v1/sdp/auth/refresh', { refresh_token: refreshToken })
-          localStorage.setItem(STORAGE_KEYS.accessToken, res.data.access_token)
-          localStorage.setItem(STORAGE_KEYS.refreshToken, res.data.refresh_token)
-          error.config.headers.Authorization = `Bearer ${res.data.access_token}`
+          if (!refreshPromise) refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null })
+          await refreshPromise
+          error.config.headers.Authorization = `Bearer ${localStorage.getItem(STORAGE_KEYS.accessToken)}`
           return client(error.config)
         } catch {
           localStorage.removeItem(STORAGE_KEYS.accessToken)

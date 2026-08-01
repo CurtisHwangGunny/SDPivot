@@ -33,7 +33,9 @@ async function loadAuditLogs() {
     const r = await opsApi.getAuditLogs({ user_id: auditSearch.user_id, action: auditSearch.action, page: auditPage.value })
     auditLogs.value = (r.data as any).logs || []
     auditTotal.value = (r.data as any).total || 0
-  } catch {}
+  } catch {
+    MessagePlugin.error('操作失败')
+  }
 }
 
 function onAuditPageChange(p: any) {
