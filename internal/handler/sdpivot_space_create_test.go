@@ -12,10 +12,11 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-func TestCreateSpaceCreatesCanonicalSpaceAndOwner(t *testing.T) {
+func TestCreateSpaceUsesJWTTenantAndCreatesOwner(t *testing.T) {
 	db := newSpaceAccessTestDB(t)
 	h := NewSDPivotSpaceHandler(db)
-	c, w := spaceTestContext(http.MethodPost, "/spaces", "creator", types.DefaultTenantID, map[string]string{
+	tenantID := types.DefaultTenantID + 1
+	c, w := spaceTestContext(http.MethodPost, "/spaces", "creator", tenantID, map[string]string{
 		"name":       "Created space",
 		"visibility": "private",
 	})
@@ -26,7 +27,7 @@ func TestCreateSpaceCreatesCanonicalSpaceAndOwner(t *testing.T) {
 	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
 	var space types.KnowledgeSpace
 	require.NoError(t, db.Where("name = ?", "Created space").First(&space).Error)
-	require.Equal(t, types.DefaultTenantID, space.TenantID)
+	require.Equal(t, tenantID, space.TenantID)
 	require.Equal(t, types.DefaultOrganizationID, requireStringPointer(t, space.OrgID))
 	require.Equal(t, "creator", requireStringPointer(t, space.OwnerID))
 	require.Equal(t, "creator", requireStringPointer(t, space.CreatorID))
@@ -35,7 +36,7 @@ func TestCreateSpaceCreatesCanonicalSpaceAndOwner(t *testing.T) {
 	require.NoError(t, db.Where("space_id = ? AND user_id = ?", space.ID, "creator").First(&owner).Error)
 	require.Equal(t, "owner", owner.Role)
 
-	getContext, getResponse := spaceTestContext(http.MethodGet, "/spaces/"+space.ID, "creator", types.DefaultTenantID, nil)
+	getContext, getResponse := spaceTestContext(http.MethodGet, "/spaces/"+space.ID, "creator", tenantID, nil)
 	getContext.Params = gin.Params{{Key: "id", Value: space.ID}}
 	h.GetSpace(getContext)
 	require.Equal(t, http.StatusOK, getResponse.Code, getResponse.Body.String())
@@ -71,7 +72,6 @@ func TestCreateSpaceAuthorization(t *testing.T) {
 		tenantID uint64
 	}{
 		{name: "viewer cannot create", role: string(types.AccessRoleKnowledgeViewer), tenantID: types.DefaultTenantID},
-		{name: "noncanonical tenant cannot create", role: string(types.AccessRoleKnowledgeEditor), tenantID: types.DefaultTenantID + 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newSpaceAccessTestDB(t)
