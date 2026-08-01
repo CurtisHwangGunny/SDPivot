@@ -15,6 +15,8 @@ export interface LoginRequest {
 }
 
 export interface AuthResponse {
+  success: boolean
+  token: string
   access_token: string
   refresh_token: string
   expires_in: number

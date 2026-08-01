@@ -95,10 +95,6 @@
           </t-checkbox>
         </div>
 
-        <div class="register-link">
-          还没有账号？<t-link theme="primary" @click="$router.push('/register')">立即注册</t-link>
-        </div>
-
         <t-message v-if="errorMsg" theme="error" style="margin-top:12px">{{ errorMsg }}</t-message>
       </div>
     </section>
@@ -322,13 +318,6 @@ async function handleEmailLogin() {
 
 .login-footer {
   margin-top: 14px;
-}
-
-.register-link {
-  margin-top: 16px;
-  text-align: center;
-  font-size: 14px;
-  color: var(--text-secondary);
 }
 
 @media (max-width: 1080px) {
