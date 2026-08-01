@@ -29,3 +29,32 @@ export function deleteSpace(id: string) {
 export function listSpaceMembers(id: string) {
   return client.get(`/spaces/${id}/members`)
 }
+
+export interface AdminStats {
+  space_count: number
+  document_count: number
+  member_count: number
+  model_count?: number
+}
+
+export interface AdminMember {
+  id?: string
+  user_id: string
+  name?: string
+  nickname?: string
+  username?: string
+  email?: string
+  role: string
+  department?: string
+  status?: string
+  created_at?: string
+  last_active_at?: string
+}
+
+export function getAdminStats() {
+  return client.get<AdminStats>('/admin/stats')
+}
+
+export function listMembers() {
+  return client.get<{ members: AdminMember[] }>('/admin/members')
+}
