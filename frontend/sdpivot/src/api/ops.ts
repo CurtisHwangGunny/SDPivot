@@ -30,10 +30,6 @@ async function refreshOpsToken() {
   return accessToken
 }
 
-function redirectToOpsLogin() {
-  if (window.location.pathname !== '/ops-login') window.location.href = '/ops-login'
-}
-
 opsClient.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -48,11 +44,9 @@ opsClient.interceptors.response.use(
         return opsClient(originalRequest)
       } catch {
         clearOpsSession()
-        redirectToOpsLogin()
       }
     } else if (error.response?.status === 401) {
       clearOpsSession()
-      redirectToOpsLogin()
     }
     return Promise.reject(error)
   },
