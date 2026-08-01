@@ -28,6 +28,8 @@ export function listQAModels() {
   return client.get<{ models: QAAvailableModel[] }>('/qa/models')
 }
 
+export const listModels = listQAModels
+
 export function createSession(data: { title?: string; space_id?: string }) {
   return client.post<{ session: QASession }>('/qa/sessions', data)
 }
