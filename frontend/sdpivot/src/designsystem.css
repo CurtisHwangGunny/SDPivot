@@ -1,0 +1,335 @@
+/* ============================================================
+   SDPivot OP 私有化版 — Design System CSS Variables v1.0
+   ============================================================
+   文件：sdpivot-design-system_v1.0.css
+   版本：v1.0（2026-08-01）
+   用途：所有 SDPivot 前端项目的唯一设计令牌源
+   原则：禁止直接使用魔法值，所有颜色/字号/间距必须引用变量
+   ============================================================ */
+
+/* ─── 1. 品牌色（松石绿 · oklch 165°） ─────────────────── */
+:root {
+  --brand-50:  oklch(0.97 0.02 165);
+  --brand-100: oklch(0.94 0.04 165);
+  --brand-200: oklch(0.88 0.07 165);
+  --brand-300: oklch(0.80 0.10 165);
+  --brand-400: oklch(0.71 0.12 165);
+  --brand-500: oklch(0.62 0.13 165);
+  --brand-600: oklch(0.52 0.12 165);
+  --brand-700: oklch(0.42 0.10 165);
+  --brand-800: oklch(0.33 0.08 165);
+  --brand-900: oklch(0.24 0.06 165);
+}
+
+/* ─── 2. 中性色（暖灰 · oklch 80°） ──────────────────────── */
+:root {
+  --ink-50:  oklch(0.985 0.003 80);
+  --ink-100: oklch(0.96 0.005 80);
+  --ink-200: oklch(0.90 0.01 80);
+  --ink-300: oklch(0.80 0.01 80);
+  --ink-400: oklch(0.65 0.01 80);
+  --ink-500: oklch(0.52 0.01 80);
+  --ink-600: oklch(0.44 0.01 80);
+  --ink-700: oklch(0.36 0.01 80);
+  --ink-800: oklch(0.28 0.01 80);
+  --ink-900: oklch(0.20 0.01 80);
+  --ink-950: oklch(0.13 0.01 80);
+}
+
+/* ─── 3. 语义色（success/warning/danger/info） ──────────── */
+:root {
+  --success-50:  oklch(0.96 0.03 155);
+  --success-100: oklch(0.92 0.06 155);
+  --success-200: oklch(0.86 0.09 155);
+  --success-300: oklch(0.78 0.12 155);
+  --success-500: oklch(0.65 0.14 155);
+
+  --warning-50:  oklch(0.97 0.03 75);
+  --warning-100: oklch(0.94 0.06 75);
+  --warning-200: oklch(0.88 0.09 75);
+  --warning-300: oklch(0.80 0.12 75);
+  --warning-500: oklch(0.74 0.15 70);
+
+  --danger-50:  oklch(0.96 0.03 20);
+  --danger-100: oklch(0.92 0.06 20);
+  --danger-200: oklch(0.86 0.10 20);
+  --danger-300: oklch(0.78 0.14 20);
+  --danger-500: oklch(0.62 0.18 20);
+
+  --info-50:  oklch(0.96 0.03 230);
+  --info-100: oklch(0.92 0.06 230);
+  --info-200: oklch(0.86 0.09 230);
+  --info-300: oklch(0.78 0.12 230);
+  --info-500: oklch(0.62 0.13 230);
+}
+
+/* ─── 4. 辅助色（amber/rose/extra） ──────────────────────── */
+:root {
+  --amber-50:  oklch(0.97 0.04 65);
+  --amber-500: oklch(0.74 0.15 70);
+  --rose-50:   oklch(0.96 0.04 10);
+  --rose-500:  oklch(0.62 0.18 20);
+}
+
+/* ─── 5. 字体（Font Family） ────────────────────────────── */
+:root {
+  --font-display: 'Noto Serif SC', 'Source Han Serif SC', serif;
+  --font-body:    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:    'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', monospace;
+}
+
+/* ─── 6. 字号（Typography Scale） ───────────────────────── */
+:root {
+  --text-xs:   0.75rem;   /* 12px */
+  --text-sm:   0.875rem;  /* 14px */
+  --text-base: 1rem;      /* 16px */
+  --text-lg:   1.125rem;  /* 18px */
+  --text-xl:   1.25rem;   /* 20px */
+  --text-2xl:  1.5rem;    /* 24px */
+  --text-3xl:  1.875rem;  /* 30px */
+  --text-4xl:  2.25rem;   /* 36px */
+  --text-5xl:  3rem;      /* 48px */
+}
+
+/* ─── 7. 字重（Font Weight） ──────────────────────────────── */
+:root {
+  --font-weight-normal:   400;
+  --font-weight-medium:   500;
+  --font-weight-semibold: 600;
+  --font-weight-bold:     700;
+  --font-weight-extrabold: 800;
+}
+
+/* ─── 8. 行高（Line Height） ──────────────────────────────── */
+:root {
+  --leading-tight:   1.15;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+  --leading-loose:   1.75;
+}
+
+/* ─── 9. 间距（Spacing · 4px 基础单位 · 1.5 倍率） ──────── */
+:root {
+  --space-0:   0;
+  --space-1:   0.25rem;  /* 4px */
+  --space-2:   0.5rem;   /* 8px */
+  --space-3:   0.75rem;  /* 12px */
+  --space-4:   1rem;     /* 16px */
+  --space-5:   1.25rem;  /* 20px */
+  --space-6:   1.5rem;   /* 24px */
+  --space-8:   2rem;     /* 32px */
+  --space-10:  2.5rem;   /* 40px */
+  --space-12:  3rem;     /* 48px */
+  --space-14:  3.5rem;   /* 56px */
+  --space-16:  4rem;     /* 64px */
+  --space-20:  5rem;     /* 80px */
+  --space-24:  6rem;     /* 96px */
+}
+
+/* ─── 10. 圆角（Border Radius） ──────────────────────────── */
+:root {
+  --radius-none: 0;
+  --radius-xs:   6px;
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   18px;
+  --radius-xl:   24px;
+  --radius-pill: 999px;
+}
+
+/* ─── 11. 阴影（Shadow · 暖色调 rgba(40,30,20)） ────────── */
+:root {
+  --shadow-xs: 0 1px 2px rgba(40, 30, 20, 0.04);
+  --shadow-sm: 0 2px 6px rgba(40, 30, 20, 0.05),
+               0 1px 2px rgba(40, 30, 20, 0.04);
+  --shadow-md: 0 8px 24px -8px rgba(40, 30, 20, 0.10),
+               0 2px 6px rgba(40, 30, 20, 0.05);
+  --shadow-lg: 0 16px 40px -12px rgba(40, 30, 20, 0.14),
+               0 4px 12px rgba(40, 30, 20, 0.06);
+  --shadow-xl: 0 24px 60px -16px rgba(40, 30, 20, 0.18),
+               0 8px 24px rgba(40, 30, 20, 0.08);
+}
+
+/* ─── 12. 动效（Transition Duration & Easing） ──────────── */
+:root {
+  --duration-instant: 0ms;
+  --duration-fast:    100ms;
+  --duration-normal:  200ms;
+  --duration-slow:    350ms;
+
+  --ease-out-quart: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-out-expo:  cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-in-out:    cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ─── 13. 布局（Layout） ──────────────────────────────────── */
+:root {
+  --sidebar-width: 232px;
+  --session-pane-width: 280px;
+  --draft-pane-width: 300px;
+  --content-max-width: 1400px;
+  --header-height: 56px;
+}
+
+/* ─── 14. 断点（Breakpoints） ────────────────────────────── */
+/* 注：CSS 变量不能在 media query 中使用，此处仅做参考 */
+/* Mobile:   320px - 639px                                 */
+/* Tablet:   640px - 1023px                                */
+/* Desktop:  1024px - 1279px                               */
+/* Wide:     1280px+                                       */
+
+/* ─── 15. Z-Index 层级 ────────────────────────────────────── */
+:root {
+  --z-base:      0;
+  --z-dropdown:  100;
+  --z-sticky:    200;
+  --z-modal:     300;
+  --z-toast:     400;
+  --z-tooltip:   500;
+}
+
+/* ─── 16. 暗色模式（Dark Theme） ──────────────────────────── */
+/* 通过 [data-theme="dark"] 属性切换，oklch 天然适配 light-dark() */
+[data-theme="dark"] {
+  /* 品牌色调暗 */
+  --brand-50:  oklch(0.24 0.06 165);
+  --brand-100: oklch(0.33 0.08 165);
+  --brand-200: oklch(0.42 0.10 165);
+  --brand-300: oklch(0.52 0.12 165);
+  --brand-400: oklch(0.62 0.13 165);
+  --brand-500: oklch(0.71 0.12 165);
+  --brand-600: oklch(0.80 0.10 165);
+  --brand-700: oklch(0.88 0.07 165);
+  --brand-800: oklch(0.94 0.04 165);
+  --brand-900: oklch(0.97 0.02 165);
+
+  /* 中性色反转 */
+  --ink-50:  oklch(0.13 0.01 80);
+  --ink-100: oklch(0.18 0.01 80);
+  --ink-200: oklch(0.24 0.01 80);
+  --ink-300: oklch(0.32 0.01 80);
+  --ink-400: oklch(0.42 0.01 80);
+  --ink-500: oklch(0.55 0.01 80);
+  --ink-600: oklch(0.65 0.01 80);
+  --ink-700: oklch(0.75 0.01 80);
+  --ink-800: oklch(0.85 0.01 80);
+  --ink-900: oklch(0.92 0.01 80);
+  --ink-950: oklch(0.97 0.01 80);
+
+  /* 语义色微调 */
+  --success-50:  oklch(0.20 0.04 155);
+  --success-500: oklch(0.65 0.14 155);
+  --warning-50:  oklch(0.22 0.04 75);
+  --warning-500: oklch(0.74 0.15 70);
+  --danger-50:   oklch(0.22 0.05 20);
+  --danger-500:  oklch(0.62 0.18 20);
+  --info-50:     oklch(0.20 0.04 230);
+  --info-500:    oklch(0.62 0.13 230);
+
+  /* 阴影在暗色下更淡 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 40px -12px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 24px 60px -16px rgba(0, 0, 0, 0.6);
+}
+
+/* ─── 17. 基础样式（Base Styles） ──────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--ink-900);
+  background: var(--ink-50);
+  font-feature-settings: "cv11", "ss01", "tnum";
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── 18. 可访问性（Accessibility） ─────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+}
+
+/* 尊重用户系统动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── 19. 滚动条（Scrollbar） ──────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ink-300);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-400);
+}
+
+/* ─── 20. 选择颜色（Selection） ─────────────────────────────── */
+::selection {
+  background: var(--brand-200);
+  color: var(--ink-900);
+}
+
+/* ─── 21. 工具类（Utility Classes） ─────────────────────────── */
+/* 文本截断 */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 多行文本截断 */
+.text-clamp-2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 屏幕阅读器专用 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+/* 禁用用户选择 */
+.user-select-none {
+  user-select: none;
+}
