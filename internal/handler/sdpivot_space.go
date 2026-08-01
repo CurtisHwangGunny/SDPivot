@@ -53,10 +53,6 @@ func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": middleware.PermissionKnowledgeWrite})
 		return
 	}
-	if middleware.GetTenantID(c) != types.DefaultTenantID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "invalid tenant context"})
-		return
-	}
 
 	var req types.CreateSpaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -73,7 +69,7 @@ func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 
 	space := types.KnowledgeSpace{
 		ID:          uuid.New().String(),
-		TenantID:    types.DefaultTenantID,
+		TenantID:    middleware.GetTenantID(c),
 		Name:        req.Name,
 		Description: req.Description,
 		Visibility:  req.Visibility,
