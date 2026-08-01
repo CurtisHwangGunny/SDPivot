@@ -1,15 +1,12 @@
 import { STORAGE_KEYS } from '../utils/storage'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import redesignRoutes from './redesign'
 
 const isOpBuild = import.meta.env.MODE === 'op'
 
 const mainChildren: RouteRecordRaw[] = [
-  { path: 'spaces', name: 'spaces', component: () => import('@/views/spaces/SpacesPage.vue') },
   { path: 'spaces/:id', name: 'spaceDetail', component: () => import('@/views/spaces/SpaceDetailPage.vue') },
   { path: 'spaces/:id/documents', name: 'documents', component: () => import('@/views/spaces/DocumentsPage.vue') },
-  { path: 'qa', name: 'qa', component: () => import('@/views/qa/QAPage.vue') },
-  { path: 'writing', name: 'writing', component: () => import('@/views/writing/WritingPage.vue') },
-  { path: 'admin', name: 'admin', component: () => import('@/views/admin/AdminPage.vue') },
   ...(!isOpBuild
     ? [{ path: 'ops', name: 'ops', component: () => import('@/views/ops/OpsPage.vue'), meta: { requiresOpsAuth: true } }]
     : []),
@@ -19,7 +16,7 @@ const mainChildren: RouteRecordRaw[] = [
 ]
 
 const routes: RouteRecordRaw[] = [
-  { path: '/login', name: 'login', component: () => import('@/views/auth/LoginPage.vue'), meta: { requiresAuth: false } },
+  ...redesignRoutes,
   { path: '/register', name: 'register', component: () => import('@/views/auth/RegisterPage.vue'), meta: { requiresAuth: false } },
   ...(!isOpBuild
     ? [{ path: '/ops-login', name: 'opsLogin', component: () => import('@/views/ops/OpsLoginPage.vue'), meta: { requiresAuth: false } }]
