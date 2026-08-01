@@ -22,6 +22,7 @@ services:
       SDP_UPLOAD_DIR: /tmp/sdpivot-uploads
       SDP_JWT_SECRET: ${SDP_JWT_SECRET:?SDP_JWT_SECRET is required}
       SDP_ALLOWED_ORIGINS: ${SDP_ALLOWED_ORIGINS:-}
+      SYSTEM_AES_KEY: ${SDP_SYSTEM_AES_KEY:-}
       GIN_MODE: release
     volumes:
       - "${SDP_UPLOAD_DIR:-/tmp/sdpivot-uploads}:/tmp/sdpivot-uploads"
