@@ -389,7 +389,35 @@ func (h *SDPivotOpsAdminHandler) UpdateUserStatus(c *gin.Context) {
 		return
 	}
 
-	h.db.Table("users").Where("id = ?", userID).Update("is_active", req.IsActive)
+	if !req.IsActive {
+		var user types.User
+		if err := h.db.Select("access_role").Where("id = ?", userID).First(&user).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load user"})
+			}
+			return
+		}
+		if user.AccessRole == types.AccessRoleSuperAdmin {
+			var activeSuperAdmins int64
+			if err := h.db.Model(&types.User{}).
+				Where("access_role = ? AND is_active = ?", types.AccessRoleSuperAdmin, true).
+				Count(&activeSuperAdmins).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count active super admins"})
+				return
+			}
+			if activeSuperAdmins <= 1 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "不允许禁用最后一个超级管理员"})
+				return
+			}
+		}
+	}
+
+	if err := h.db.Table("users").Where("id = ?", userID).Update("is_active", req.IsActive).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user status"})
+		return
+	}
 
 	h.writeAuditLog(c, "update_user_status", "user", userID, fmt.Sprintf("is_active: %v", req.IsActive))
 
