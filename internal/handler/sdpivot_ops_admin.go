@@ -419,7 +419,8 @@ type opsUsageStatRow struct {
 }
 
 type opsUsageStatsSchema struct {
-	HasDepartments bool
+	HasDepartmentID bool
+	HasDepartments  bool
 }
 
 func parseOpsUsageStatsQuery(c *gin.Context) (opsUsageStatsQuery, error) {
@@ -456,29 +457,43 @@ func parseOpsUsageStatsQuery(c *gin.Context) (opsUsageStatsQuery, error) {
 }
 
 func detectOpsUsageStatsSchema(db *gorm.DB) opsUsageStatsSchema {
-	var schema opsUsageStatsSchema
-	// to_regclass is safe when older OP installations have not created departments yet.
-	_ = db.Raw("SELECT to_regclass('departments') IS NOT NULL AS has_departments").Scan(&schema).Error
-	return schema
+	migrator := db.Migrator()
+	hasDepartmentID := migrator.HasColumn("users", "department_id")
+	return opsUsageStatsSchema{
+		HasDepartmentID: hasDepartmentID,
+		HasDepartments:  hasDepartmentID && migrator.HasTable("departments"),
+	}
+}
+
+func opsUsageDateExpression(db *gorm.DB) string {
+	if db.Dialector.Name() == "sqlite" {
+		return "strftime('%Y-%m-%d', tu.created_at)"
+	}
+	return "TO_CHAR(tu.created_at, 'YYYY-MM-DD')"
 }
 
 func (h *SDPivotOpsAdminHandler) usageStatsQuery(db *gorm.DB, query opsUsageStatsQuery, schema opsUsageStatsSchema) *gorm.DB {
 	q := db.Table("token_usage tu").
 		Joins("LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL")
 	if schema.HasDepartments {
-		q = q.Joins("LEFT JOIN departments d ON d.id = NULLIF(to_jsonb(u)->>'department_id', '') AND d.tenant_id = tu.tenant_id AND d.deleted_at IS NULL")
+		q = q.Joins("LEFT JOIN departments d ON d.id = u.department_id AND d.tenant_id = tu.tenant_id AND d.deleted_at IS NULL")
 	}
 	if query.StartDate != "" {
 		q = q.Where("tu.created_at >= ?", query.StartDate)
 	}
 	if query.EndDate != "" {
-		q = q.Where("tu.created_at < (?::date + INTERVAL '1 day')", query.EndDate)
+		endDate, _ := time.Parse("2006-01-02", query.EndDate)
+		q = q.Where("tu.created_at < ?", endDate.AddDate(0, 0, 1))
 	}
 	if query.UserID != "" {
 		q = q.Where("tu.user_id = ?", query.UserID)
 	}
 	if query.DepartmentID != "" {
-		q = q.Where("to_jsonb(u)->>'department_id' = ?", query.DepartmentID)
+		if schema.HasDepartmentID {
+			q = q.Where("u.department_id = ?", query.DepartmentID)
+		} else {
+			q = q.Where("1 = 0")
+		}
 	}
 	if query.TenantID != 0 {
 		q = q.Where("tu.tenant_id = ?", query.TenantID)
@@ -487,23 +502,29 @@ func (h *SDPivotOpsAdminHandler) usageStatsQuery(db *gorm.DB, query opsUsageStat
 }
 
 func selectOpsUsageStats(q *gorm.DB, schema opsUsageStatsSchema) *gorm.DB {
+	dateExpression := opsUsageDateExpression(q)
+	departmentID := "''"
 	departmentName := "''"
-	group := "TO_CHAR(tu.created_at, 'YYYY-MM-DD'), tu.tenant_id, tu.user_id, u.username, to_jsonb(u)->>'department_id'"
+	group := dateExpression + ", tu.tenant_id, tu.user_id, u.username"
+	if schema.HasDepartmentID {
+		departmentID = "COALESCE(u.department_id, '')"
+		group += ", u.department_id"
+	}
 	if schema.HasDepartments {
 		departmentName = "COALESCE(d.name, '')"
 		group += ", d.name"
 	}
 	return q.Select(fmt.Sprintf(`
-		TO_CHAR(tu.created_at, 'YYYY-MM-DD') AS date,
+		%s AS date,
 		tu.tenant_id,
 		COALESCE(tu.user_id, '') AS user_id,
 		COALESCE(u.username, '') AS username,
-		COALESCE(to_jsonb(u)->>'department_id', '') AS department_id,
+		%s AS department_id,
 		%s AS department_name,
 		COALESCE(SUM(tu.input_tokens), 0) AS prompt_tokens,
 		COALESCE(SUM(tu.output_tokens), 0) AS completion_tokens,
 		COALESCE(SUM(tu.input_tokens + tu.output_tokens), 0) AS total_tokens,
-		COUNT(*) AS request_count`, departmentName)).
+		COUNT(*) AS request_count`, dateExpression, departmentID, departmentName)).
 		Group(group)
 }
 
@@ -512,7 +533,9 @@ func (h *SDPivotOpsAdminHandler) GetUsageStats(c *gin.Context) {
 		return
 	}
 	db := middleware.TenantDB(c, h.db)
-	db.Exec("SET LOCAL row_security = off")
+	if db.Dialector.Name() == "postgres" {
+		db.Exec("SET LOCAL row_security = off")
+	}
 
 	query, err := parseOpsUsageStatsQuery(c)
 	if err != nil {
@@ -522,9 +545,13 @@ func (h *SDPivotOpsAdminHandler) GetUsageStats(c *gin.Context) {
 
 	page, pageSize := parsePagination(c)
 	schema := detectOpsUsageStatsSchema(db)
+	group := opsUsageDateExpression(db) + ", tu.tenant_id, tu.user_id"
+	if schema.HasDepartmentID {
+		group += ", u.department_id"
+	}
 	grouped := h.usageStatsQuery(db, query, schema).
 		Select("1").
-		Group("TO_CHAR(tu.created_at, 'YYYY-MM-DD'), tu.tenant_id, tu.user_id, to_jsonb(u)->>'department_id'")
+		Group(group)
 	var total int64
 	if err := db.Table("(?) AS usage_groups", grouped).Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count usage statistics"})
@@ -565,7 +592,9 @@ func (h *SDPivotOpsAdminHandler) ExportUsageStats(c *gin.Context) {
 		return
 	}
 	db := middleware.TenantDB(c, h.db)
-	db.Exec("SET LOCAL row_security = off")
+	if db.Dialector.Name() == "postgres" {
+		db.Exec("SET LOCAL row_security = off")
+	}
 
 	query, err := parseOpsUsageStatsQuery(c)
 	if err != nil {

@@ -56,6 +56,10 @@ func (h *SDPivotAuthHandler) GetCurrentUser(c *gin.Context) {
 	db := middleware.TenantDB(c, h.db)
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
+	if userID == "" || tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authentication context"})
+		return
+	}
 	type currentUser struct {
 		ID                 string           `json:"id"`
 		Username           string           `json:"username"`
@@ -71,33 +75,61 @@ func (h *SDPivotAuthHandler) GetCurrentUser(c *gin.Context) {
 		MustChangePassword bool             `json:"must_change_password"`
 	}
 
-	schema := detectOpsUsageStatsSchema(db)
-	departmentName := "''"
-	joinDepartment := ""
-	if schema.HasDepartments {
-		departmentName = "COALESCE(d.name, '')"
-		joinDepartment = "LEFT JOIN departments d ON d.id = NULLIF(to_jsonb(u)->>'department_id', '') AND d.tenant_id = u.tenant_id AND d.deleted_at IS NULL"
+	migrator := db.Migrator()
+	hasAccessRole := migrator.HasColumn("users", "access_role")
+	hasDepartmentID := migrator.HasColumn("users", "department_id")
+	hasMustChangePassword := migrator.HasColumn("users", "must_change_password")
+	hasProfile := migrator.HasTable("smartknora_user_profiles")
+	hasDepartments := hasDepartmentID && migrator.HasTable("departments")
+
+	selects := []string{"u.id", "u.username", "u.email", "u.avatar", "u.tenant_id", "u.is_active"}
+	if hasAccessRole {
+		selects = append(selects, "COALESCE(NULLIF(u.access_role, ''), 'knowledge_viewer') AS access_role")
+	} else {
+		selects = append(selects, "'knowledge_viewer' AS access_role")
 	}
+	if hasDepartmentID {
+		selects = append(selects, "NULLIF(u.department_id, '') AS department_id")
+	} else {
+		selects = append(selects, "NULL AS department_id")
+	}
+	if hasMustChangePassword {
+		selects = append(selects, "COALESCE(u.must_change_password, false) AS must_change_password")
+	} else {
+		selects = append(selects, "false AS must_change_password")
+	}
+
 	var user currentUser
-	query := db.Table("users u").
-		Select(`u.id, u.username, u.email, u.avatar, u.tenant_id, u.is_active,
-			COALESCE(to_jsonb(u)->>'access_role', 'knowledge_viewer') AS access_role,
-			NULLIF(to_jsonb(u)->>'department_id', '') AS department_id,
-			` + departmentName + ` AS department_name,
-			p.phone, COALESCE(p.nickname, '') AS nickname,
-			COALESCE((to_jsonb(u)->>'must_change_password')::boolean, false) AS must_change_password`).
-		Joins("LEFT JOIN smartknora_user_profiles p ON p.user_id = u.id AND p.deleted_at IS NULL")
-	if joinDepartment != "" {
-		query = query.Joins(joinDepartment)
+	query := db.Table("users u")
+	if hasProfile {
+		profileJoin := "LEFT JOIN smartknora_user_profiles p ON p.user_id = u.id"
+		if migrator.HasColumn("smartknora_user_profiles", "deleted_at") {
+			profileJoin += " AND p.deleted_at IS NULL"
+		}
+		query = query.Joins(profileJoin)
+		selects = append(selects, "p.phone", "COALESCE(p.nickname, '') AS nickname")
+	} else {
+		selects = append(selects, "NULL AS phone", "'' AS nickname")
 	}
-	err := query.
-		Where("u.id = ? AND u.tenant_id = ? AND u.is_active = true AND u.deleted_at IS NULL", userID, tenantID).
-		Scan(&user).Error
-	if err != nil {
+	if hasDepartments {
+		departmentJoin := "LEFT JOIN departments d ON d.id = u.department_id AND d.tenant_id = u.tenant_id"
+		if migrator.HasColumn("departments", "deleted_at") {
+			departmentJoin += " AND d.deleted_at IS NULL"
+		}
+		query = query.Joins(departmentJoin)
+		selects = append(selects, "COALESCE(d.name, '') AS department_name")
+	} else {
+		selects = append(selects, "'' AS department_name")
+	}
+	result := query.Select(strings.Join(selects, ", ")).
+		Where("u.id = ? AND u.tenant_id = ? AND u.is_active = ? AND u.deleted_at IS NULL", userID, tenantID, true).
+		Limit(1).
+		Scan(&user)
+	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load current user"})
 		return
 	}
-	if user.ID == "" {
+	if result.RowsAffected == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found or inactive"})
 		return
 	}
