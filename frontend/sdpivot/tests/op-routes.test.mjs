@@ -40,3 +40,10 @@ test('layout organization UI is represented only in a compile-time excluded conf
   assert.doesNotMatch(layoutSource, /<t-menu-item[^>]+value="org"/)
   assert.match(layoutSource, /const organizationUi = isOpBuild \? null : \{ menuValue: 'org', label: '企业管理' \}/)
 })
+
+test('redesign workspace detail routes are not shadowed by legacy main-layout routes', () => {
+  assert.match(redesignRouterSource, /path: '\/spaces\/:id'[\s\S]*?views\/design\/SpaceDetailPage\.vue/)
+  assert.match(redesignRouterSource, /path: '\/spaces\/:id\/documents'[\s\S]*?views\/design\/DocumentsListPage\.vue/)
+  assert.doesNotMatch(routerSource, /views\/spaces\/SpaceDetailPage\.vue/)
+  assert.doesNotMatch(routerSource, /views\/spaces\/DocumentsPage\.vue/)
+})

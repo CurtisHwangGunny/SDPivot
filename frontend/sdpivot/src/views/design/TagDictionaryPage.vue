@@ -167,7 +167,7 @@ onMounted(loadDictionary)
 .sdp-tag-dictionary__tag-dot { width: var(--space-2); height: var(--space-2); flex: 0 0 var(--space-2); border-radius: var(--radius-pill); background: var(--brand-600); }
 .sdp-tag-dictionary__card li strong { min-width: var(--space-0); flex: 1; overflow: hidden; color: var(--ink-900); font-size: var(--text-sm); text-overflow: ellipsis; white-space: nowrap; }
 .sdp-tag-dictionary__card li div { display: flex; gap: var(--space-2); }
-.sdp-tag-dictionary__card li button, .sdp-tag-dictionary__card footer button { border: 0; color: var(--brand-800); background: transparent; font-family: var(--font-body); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); cursor: pointer; }
+.sdp-tag-dictionary__card li button, .sdp-tag-dictionary__card footer button { min-width: var(--space-8); min-height: var(--space-8); padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-sm); color: var(--brand-800); background: transparent; font-family: var(--font-body); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); cursor: pointer; }
 .sdp-tag-dictionary__card footer { justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-5); border-top: 1px solid var(--ink-200); }
 .sdp-tag-dictionary__card footer span, .sdp-tag-dictionary__empty { color: var(--ink-500); font-size: var(--text-xs); }
 .sdp-tag-dictionary__empty { padding: var(--space-8); text-align: center; }

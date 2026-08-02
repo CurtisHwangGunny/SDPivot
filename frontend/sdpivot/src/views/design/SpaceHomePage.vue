@@ -652,6 +652,7 @@ onMounted(loadSpaces)
 
 .sdp-space-home__search input {
   width: 100%;
+  min-height: var(--space-8);
   border: 0;
   outline: 0;
   color: var(--ink-900);

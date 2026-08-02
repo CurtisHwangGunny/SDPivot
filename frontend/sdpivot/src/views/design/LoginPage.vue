@@ -64,8 +64,25 @@
           <span>登录后继续访问你的知识工作台</span>
         </header>
 
-        <t-tabs v-model="activeTab" class="sdp-login__tabs" aria-label="选择登录方式">
-          <t-tab-panel value="phone" label="手机号登录">
+        <div ref="tabListRef" class="sdp-login__tabs" role="tablist" aria-label="选择登录方式" @keydown="handleTabKeydown">
+          <button
+            v-for="tab in loginTabs"
+            :id="`sdp-login-tab-${tab.value}`"
+            :key="tab.value"
+            type="button"
+            role="tab"
+            :disabled="tab.disabled"
+            :tabindex="activeTab === tab.value ? 0 : -1"
+            :aria-selected="activeTab === tab.value"
+            :aria-controls="`sdp-login-panel-${tab.value}`"
+            :class="{ 'sdp-login__tab--active': activeTab === tab.value }"
+            @click="activeTab = tab.value"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <div v-show="activeTab === 'phone'" id="sdp-login-panel-phone" role="tabpanel" aria-labelledby="sdp-login-tab-phone">
             <form class="sdp-login__form" aria-label="手机号登录表单" @submit.prevent="handlePhoneLogin">
               <div class="sdp-login__field">
                 <label for="sdp-login-phone">手机号</label>
@@ -103,9 +120,9 @@
                 登录
               </SdpButton>
             </form>
-          </t-tab-panel>
+        </div>
 
-          <t-tab-panel value="email" label="邮箱登录">
+        <div v-show="activeTab === 'email'" id="sdp-login-panel-email" role="tabpanel" aria-labelledby="sdp-login-tab-email">
             <form class="sdp-login__form" aria-label="邮箱登录表单" @submit.prevent="handleEmailLogin">
               <div class="sdp-login__field">
                 <label for="sdp-login-email">邮箱</label>
@@ -141,15 +158,14 @@
                 登录
               </SdpButton>
             </form>
-          </t-tab-panel>
+        </div>
 
-          <t-tab-panel value="wechat" label="微信扫码" :disabled="true">
+        <div v-show="activeTab === 'wechat'" id="sdp-login-panel-wechat" role="tabpanel" aria-labelledby="sdp-login-tab-wechat">
             <div class="sdp-login__wechat" role="status">
               <span aria-hidden="true">Phase 2</span>
               <p>微信扫码登录将在 Phase 2 上线</p>
             </div>
-          </t-tab-panel>
-        </t-tabs>
+        </div>
 
         <t-message
           v-if="errorMsg"
@@ -184,7 +200,15 @@ import { useAuthStore } from '@/stores/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const activeTab = ref('phone')
+type LoginTab = 'phone' | 'email' | 'wechat'
+
+const loginTabs: Array<{ value: LoginTab; label: string; disabled?: boolean }> = [
+  { value: 'phone', label: '手机号登录' },
+  { value: 'email', label: '邮箱登录' },
+  { value: 'wechat', label: '微信扫码', disabled: true },
+]
+const activeTab = ref<LoginTab>('phone')
+const tabListRef = ref<HTMLElement | null>(null)
 const agreed = ref(false)
 const loading = ref(false)
 const errorMsg = ref('')
@@ -219,6 +243,21 @@ async function finishLogin(data: Parameters<typeof authStore.setAuth>[0]) {
 
 function onPhoneInput(value: string) {
   phoneForm.value.phone = value.replace(/\D/g, '').slice(0, 11)
+}
+
+function handleTabKeydown(event: KeyboardEvent) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  const buttons = Array.from(tabListRef.value?.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)') || [])
+  const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  if (currentIndex < 0 || buttons.length === 0) return
+  event.preventDefault()
+  let nextIndex = currentIndex
+  if (event.key === 'Home') nextIndex = 0
+  if (event.key === 'End') nextIndex = buttons.length - 1
+  if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % buttons.length
+  if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + buttons.length) % buttons.length
+  activeTab.value = loginTabs.find(tab => `sdp-login-tab-${tab.value}` === buttons[nextIndex]?.id)?.value || 'phone'
+  buttons[nextIndex]?.focus()
 }
 
 async function handlePhoneLogin() {
@@ -487,19 +526,48 @@ async function handleEmailLogin() {
   color: var(--brand-700);
 }
 
-.sdp-login__tabs :deep(.t-tabs__nav-item) {
-  color: var(--ink-600);
-  font-family: var(--font-body);
-  font-size: var(--text-sm);
+.sdp-login__tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(var(--space-0), 1fr));
+  border-bottom: 1px solid var(--ink-200);
 }
 
-.sdp-login__tabs :deep(.t-tabs__nav-item.t-is-active) {
+.sdp-login__tabs button {
+  position: relative;
+  min-width: var(--space-0);
+  min-height: var(--space-10);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  color: var(--ink-600);
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.sdp-login__tabs button::after {
+  position: absolute;
+  right: var(--space-2);
+  bottom: -1px;
+  left: var(--space-2);
+  height: 2px;
+  background: transparent;
+  content: '';
+}
+
+.sdp-login__tabs .sdp-login__tab--active {
   color: var(--brand-700);
   font-weight: var(--font-weight-semibold);
 }
 
-.sdp-login__tabs :deep(.t-tabs__bar) {
+.sdp-login__tabs .sdp-login__tab--active::after {
   background: var(--brand-600);
+}
+
+.sdp-login__tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .sdp-login__field :deep(.t-input) {
@@ -523,7 +591,7 @@ async function handleEmailLogin() {
 
 .sdp-login :deep(a:focus-visible),
 .sdp-login :deep(input:focus-visible),
-.sdp-login :deep([role="tab"]:focus-visible),
+.sdp-login__tabs button:focus-visible,
 .sdp-login :deep(.t-checkbox:focus-within) {
   outline: 2px solid var(--brand-500);
   outline-offset: 2px;
@@ -588,7 +656,8 @@ async function handleEmailLogin() {
     font-size: var(--text-3xl);
   }
 
-  .sdp-login__tabs :deep(.t-tabs__nav-item) {
+  .sdp-login__tabs button {
+    padding-inline: var(--space-1);
     font-size: var(--text-xs);
   }
 }

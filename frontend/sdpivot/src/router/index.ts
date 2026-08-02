@@ -5,8 +5,6 @@ import redesignRoutes from './redesign'
 const isOpBuild = import.meta.env.MODE === 'op'
 
 const mainChildren: RouteRecordRaw[] = [
-  { path: 'spaces/:id', name: 'spaceDetail', component: () => import('@/views/spaces/SpaceDetailPage.vue') },
-  { path: 'spaces/:id/documents', name: 'documents', component: () => import('@/views/spaces/DocumentsPage.vue') },
   ...(!isOpBuild
     ? [{ path: 'ops', name: 'ops', component: () => import('@/views/ops/OpsPage.vue'), meta: { requiresOpsAuth: true } }]
     : []),

@@ -47,12 +47,12 @@
           <div v-else class="sdp-people-list__table-wrap">
             <table>
               <caption class="sr-only">平台成员列表，可选择成员并执行批量操作</caption>
-              <thead><tr><th scope="col"><input type="checkbox" :checked="allPageSelected" :indeterminate="somePageSelected" aria-label="选择当前页全部成员" @change="togglePageSelection"></th><th scope="col">姓名 / 邮箱</th><th scope="col">角色</th><th scope="col">部门</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead>
+              <thead><tr><th scope="col"><label class="sdp-people-list__checkbox"><input type="checkbox" :checked="allPageSelected" :indeterminate="somePageSelected" aria-label="选择当前页全部成员" @change="togglePageSelection"></label></th><th scope="col">姓名 / 邮箱</th><th scope="col">角色</th><th scope="col">部门</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead>
               <tbody>
                 <tr v-if="loading"><td colspan="6" class="sdp-people-list__empty">正在加载成员数据...</td></tr>
                 <tr v-else-if="pageMembers.length === 0"><td colspan="6" class="sdp-people-list__empty">没有符合筛选条件的成员</td></tr>
                 <tr v-for="member in pageMembers" v-else :key="memberKey(member)">
-                  <td><input type="checkbox" :checked="selectedIds.includes(memberKey(member))" :aria-label="`选择成员 ${displayName(member)}`" @change="toggleMember(member)"></td>
+                  <td><label class="sdp-people-list__checkbox"><input type="checkbox" :checked="selectedIds.includes(memberKey(member))" :aria-label="`选择成员 ${displayName(member)}`" @change="toggleMember(member)"></label></td>
                   <td><div class="sdp-people-list__identity"><span aria-hidden="true">{{ displayName(member).charAt(0).toUpperCase() }}</span><div><strong>{{ displayName(member) }}</strong><small>{{ member.email || member.user_id }}</small></div></div></td>
                   <td><span class="sdp-people-list__role" :class="{ 'sdp-people-list__role--admin': isAdmin(member) }">{{ roleLabel(member.role) }}</span></td>
                   <td>{{ member.department || '未分配' }}</td>
@@ -190,7 +190,8 @@ onMounted(loadMembers)
 .sdp-people-list th, .sdp-people-list td { padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--ink-200); color: var(--ink-700); font-size: var(--text-sm); white-space: nowrap; }
 .sdp-people-list th { color: var(--ink-600); background: var(--ink-100); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); letter-spacing: .04em; }
 .sdp-people-list tbody tr:hover { background: var(--brand-50); }
-.sdp-people-list input[type='checkbox'] { width: var(--space-4); height: var(--space-4); accent-color: var(--brand-700); }
+.sdp-people-list__checkbox { width: var(--space-8); height: var(--space-8); display: inline-grid; place-items: center; cursor: pointer; }
+.sdp-people-list input[type='checkbox'] { width: var(--space-8); height: var(--space-8); margin: var(--space-0); accent-color: var(--brand-700); cursor: pointer; }
 .sdp-people-list__identity { gap: var(--space-3); }
 .sdp-people-list__identity > span { width: var(--space-10); height: var(--space-10); display: inline-flex; flex: 0 0 var(--space-10); align-items: center; justify-content: center; border-radius: var(--radius-pill); color: var(--brand-900); background: var(--brand-100); font-weight: var(--font-weight-bold); }
 .sdp-people-list__identity strong, .sdp-people-list__identity small { display: block; max-width: calc(var(--space-24) * 2); overflow: hidden; text-overflow: ellipsis; }

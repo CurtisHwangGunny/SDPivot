@@ -338,7 +338,7 @@ onMounted(loadWorkspace)
 .sdp-qa-workspace__new-button { min-height: var(--space-10); gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--brand-600); border-radius: var(--radius-sm); color: var(--ink-950); background: var(--brand-500); font: var(--font-weight-semibold) var(--text-sm)/var(--leading-tight) var(--font-body); cursor: pointer; }
 .sdp-qa-workspace__new-button svg, .sdp-qa-workspace__search svg, .sdp-qa-workspace__session-mark svg, .sdp-qa-workspace__feedback svg, .sdp-qa-workspace__composer button svg, .sdp-qa-workspace__welcome svg { width: var(--space-5); height: var(--space-5); fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .sdp-qa-workspace__search { min-height: var(--space-10); gap: var(--space-2); padding-inline: var(--space-3); border: 1px solid var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-600); background: var(--ink-50); }
-.sdp-qa-workspace__search input { width: 100%; border: 0; outline: 0; color: var(--ink-900); background: transparent; font: var(--text-sm) var(--font-body); }
+.sdp-qa-workspace__search input { width: 100%; min-height: var(--space-8); border: 0; outline: 0; color: var(--ink-900); background: transparent; font: var(--text-sm) var(--font-body); }
 .sdp-qa-workspace__search input::placeholder, .sdp-qa-workspace__composer textarea::placeholder { color: var(--ink-500); }
 .sdp-qa-workspace__search:focus-within, .sdp-qa-workspace__composer > div:focus-within { border-color: var(--brand-600); outline: 2px solid var(--brand-100); outline-offset: 2px; }
 .sdp-qa-workspace__session-scroll { min-height: var(--space-0); flex: 1; overflow-y: auto; }

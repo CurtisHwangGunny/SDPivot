@@ -196,7 +196,7 @@ onMounted(loadDashboard)
 .sdp-admin-dashboard__status div { min-width: var(--space-0); flex: 1; }
 .sdp-admin-dashboard__status strong { color: var(--ink-950); font-size: var(--text-sm); }
 .sdp-admin-dashboard__status p { margin-top: var(--space-1); color: var(--ink-700); font-size: var(--text-xs); }
-.sdp-admin-dashboard__status button, .sdp-admin-dashboard__section-head button { border: 0; color: var(--brand-800); background: transparent; font: inherit; font-weight: var(--font-weight-semibold); cursor: pointer; }
+.sdp-admin-dashboard__status button, .sdp-admin-dashboard__section-head button { min-width: var(--space-8); min-height: var(--space-8); padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-sm); color: var(--brand-800); background: transparent; font: inherit; font-weight: var(--font-weight-semibold); cursor: pointer; }
 .sdp-admin-dashboard__kpis { display: grid; grid-template-columns: repeat(4, minmax(var(--space-0), 1fr)); gap: var(--space-4); }
 .sdp-admin-dashboard__kpi { display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-5); border: 1px solid var(--ink-200); border-radius: var(--radius-md); background: var(--ink-50); box-shadow: var(--shadow-xs); }
 .sdp-admin-dashboard__kpi > span, .sdp-admin-dashboard__quick-grid button > span { display: inline-flex; align-items: center; justify-content: center; color: var(--brand-800); background: var(--brand-100); }

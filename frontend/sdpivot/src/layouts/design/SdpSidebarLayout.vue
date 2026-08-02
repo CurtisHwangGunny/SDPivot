@@ -88,12 +88,17 @@
         </nav>
       </div>
 
-      <div class="sdp-sidebar-layout__user-card" aria-label="当前用户信息">
-        <span class="sdp-sidebar-layout__avatar" aria-hidden="true">{{ userInitial }}</span>
-        <span class="sdp-sidebar-layout__user-copy">
-          <strong>{{ userName }}</strong>
-          <span>{{ mode === 'admin' || user?.is_system_admin || user?.is_ops_admin ? '管理员' : '成员' }}</span>
-        </span>
+      <div class="sdp-sidebar-layout__user-card">
+        <div class="sdp-sidebar-layout__user-info" aria-label="当前用户信息">
+          <span class="sdp-sidebar-layout__avatar" aria-hidden="true">{{ userInitial }}</span>
+          <span class="sdp-sidebar-layout__user-copy">
+            <strong>{{ userName }}</strong>
+            <span>{{ mode === 'admin' || user?.is_system_admin || user?.is_ops_admin ? '管理员' : '成员' }}</span>
+          </span>
+        </div>
+        <button type="button" aria-label="退出登录" :disabled="loggingOut" @click="handleLogout">
+          {{ loggingOut ? '退出中' : '退出登录' }}
+        </button>
       </div>
     </aside>
 
@@ -105,7 +110,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { logout } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
 type SidebarMode = 'user' | 'admin'
@@ -137,8 +143,10 @@ const adminNavigation: NavigationItem[] = [
 ]
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const isMenuOpen = ref(false)
+const loggingOut = ref(false)
 const sidebarRef = ref<HTMLElement | null>(null)
 
 const navigationItems = computed(() => props.mode === 'admin' ? adminNavigation : userNavigation)
@@ -152,6 +160,20 @@ function isItemActive(item: NavigationItem) {
 
 function closeMenu() {
   isMenuOpen.value = false
+}
+
+async function handleLogout() {
+  if (loggingOut.value) return
+  loggingOut.value = true
+  try {
+    await logout()
+  } catch {
+    // Local credentials must still be removed when the server session is unavailable.
+  } finally {
+    authStore.clearAuth()
+    loggingOut.value = false
+    await router.replace('/login')
+  }
 }
 
 function handleNavKeydown(event: KeyboardEvent) {
@@ -214,7 +236,7 @@ watch(() => route.fullPath, closeMenu)
 .sdp-sidebar-layout__brand-row,
 .sdp-sidebar-layout__brand,
 .sdp-sidebar-layout__mobile-brand,
-.sdp-sidebar-layout__user-card,
+.sdp-sidebar-layout__user-info,
 .sdp-sidebar-layout__nav-item {
   display: flex;
   align-items: center;
@@ -327,17 +349,47 @@ watch(() => route.fullPath, closeMenu)
 .sdp-sidebar-layout__mobile-brand:focus-visible,
 .sdp-sidebar-layout__nav-item:focus-visible,
 .sdp-sidebar-layout__menu-button:focus-visible,
-.sdp-sidebar-layout__close-button:focus-visible {
+.sdp-sidebar-layout__close-button:focus-visible,
+.sdp-sidebar-layout__user-card button:focus-visible {
   outline: 2px solid var(--brand-500);
   outline-offset: 2px;
 }
 
 .sdp-sidebar-layout__user-card {
-  gap: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
   padding: var(--space-3);
   border: 1px solid var(--ink-800);
   border-radius: var(--radius-md);
   background: var(--ink-900);
+}
+
+.sdp-sidebar-layout__user-info {
+  min-width: var(--space-0);
+  gap: var(--space-3);
+}
+
+.sdp-sidebar-layout__user-card button {
+  min-width: var(--space-8);
+  min-height: var(--space-8);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--ink-700);
+  border-radius: var(--radius-sm);
+  color: var(--ink-100);
+  background: var(--ink-800);
+  font: var(--font-weight-semibold) var(--text-xs)/var(--leading-tight) var(--font-body);
+  cursor: pointer;
+}
+
+.sdp-sidebar-layout__user-card button:hover:not(:disabled) {
+  border-color: var(--brand-500);
+  color: var(--ink-950);
+  background: var(--brand-500);
+}
+
+.sdp-sidebar-layout__user-card button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .sdp-sidebar-layout__avatar {
