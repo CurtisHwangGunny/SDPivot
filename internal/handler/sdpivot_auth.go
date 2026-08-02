@@ -263,7 +263,7 @@ func (h *SDPivotAuthHandler) Register(c *gin.Context) {
 	}
 
 	// Generate tokens
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, resolveUserRole(user), user.DepartmentID)
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, resolveUserRole(user), user.DepartmentID, user.MustChangePassword)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -347,7 +347,7 @@ func (h *SDPivotAuthHandler) Login(c *gin.Context) {
 
 	// Generate tokens
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, resolveUserRole(user), user.DepartmentID)
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, resolveUserRole(user), user.DepartmentID, user.MustChangePassword)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -411,7 +411,7 @@ func (h *SDPivotAuthHandler) RefreshToken(c *gin.Context) {
 
 	// Generate new tokens
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, resolveUserRole(user), user.DepartmentID)
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, resolveUserRole(user), user.DepartmentID, user.MustChangePassword)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return

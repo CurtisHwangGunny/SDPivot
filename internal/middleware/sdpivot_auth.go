@@ -100,6 +100,15 @@ func SDPivotAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 			return
 		}
 
+		if claims.MustChangePassword && !isMustChangePasswordAllowedPath(c.Request.URL.Path) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":   "must_change_password",
+				"message": "请先修改密码",
+			})
+			c.Abort()
+			return
+		}
+
 		// Ops-admin tokens are scoped to /ops APIs only. Normal SaaS APIs must not
 		// accept them, otherwise the operations plane and tenant plane are mixed.
 		if claims.Role == "ops_admin" && !isSDPivotOpsPath(c.Request.URL.Path) {
@@ -130,6 +139,16 @@ var sdPivotPublicPaths = map[string][]string{
 
 func isSDPivotOpsPath(path string) bool {
 	return strings.HasPrefix(path, "/api/v1/sdp/ops") || strings.HasPrefix(path, "/api/v1/smartknora/ops")
+}
+
+func isMustChangePasswordAllowedPath(path string) bool {
+	path = strings.TrimPrefix(path, "/api/v1/sdp")
+	path = strings.TrimPrefix(path, "/api/v1/smartknora")
+	switch path {
+	case "/auth/me", "/auth/change-password", "/auth/logout", "/auth/refresh":
+		return true
+	}
+	return false
 }
 
 func isSDPivotPublicPath(path string, method string) bool {

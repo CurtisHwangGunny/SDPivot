@@ -32,13 +32,53 @@ func TestSDPivotAuthRejectsInvalidAndExpiredTokens(t *testing.T) {
 
 	expiredConfig := config
 	expiredConfig.AccessExpiry = -time.Minute
-	expired, _, err := auth.NewJWTManager(expiredConfig).GenerateAccessToken("u1", 1, string(types.AccessRoleKnowledgeViewer), nil)
+	expired, _, err := auth.NewJWTManager(expiredConfig).GenerateAccessToken("u1", 1, string(types.AccessRoleKnowledgeViewer), nil, false)
 	require.NoError(t, err)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+expired)
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestSDPivotAuthEnforcesMustChangePasswordGate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	manager := auth.NewJWTManager(auth.DefaultJWTConfig("must-change-password-secret"))
+	mustChangeToken, _, err := manager.GenerateAccessToken("u1", 1, string(types.AccessRoleKnowledgeViewer), nil, true)
+	require.NoError(t, err)
+	normalToken, _, err := manager.GenerateAccessToken("u1", 1, string(types.AccessRoleKnowledgeViewer), nil, false)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name  string
+		path  string
+		token string
+		want  int
+	}{
+		{name: "blocks other API", path: "/api/v1/sdp/spaces", token: mustChangeToken, want: http.StatusForbidden},
+		{name: "allows current user", path: "/api/v1/sdp/auth/me", token: mustChangeToken, want: http.StatusOK},
+		{name: "allows password change", path: "/api/v1/sdp/auth/change-password", token: mustChangeToken, want: http.StatusOK},
+		{name: "allows logout", path: "/api/v1/sdp/auth/logout", token: mustChangeToken, want: http.StatusOK},
+		{name: "allows refresh", path: "/api/v1/sdp/auth/refresh", token: mustChangeToken, want: http.StatusOK},
+		{name: "allows compatibility prefix", path: "/api/v1/smartknora/auth/me", token: mustChangeToken, want: http.StatusOK},
+		{name: "normal token is unrestricted", path: "/api/v1/sdp/spaces", token: normalToken, want: http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := gin.New()
+			r.Use(SDPivotAuth(manager))
+			r.Handle(http.MethodGet, tt.path, func(c *gin.Context) { c.Status(http.StatusOK) })
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req.Header.Set("Authorization", "Bearer "+tt.token)
+			r.ServeHTTP(w, req)
+			assert.Equal(t, tt.want, w.Code)
+			if tt.want == http.StatusForbidden {
+				assert.JSONEq(t, `{"error":"must_change_password","message":"请先修改密码"}`, w.Body.String())
+			}
+		})
+	}
 }
 
 func TestRequirePermissionEnforcesViewerAndEditorBoundaries(t *testing.T) {

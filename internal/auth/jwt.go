@@ -34,12 +34,13 @@ func DefaultJWTConfig(secretKey string) JWTConfig {
 // AccessClaims represents the JWT claims for access tokens.
 type AccessClaims struct {
 	jwt.RegisteredClaims
-	UserID       string  `json:"sub"`
-	TenantID     uint64  `json:"tenant_id"`
-	Role         string  `json:"role"`
-	DepartmentID *string `json:"department_id,omitempty"`
-	Scope        string  `json:"scope"` // "access"
-	JTI          string  `json:"jti"`
+	UserID             string  `json:"sub"`
+	TenantID           uint64  `json:"tenant_id"`
+	Role               string  `json:"role"`
+	DepartmentID       *string `json:"department_id,omitempty"`
+	MustChangePassword bool    `json:"must_change_password"`
+	Scope              string  `json:"scope"` // "access"
+	JTI                string  `json:"jti"`
 }
 
 // JWTManager handles JWT token generation and validation.
@@ -54,7 +55,7 @@ func NewJWTManager(config JWTConfig) *JWTManager {
 
 // GenerateAccessToken creates a signed JWT access token.
 // Returns the token string and the JTI (token ID) for revocation.
-func (m *JWTManager) GenerateAccessToken(userID string, tenantID uint64, role string, departmentID *string) (tokenString string, jti string, err error) {
+func (m *JWTManager) GenerateAccessToken(userID string, tenantID uint64, role string, departmentID *string, mustChangePassword bool) (tokenString string, jti string, err error) {
 	jti = "at_" + uuid.New().String()
 	now := time.Now()
 
@@ -67,12 +68,13 @@ func (m *JWTManager) GenerateAccessToken(userID string, tenantID uint64, role st
 			Audience:  jwt.ClaimStrings{m.config.Audience},
 			ID:        jti,
 		},
-		UserID:       userID,
-		TenantID:     tenantID,
-		Role:         role,
-		DepartmentID: departmentID,
-		Scope:        "access",
-		JTI:          jti,
+		UserID:             userID,
+		TenantID:           tenantID,
+		Role:               role,
+		DepartmentID:       departmentID,
+		MustChangePassword: mustChangePassword,
+		Scope:              "access",
+		JTI:                jti,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
