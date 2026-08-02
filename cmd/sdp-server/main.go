@@ -27,6 +27,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/router"
 	"github.com/Tencent/WeKnora/internal/types"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 func main() {
@@ -206,13 +207,21 @@ const (
 func initializeOPAdminFromEnv(db *gorm.DB) error {
 	email := strings.TrimSpace(os.Getenv(opAdminEmailEnv))
 	password := os.Getenv(opAdminPasswordEnv)
-	if email == "" {
-		if email != "" || password != "" {
-			return fmt.Errorf("%s and %s must be configured together", opAdminEmailEnv, opAdminPasswordEnv)
-		}
+	legacyEmail := strings.TrimSpace(os.Getenv(opSysAdminEmailEnv))
+	legacyPassword := os.Getenv(opSysAdminPasswordEnv)
+	if legacyEmail != "" || legacyPassword != "" {
+		log.Printf("WARN: %s and %s are deprecated; use %s and %s instead", opSysAdminEmailEnv, opSysAdminPasswordEnv, opAdminEmailEnv, opAdminPasswordEnv)
 	}
-	if password != "" && len(password) < 8 {
-		return fmt.Errorf("%s must be at least 8 characters", opAdminPasswordEnv)
+	if email == "" && password == "" {
+		email, password = legacyEmail, legacyPassword
+	}
+	if (email == "") != (password == "") {
+		return fmt.Errorf("%s and %s must be configured together", opAdminEmailEnv, opAdminPasswordEnv)
+	}
+	if password != "" {
+		if err := validateBootstrapAdminPassword(password); err != nil {
+			return fmt.Errorf("invalid %s: %w", opAdminPasswordEnv, err)
+		}
 	}
 
 	now := time.Now()
@@ -257,6 +266,7 @@ func initializeOPAdminFromEnv(db *gorm.DB) error {
 					IsSystemAdmin:       true,
 					AccessRole:          types.AccessRoleSuperAdmin,
 					IsOpsAdmin:          true,
+					MustChangePassword:  true,
 					PasswordChangedAt:   &now,
 					CreatedAt:           now,
 					UpdatedAt:           now,
@@ -267,6 +277,9 @@ func initializeOPAdminFromEnv(db *gorm.DB) error {
 			case err != nil:
 				return fmt.Errorf("load OP administrator: %w", err)
 			default:
+				if user.AccessRole == types.AccessRoleSuperAdmin {
+					break
+				}
 				updates := map[string]interface{}{
 					"tenant_id":              types.DefaultTenantID,
 					"is_active":              true,
@@ -274,6 +287,7 @@ func initializeOPAdminFromEnv(db *gorm.DB) error {
 					"is_system_admin":        true,
 					"access_role":            types.AccessRoleSuperAdmin,
 					"is_ops_admin":           true,
+					"must_change_password":   true,
 					"deleted_at":             nil,
 					"updated_at":             now,
 				}
@@ -419,6 +433,13 @@ func initializeOPAdminFromEnv(db *gorm.DB) error {
 			return fmt.Errorf("link canonical organization spaces: %w", err)
 		}
 		return nil
+	})
+}
+
+func validateBootstrapAdminPassword(password string) error {
+	return secutils.ValidatePasswordPolicy(password, secutils.PasswordPolicy{
+		MinLength:         8,
+		RequireComplexity: true,
 	})
 }
 

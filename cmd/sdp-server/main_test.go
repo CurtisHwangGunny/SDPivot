@@ -298,6 +298,7 @@ func TestInitializeOPAdminFromEnvCreatesAndRepairsIdempotently(t *testing.T) {
 	require.True(t, user.IsSystemAdmin)
 	require.False(t, user.CanAccessAllTenants)
 	require.Equal(t, types.AccessRoleSuperAdmin, user.AccessRole)
+	require.True(t, user.MustChangePassword)
 	require.NoError(t, bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("ValidPass!123")))
 	originalHash := user.PasswordHash
 
@@ -380,6 +381,32 @@ func requireStringValue(t *testing.T, value *string) string {
 	return *value
 }
 
+func TestValidateBootstrapAdminPassword(t *testing.T) {
+	tests := []struct {
+		name     string
+		password string
+		wantErr  bool
+	}{
+		{name: "valid", password: "ValidPass!123"},
+		{name: "too short", password: "Aa1!aaa", wantErr: true},
+		{name: "missing uppercase", password: "validpass!123", wantErr: true},
+		{name: "missing lowercase", password: "VALIDPASS!123", wantErr: true},
+		{name: "missing digit", password: "ValidPassword!", wantErr: true},
+		{name: "missing special", password: "ValidPass123", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateBootstrapAdminPassword(tt.password)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestInitializeOPAdminFromEnvRepairsExistingPasswordAndTenant(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
@@ -401,5 +428,7 @@ func TestInitializeOPAdminFromEnvRepairsExistingPasswordAndTenant(t *testing.T) 
 	require.Equal(t, types.DefaultTenantID, user.TenantID)
 	require.True(t, user.IsActive && user.IsOpsAdmin && user.IsSystemAdmin)
 	require.False(t, user.CanAccessAllTenants)
+	require.Equal(t, types.AccessRoleSuperAdmin, user.AccessRole)
+	require.True(t, user.MustChangePassword)
 	require.NoError(t, bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("NewPass!123")))
 }
