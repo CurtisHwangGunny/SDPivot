@@ -190,7 +190,7 @@ func ensureSDPivotSchema(db *gorm.DB) error {
 	}
 	for _, model := range models {
 		if err := db.AutoMigrate(model); err != nil {
-			return fmt.Errorf("auto-migrate %T: %w", model, err)
+			log.Printf("WARN: auto-migrate %T: %v", model, err)
 		}
 	}
 	return nil
