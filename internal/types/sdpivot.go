@@ -250,7 +250,7 @@ type JoinOrgRequest struct {
 type CreateSpaceRequest struct {
 	Name        string `json:"name" binding:"required,max=255"`
 	Description string `json:"description"`
-	Visibility  string `json:"visibility" binding:"omitempty,oneof=private team org"`
+	Visibility  string `json:"visibility" binding:"omitempty,oneof=private team org enterprise"`
 	Icon        string `json:"icon"`
 	OrgID       string `json:"org_id"`
 }
