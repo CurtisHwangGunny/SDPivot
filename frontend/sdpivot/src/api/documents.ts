@@ -28,6 +28,14 @@ export function listDocuments(params: { space_id?: string; parse_status?: string
   return client.get<{ documents: Document[]; total: number; page: number; page_size: number }>('/documents', { params })
 }
 
+export function uploadDocument(data: { space_id: string; file: File; tags?: string }) {
+  const form = new FormData()
+  form.append('space_id', data.space_id)
+  form.append('file', data.file)
+  if (data.tags) form.append('tags', data.tags)
+  return client.post('/documents/upload', form)
+}
+
 export function getDocument(id: string) {
   return client.get<{ document: Document }>(`/documents/${id}`)
 }

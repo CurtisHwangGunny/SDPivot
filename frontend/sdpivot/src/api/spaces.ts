@@ -22,6 +22,10 @@ export function getSpace(id: string) {
   return client.get<Space>(`/spaces/${id}`)
 }
 
+export function updateSpace(id: string, data: Partial<Pick<Space, 'name' | 'description' | 'visibility'>>) {
+  return client.put(`/spaces/${id}`, data)
+}
+
 export function deleteSpace(id: string) {
   return client.delete(`/spaces/${id}`)
 }
