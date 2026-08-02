@@ -347,7 +347,23 @@ func (h *SDPivotDocumentHandler) ReparseDocument(c *gin.Context) {
 		return
 	}
 
-	content, err := h.loadDocumentContent(c.Request.Context(), doc)
+	var content []byte
+	var err error
+	if doc.FilePath == "" {
+		var chunks []types.SDPivotDocumentChunk
+		err = tenantDB.Where("document_id = ? AND tenant_id = ?", doc.ID, doc.TenantID).
+			Order("chunk_index").
+			Find(&chunks).Error
+		if err == nil {
+			parts := make([]string, 0, len(chunks))
+			for _, chunk := range chunks {
+				parts = append(parts, chunk.Content)
+			}
+			content = []byte(strings.Join(parts, "\n"))
+		}
+	} else {
+		content, err = h.loadDocumentContent(c.Request.Context(), doc)
+	}
 	if err != nil {
 		tenantDB.Model(doc).Updates(map[string]interface{}{
 			"parse_status": "failed",

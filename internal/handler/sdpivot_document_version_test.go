@@ -57,6 +57,7 @@ func serveSDPivotDocumentRequest(t *testing.T, db *gorm.DB, uploadDir string, te
 	router.POST("/documents/upload", h.UploadDocument)
 	router.POST("/documents/manual", h.UploadManualDocument)
 	router.POST("/documents/url", h.UploadFromURL)
+	router.POST("/documents/:id/reparse", h.ReparseDocument)
 
 	req := httptest.NewRequest(method, path, body)
 	if contentType != "" {
@@ -147,6 +148,42 @@ func TestUploadManualDocumentCreatesInitialVersionWithRequestTenant(t *testing.T
 	}
 	if version.FileSize != doc.FileSize {
 		t.Fatalf("expected version size %d, got %d", doc.FileSize, version.FileSize)
+	}
+}
+
+func TestReparseManualDocumentUsesStoredChunks(t *testing.T) {
+	db := newSDPivotDocumentTestDB(t)
+	tenantID := uint64(61)
+	doc := types.SDPivotDocument{
+		ID:          "manual-doc",
+		TenantID:    tenantID,
+		SpaceID:     "space-1",
+		Title:       "manual document",
+		FileType:    ".md",
+		ParseStatus: "completed",
+	}
+	if err := db.Create(&doc).Error; err != nil {
+		t.Fatalf("create manual document: %v", err)
+	}
+	chunks := []types.SDPivotDocumentChunk{
+		{ID: "chunk-1", DocumentID: doc.ID, TenantID: tenantID, ChunkIndex: 0, Content: "first section"},
+		{ID: "chunk-2", DocumentID: doc.ID, TenantID: tenantID, ChunkIndex: 1, Content: "second section"},
+	}
+	if err := db.Create(&chunks).Error; err != nil {
+		t.Fatalf("create stored chunks: %v", err)
+	}
+
+	response := serveSDPivotDocumentRequest(t, db, t.TempDir(), tenantID, http.MethodPost, "/documents/manual-doc/reparse", bytes.NewBuffer(nil), "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", response.Code, response.Body.String())
+	}
+
+	var reparsed []types.SDPivotDocumentChunk
+	if err := db.Where("document_id = ?", doc.ID).Order("chunk_index").Find(&reparsed).Error; err != nil {
+		t.Fatalf("load reparsed chunks: %v", err)
+	}
+	if len(reparsed) != 1 || reparsed[0].Content != "first section second section" {
+		t.Fatalf("unexpected reparsed chunks: %#v", reparsed)
 	}
 }
 
