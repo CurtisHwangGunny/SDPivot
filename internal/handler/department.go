@@ -8,6 +8,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/service"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,9 @@ func (h *DepartmentHandler) List(c *gin.Context) {
 		h.writeError(c, err, "failed to list departments")
 		return
 	}
+	if types.NormalizeAccessRole(middleware.GetRole(c)) == types.AccessRoleDepartmentAdmin {
+		departments = filterDepartmentScope(departments, middleware.GetDepartmentID(c))
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": departments})
 }
 
@@ -44,7 +48,42 @@ func (h *DepartmentHandler) Tree(c *gin.Context) {
 		h.writeError(c, err, "failed to load department tree")
 		return
 	}
+	if types.NormalizeAccessRole(middleware.GetRole(c)) == types.AccessRoleDepartmentAdmin {
+		tree = filterDepartmentTreeScope(tree, middleware.GetDepartmentID(c))
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": tree})
+}
+
+func filterDepartmentScope(departments []*types.Department, rootID string) []*types.Department {
+	children := make(map[string][]string, len(departments))
+	byID := make(map[string]*types.Department, len(departments))
+	for _, department := range departments {
+		children[department.ParentID] = append(children[department.ParentID], department.ID)
+		byID[department.ID] = department
+	}
+	if byID[rootID] == nil {
+		return []*types.Department{}
+	}
+	ids := []string{rootID}
+	result := make([]*types.Department, 0)
+	for index := 0; index < len(ids); index++ {
+		id := ids[index]
+		result = append(result, byID[id])
+		ids = append(ids, children[id]...)
+	}
+	return result
+}
+
+func filterDepartmentTreeScope(tree []*types.DepartmentTreeNode, rootID string) []*types.DepartmentTreeNode {
+	for _, node := range tree {
+		if node.ID == rootID {
+			return []*types.DepartmentTreeNode{node}
+		}
+		if scoped := filterDepartmentTreeScope(node.Children, rootID); len(scoped) > 0 {
+			return scoped
+		}
+	}
+	return []*types.DepartmentTreeNode{}
 }
 
 func (h *DepartmentHandler) Get(c *gin.Context) {

@@ -121,6 +121,9 @@ func SDPivotAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 		c.Set("user_id", claims.UserID)
 		c.Set("tenant_id", claims.TenantID)
 		c.Set("role", claims.Role)
+		if claims.DepartmentID != nil {
+			c.Set("department_id", *claims.DepartmentID)
+		}
 		c.Set("jti", claims.JTI)
 
 		c.Next()
@@ -189,6 +192,16 @@ func GetRole(c *gin.Context) string {
 	if v, ok := c.Get("role"); ok {
 		if role, ok := v.(string); ok {
 			return role
+		}
+	}
+	return ""
+}
+
+// GetDepartmentID extracts department_id from the authenticated user's JWT.
+func GetDepartmentID(c *gin.Context) string {
+	if v, ok := c.Get("department_id"); ok {
+		if id, ok := v.(string); ok {
+			return id
 		}
 	}
 	return ""

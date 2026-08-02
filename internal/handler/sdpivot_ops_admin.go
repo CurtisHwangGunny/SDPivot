@@ -114,6 +114,48 @@ func parsePagination(c *gin.Context) (int, int) {
 	return page, pageSize
 }
 
+func departmentScopeIDs(db *gorm.DB, tenantID uint64, rootID string) ([]string, error) {
+	rootID = strings.TrimSpace(rootID)
+	if rootID == "" || tenantID == 0 {
+		return nil, nil
+	}
+
+	var departments []types.Department
+	if err := db.Select("id, parent_id").Where("tenant_id = ?", tenantID).Find(&departments).Error; err != nil {
+		return nil, err
+	}
+	children := make(map[string][]string, len(departments))
+	foundRoot := false
+	for _, department := range departments {
+		children[department.ParentID] = append(children[department.ParentID], department.ID)
+		if department.ID == rootID {
+			foundRoot = true
+		}
+	}
+	if !foundRoot {
+		return nil, nil
+	}
+
+	ids := []string{rootID}
+	for index := 0; index < len(ids); index++ {
+		ids = append(ids, children[ids[index]]...)
+	}
+	return ids, nil
+}
+
+func (h *SDPivotOpsAdminHandler) departmentAdminScope(c *gin.Context) ([]string, bool) {
+	ids, err := departmentScopeIDs(h.db, middleware.GetTenantID(c), middleware.GetDepartmentID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load department scope"})
+		return nil, false
+	}
+	if len(ids) == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "department scope is not available"})
+		return nil, false
+	}
+	return ids, true
+}
+
 // ── Dashboard ──────────────────────────────────────────────
 
 func (h *SDPivotOpsAdminHandler) GetOpsDashboard(c *gin.Context) {
@@ -293,6 +335,13 @@ func (h *SDPivotOpsAdminHandler) ListUsers(c *gin.Context) {
 		Joins("LEFT JOIN smartknora_user_profiles p ON p.user_id = users.id").
 		Joins("LEFT JOIN departments d ON d.id = users.department_id AND d.deleted_at IS NULL").
 		Where("users.deleted_at IS NULL")
+	if types.NormalizeAccessRole(middleware.GetRole(c)) == types.AccessRoleDepartmentAdmin {
+		departmentIDs, ok := h.departmentAdminScope(c)
+		if !ok {
+			return
+		}
+		q = q.Where("users.tenant_id = ? AND users.department_id IN ?", middleware.GetTenantID(c), departmentIDs)
+	}
 
 	if search != "" {
 		q = q.Where("users.username ILIKE ? OR users.email ILIKE ? OR p.phone ILIKE ?", "%"+search+"%", "%"+search+"%", "%"+search+"%")
@@ -331,15 +380,40 @@ func (h *SDPivotOpsAdminHandler) UpdateUserRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "role must be super_admin, department_admin, knowledge_editor, or knowledge_viewer"})
 		return
 	}
+	callerRole := types.NormalizeAccessRole(middleware.GetRole(c))
+	if callerRole == types.AccessRoleDepartmentAdmin && req.Role != types.AccessRoleKnowledgeEditor && req.Role != types.AccessRoleKnowledgeViewer {
+		c.JSON(http.StatusForbidden, gin.H{"error": "department admins may only assign knowledge_editor or knowledge_viewer"})
+		return
+	}
 
 	var user types.User
-	if err := h.db.Select("id, tenant_id").Where("id = ?", userID).First(&user).Error; err != nil {
+	if err := h.db.Select("id, tenant_id, department_id").Where("id = ?", userID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load user"})
 		}
 		return
+	}
+	if callerRole == types.AccessRoleDepartmentAdmin {
+		departmentIDs, ok := h.departmentAdminScope(c)
+		if !ok {
+			return
+		}
+		inScope := user.TenantID == middleware.GetTenantID(c) && user.DepartmentID != nil
+		if inScope {
+			inScope = false
+			for _, departmentID := range departmentIDs {
+				if *user.DepartmentID == departmentID {
+					inScope = true
+					break
+				}
+			}
+		}
+		if !inScope {
+			c.JSON(http.StatusForbidden, gin.H{"error": "user is outside the department scope"})
+			return
+		}
 	}
 
 	var departmentID *string
@@ -359,6 +433,8 @@ func (h *SDPivotOpsAdminHandler) UpdateUserRole(c *gin.Context) {
 			return
 		}
 		departmentID = &id
+	} else if callerRole == types.AccessRoleDepartmentAdmin {
+		departmentID = user.DepartmentID
 	}
 
 	updates := map[string]interface{}{

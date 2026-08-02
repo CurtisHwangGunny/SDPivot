@@ -81,6 +81,25 @@ func TestSDPivotAuthEnforcesMustChangePasswordGate(t *testing.T) {
 	}
 }
 
+func TestSDPivotAuthSetsDepartmentID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	manager := auth.NewJWTManager(auth.DefaultJWTConfig("department-scope-secret"))
+	departmentID := "engineering"
+	token, _, err := manager.GenerateAccessToken("u1", 7, string(types.AccessRoleDepartmentAdmin), &departmentID, false)
+	require.NoError(t, err)
+
+	r := gin.New()
+	r.GET("/protected", SDPivotAuth(manager), func(c *gin.Context) {
+		assert.Equal(t, departmentID, GetDepartmentID(c))
+		c.Status(http.StatusOK)
+	})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestRequirePermissionEnforcesViewerAndEditorBoundaries(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -16,6 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 )
 
 type stubDepartmentService struct {
@@ -53,9 +54,20 @@ func (s *stubDepartmentService) Delete(ctx context.Context, tenantID uint64, id 
 }
 
 func departmentTestRouter(svc interfaces.DepartmentService) *gin.Engine {
+	return departmentTestRouterWithContext(svc, "", "")
+}
+
+func departmentTestRouterWithContext(svc interfaces.DepartmentService, role, departmentID string) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
+	if role != "" {
+		r.Use(func(c *gin.Context) {
+			c.Set("role", role)
+			c.Set("department_id", departmentID)
+			c.Next()
+		})
+	}
 	h := NewDepartmentHandler(svc)
 	r.GET("/tenants/:id/departments", h.List)
 	r.GET("/tenants/:id/departments/tree", h.Tree)
@@ -64,6 +76,27 @@ func departmentTestRouter(svc interfaces.DepartmentService) *gin.Engine {
 	r.PUT("/tenants/:id/departments/:department_id", h.Update)
 	r.DELETE("/tenants/:id/departments/:department_id", h.Delete)
 	return r
+}
+
+func TestDepartmentAdminSeesOnlyDepartmentScope(t *testing.T) {
+	departments := []*types.Department{
+		{ID: "engineering", TenantID: 42, Name: "Engineering"},
+		{ID: "platform", TenantID: 42, ParentID: "engineering", Name: "Platform"},
+		{ID: "sales", TenantID: 42, Name: "Sales"},
+	}
+	svc := &stubDepartmentService{list: func(context.Context, uint64) ([]*types.Department, error) {
+		return departments, nil
+	}}
+	r := departmentTestRouterWithContext(svc, string(types.AccessRoleDepartmentAdmin), "engineering")
+	w := departmentRequest(t, r, http.MethodGet, "/tenants/42/departments", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var response struct {
+		Data []*types.Department `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.Len(t, response.Data, 2)
+	require.Equal(t, []string{"engineering", "platform"}, []string{response.Data[0].ID, response.Data[1].ID})
 }
 
 func departmentRequest(t *testing.T, r http.Handler, method, path string, body any) *httptest.ResponseRecorder {
