@@ -13,7 +13,7 @@ func TestValidateAccessTokenRejectsInvalidAndExpiredTokens(t *testing.T) {
 	config := DefaultJWTConfig("phase4-secret")
 	manager := NewJWTManager(config)
 
-	valid, _, err := manager.GenerateAccessToken("u1", 7, "knowledge_viewer")
+	valid, _, err := manager.GenerateAccessToken("u1", 7, "knowledge_viewer", nil)
 	require.NoError(t, err)
 	claims, err := manager.ValidateAccessToken(valid)
 	require.NoError(t, err)
@@ -24,10 +24,23 @@ func TestValidateAccessTokenRejectsInvalidAndExpiredTokens(t *testing.T) {
 
 	expiredConfig := config
 	expiredConfig.AccessExpiry = -time.Minute
-	expired, _, err := NewJWTManager(expiredConfig).GenerateAccessToken("u1", 7, "knowledge_viewer")
+	expired, _, err := NewJWTManager(expiredConfig).GenerateAccessToken("u1", 7, "knowledge_viewer", nil)
 	require.NoError(t, err)
 	_, err = manager.ValidateAccessToken(expired)
 	assert.Error(t, err)
+}
+
+func TestAccessTokenIncludesDepartmentID(t *testing.T) {
+	manager := NewJWTManager(DefaultJWTConfig("department-secret"))
+	departmentID := "department-1"
+
+	token, _, err := manager.GenerateAccessToken("u1", 7, "department_admin", &departmentID)
+	require.NoError(t, err)
+
+	claims, err := manager.ValidateAccessToken(token)
+	require.NoError(t, err)
+	require.NotNil(t, claims.DepartmentID)
+	assert.Equal(t, departmentID, *claims.DepartmentID)
 }
 
 func TestValidateAccessTokenRejectsWrongScopeAndAlgorithm(t *testing.T) {

@@ -32,7 +32,7 @@ func TestSDPivotAuthRejectsInvalidAndExpiredTokens(t *testing.T) {
 
 	expiredConfig := config
 	expiredConfig.AccessExpiry = -time.Minute
-	expired, _, err := auth.NewJWTManager(expiredConfig).GenerateAccessToken("u1", 1, string(types.AccessRoleKnowledgeViewer))
+	expired, _, err := auth.NewJWTManager(expiredConfig).GenerateAccessToken("u1", 1, string(types.AccessRoleKnowledgeViewer), nil)
 	require.NoError(t, err)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)

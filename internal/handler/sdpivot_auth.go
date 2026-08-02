@@ -189,15 +189,13 @@ func (h *SDPivotAuthHandler) Register(c *gin.Context) {
 	// Create WeKnora User
 	now := time.Now()
 	user := types.User{
-		ID:             "",
-		Username:       req.Phone,
-		Email:          req.Email,
-		PasswordHash:   string(hash),
-		IsActive:       true,
-		TrialStartedAt: &now,
-		TrialPhase:     "30day",
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:           "",
+		Username:     req.Phone,
+		Email:        req.Email,
+		PasswordHash: string(hash),
+		IsActive:     true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	if user.Username == "" {
 		user.Username = req.Email
@@ -219,17 +217,6 @@ func (h *SDPivotAuthHandler) Register(c *gin.Context) {
 		Business:    "sdpivot",
 		CreatedAt:   now,
 		UpdatedAt:   now,
-	}
-
-	nowOrg := time.Now()
-	trialExpiresAt := nowOrg.Add(30 * 24 * time.Hour)
-	org := types.Organization{
-		ID:         uuid.New().String(),
-		Name:       "默认组织",
-		OwnerID:    user.ID,
-		InviteCode: generateInviteCode(),
-		CreatedAt:  nowOrg,
-		UpdatedAt:  nowOrg,
 	}
 
 	var phone *string
@@ -261,42 +248,11 @@ func (h *SDPivotAuthHandler) Register(c *gin.Context) {
 			return err
 		}
 		user.TenantID = types.DefaultTenantID
-		org.OwnerTenantID = types.DefaultTenantID
 
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
-		if err := tx.Create(&types.TenantMember{
-			UserID:    user.ID,
-			TenantID:  types.DefaultTenantID,
-			Role:      types.TenantRoleOwner,
-			Status:    types.TenantMemberStatusActive,
-			JoinedAt:  now,
-			CreatedAt: now,
-			UpdatedAt: now,
-		}).Error; err != nil {
-			return err
-		}
-		if err := tx.Create(&org).Error; err != nil {
-			return err
-		}
-		if err := tx.Create(&types.OrgExt{
-			OrgID:         org.ID,
-			TenantID:      types.DefaultTenantID,
-			AuthStatus:    "trial",
-			AuthExpiresAt: &trialExpiresAt,
-			CreatedAt:     nowOrg,
-			UpdatedAt:     nowOrg,
-		}).Error; err != nil {
-			return err
-		}
-		if err := tx.Create(&types.SDPivotOrgMember{
-			OrgID:    org.ID,
-			UserID:   user.ID,
-			Role:     "owner",
-			Status:   "active",
-			JoinedAt: nowOrg,
-		}).Error; err != nil {
+		if err := tx.Model(&user).UpdateColumn("trial_phase", "").Error; err != nil {
 			return err
 		}
 		return tx.Create(&profile).Error
@@ -307,7 +263,7 @@ func (h *SDPivotAuthHandler) Register(c *gin.Context) {
 	}
 
 	// Generate tokens
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, h.resolveUserRole(user.ID))
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, resolveUserRole(user), user.DepartmentID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -391,7 +347,7 @@ func (h *SDPivotAuthHandler) Login(c *gin.Context) {
 
 	// Generate tokens
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, h.resolveUserRole(user.ID))
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, resolveUserRole(user), user.DepartmentID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -455,7 +411,7 @@ func (h *SDPivotAuthHandler) RefreshToken(c *gin.Context) {
 
 	// Generate new tokens
 	now := time.Now()
-	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, h.resolveUserRole(user.ID))
+	accessToken, _, err := h.jwtManager.GenerateAccessToken(user.ID, types.DefaultTenantID, resolveUserRole(user), user.DepartmentID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -529,16 +485,13 @@ func generateUUID() string {
 }
 
 // resolveUserRole determines the product role embedded in the JWT.
-func (h *SDPivotAuthHandler) resolveUserRole(userID string) string {
-	var user types.User
-	if err := h.db.Select("is_system_admin, is_ops_admin").Where("id = ?", userID).First(&user).Error; err == nil && (user.IsSystemAdmin || user.IsOpsAdmin) {
+func resolveUserRole(user types.User) string {
+	if user.IsSystemAdmin || user.IsOpsAdmin {
 		return string(types.AccessRoleSuperAdmin)
 	}
-	if err := h.db.Select("access_role").Where("id = ?", userID).First(&user).Error; err == nil {
-		role := types.NormalizeAccessRole(string(user.AccessRole))
-		if role.IsValid() {
-			return string(role)
-		}
+	role := types.NormalizeAccessRole(string(user.AccessRole))
+	if role.IsValid() {
+		return string(role)
 	}
 	return string(types.AccessRoleKnowledgeViewer)
 }

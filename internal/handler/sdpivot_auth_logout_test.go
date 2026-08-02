@@ -42,7 +42,7 @@ func callSDPivotLogout(t *testing.T, handler *SDPivotAuthHandler, body []byte, b
 func TestSDPivotLogoutAcceptsEmptyBodyAndRevokesBearerSession(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler, db, manager := newSDPivotLogoutHandler(t)
-	accessToken, _, err := manager.GenerateAccessToken("user-1", types.DefaultTenantID, string(types.AccessRoleKnowledgeViewer))
+	accessToken, _, err := manager.GenerateAccessToken("user-1", types.DefaultTenantID, string(types.AccessRoleKnowledgeViewer), nil)
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&types.RefreshToken{
 		UserID: "user-1", TokenHash: auth.HashRefreshToken("refresh-1"), Family: "family-1",

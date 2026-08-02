@@ -63,6 +63,19 @@ func TestSDPivotRegistrationUsesCanonicalOPTenant(t *testing.T) {
 	require.NoError(t, db.First(&tenant, types.DefaultTenantID).Error)
 	require.Equal(t, "SDPivot", tenant.Name)
 	require.Equal(t, "SDPivot OP tenant", tenant.Description)
+	require.Nil(t, user.TrialStartedAt)
+	require.Empty(t, user.TrialPhase)
+
+	for name, model := range map[string]any{
+		"tenant memberships":   &types.TenantMember{},
+		"organizations":        &types.Organization{},
+		"organization auth":    &types.OrgExt{},
+		"organization members": &types.SDPivotOrgMember{},
+	} {
+		var count int64
+		require.NoError(t, db.Model(model).Count(&count).Error, name)
+		require.Zero(t, count, name)
+	}
 }
 
 func TestSDPivotLoginEmitsLocalOPClaimsWithoutSaaSBypass(t *testing.T) {
@@ -92,6 +105,15 @@ func TestSDPivotLoginEmitsLocalOPClaimsWithoutSaaSBypass(t *testing.T) {
 			user:     types.User{TenantID: types.DefaultTenantID, AccessRole: types.AccessRoleKnowledgeViewer},
 			wantRole: types.AccessRoleKnowledgeViewer,
 		},
+		{
+			name:  "department administrator",
+			email: "department-admin@example.com",
+			user: types.User{
+				TenantID: types.DefaultTenantID, AccessRole: types.AccessRoleDepartmentAdmin,
+				DepartmentID: func() *string { value := "department-1"; return &value }(),
+			},
+			wantRole: types.AccessRoleDepartmentAdmin,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hash, err := bcrypt.GenerateFromPassword([]byte("ValidPass!123"), bcrypt.DefaultCost)
@@ -119,6 +141,7 @@ func TestSDPivotLoginEmitsLocalOPClaimsWithoutSaaSBypass(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, types.DefaultTenantID, claims.TenantID)
 			require.Equal(t, string(tc.wantRole), claims.Role)
+			require.Equal(t, user.DepartmentID, claims.DepartmentID)
 
 			parsed, _, err := jwt.NewParser().ParseUnverified(response.AccessToken, jwt.MapClaims{})
 			require.NoError(t, err)
