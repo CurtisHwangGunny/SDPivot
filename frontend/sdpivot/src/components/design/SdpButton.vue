@@ -155,6 +155,13 @@ function handleClick(event: MouseEvent) {
   justify-content: center;
 }
 
+@media (max-width: 639px) {
+  .sdp-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 @keyframes sdp-button-spin {
   to {
     transform: rotate(360deg);
