@@ -2,7 +2,7 @@ import type { RouteRecordRaw } from 'vue-router'
 
 const redesignRoutes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('@/views/design/LoginPage.vue'), meta: { requiresAuth: false } },
-  { path: '/register', component: () => import('@/views/design/RegisterPage.vue'), meta: { requiresAuth: false } },
+  { path: '/register', redirect: '/login' },
   { path: '/org', component: () => import('@/views/design/OrgManagementPage.vue') },
   { path: '/settings', component: () => import('@/views/design/PersonalSettingsPage.vue') },
   { path: '/spaces', name: 'spaces', component: () => import('@/views/design/SpaceHomePage.vue') },
