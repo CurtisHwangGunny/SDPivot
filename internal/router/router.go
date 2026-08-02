@@ -230,7 +230,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterCustomAgentRoutes(v1, params.CustomAgentHandler, rbacGuards)
 		RegisterUserFavoriteRoutes(v1, params.UserFavoriteHandler, rbacGuards)
 		RegisterSkillRoutes(v1, params.SkillHandler, rbacGuards)
-		RegisterOrganizationRoutes(v1, params.OrganizationHandler, rbacGuards)
+		RegisterOrganizationRoutes(v1, params.OrganizationHandler, rbacGuards, params.Config)
 		RegisterIMChannelRoutes(v1, params.IMHandler, rbacGuards)
 		RegisterEmbedChannelRoutes(v1, params.EmbedChannelHandler, rbacGuards)
 		RegisterDataSourceRoutes(v1, params.DataSourceHandler, params.DataSourceCredentialsHandler, rbacGuards)
@@ -1091,9 +1091,14 @@ func RegisterSkillRoutes(r *gin.RouterGroup, skillHandler *handler.SkillHandler,
 }
 
 // RegisterOrganizationRoutes registers organization and sharing routes
-func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.OrganizationHandler, g *rbacGuards) {
+func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.OrganizationHandler, g *rbacGuards, cfg *config.Config) {
 	// Organization routes
 	orgs := r.Group("/organizations")
+	if cfg != nil && cfg.Product != nil && cfg.Product.OPMode {
+		orgs.Use(func(c *gin.Context) {
+			c.AbortWithStatus(http.StatusNotFound)
+		})
+	}
 	{
 		// Create organization (Admin+ in caller's tenant only)
 		orgs.POST("", g.Admin(), orgHandler.CreateOrganization)
