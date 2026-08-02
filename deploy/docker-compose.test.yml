@@ -25,7 +25,7 @@ services:
       SYSTEM_AES_KEY: ${SDP_SYSTEM_AES_KEY:-}
       GIN_MODE: release
     volumes:
-      - "${SDP_UPLOAD_DIR:-/tmp/sdpivot-uploads}:/tmp/sdpivot-uploads"
+      - op-sdp-files:/tmp/sdpivot-uploads
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 30s
@@ -53,6 +53,10 @@ services:
     depends_on:
       sdp-backend:
         condition: service_healthy
+
+volumes:
+  op-sdp-files:
+    external: true
 
 networks:
   weknora_WeKnora-network:
