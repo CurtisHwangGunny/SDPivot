@@ -15,6 +15,7 @@ const [
   spacesSource,
   qaSource,
   settingsSource,
+  authStoreSource,
 ] = await Promise.all([
   readSource('../src/views/design/LoginPage.vue'),
   readSource('../src/layouts/design/SdpSidebarLayout.vue'),
@@ -26,6 +27,7 @@ const [
   readSource('../src/views/design/SpaceHomePage.vue'),
   readSource('../src/views/design/QAWorkspacePage.vue'),
   readSource('../src/views/design/PersonalSettingsPage.vue'),
+  readSource('../src/stores/auth.ts'),
 ])
 
 test('login methods use equal native tab targets with a 40px minimum height', () => {
@@ -41,6 +43,13 @@ test('redesign sidebar exposes a local-first logout action', () => {
     assert.equal(sidebarSource.includes(marker), true, `missing logout marker: ${marker}`)
   }
   assert.match(sidebarSource, /\.sdp-sidebar-layout__user-card button \{[\s\S]*?min-height: var\(--space-8\)/)
+})
+
+test('auth store derives admin access from RBAC v2.0 access_role', () => {
+  assert.match(authStoreSource, /const isAdmin = computed\(\(\) => \['super_admin', 'department_admin'\]\.includes\(user\.value\?\.access_role\)\)/)
+  assert.match(authStoreSource, /const isSuperAdmin = computed\(\(\) => user\.value\?\.access_role === 'super_admin'\)/)
+  assert.match(authStoreSource, /return \{[^}]*isAdmin, isSuperAdmin,/)
+  assert.doesNotMatch(authStoreSource, /is_system_admin|is_ops_admin/)
 })
 
 test('personal settings uses the redesign sidebar logout layout', () => {

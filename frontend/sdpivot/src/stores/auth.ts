@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { STORAGE_KEYS } from '../utils/storage'
 
 function loadStoredUser() {
@@ -43,6 +43,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const isLoggedIn = () => !!token.value
+  const isAdmin = computed(() => ['super_admin', 'department_admin'].includes(user.value?.access_role))
+  const isSuperAdmin = computed(() => user.value?.access_role === 'super_admin')
 
-  return { token, refreshToken, user, setAuth, clearAuth, clearOpsAuth, isLoggedIn }
+  return { token, refreshToken, user, isAdmin, isSuperAdmin, setAuth, clearAuth, clearOpsAuth, isLoggedIn }
 })

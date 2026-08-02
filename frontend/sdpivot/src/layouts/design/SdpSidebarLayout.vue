@@ -93,7 +93,7 @@
           <span class="sdp-sidebar-layout__avatar" aria-hidden="true">{{ userInitial }}</span>
           <span class="sdp-sidebar-layout__user-copy">
             <strong>{{ userName }}</strong>
-            <span>{{ mode === 'admin' || user?.is_system_admin || user?.is_ops_admin ? '管理员' : '成员' }}</span>
+            <span>{{ roleLabel }}</span>
           </span>
         </div>
         <button type="button" aria-label="退出登录" :disabled="loggingOut" @click="handleLogout">
@@ -153,6 +153,11 @@ const navigationItems = computed(() => props.mode === 'admin' ? adminNavigation 
 const user = computed(() => authStore.user)
 const userName = computed(() => authStore.user?.nickname || authStore.user?.username || '当前用户')
 const userInitial = computed(() => String(userName.value).trim().charAt(0).toUpperCase() || 'U')
+const roleLabel = computed(() => {
+  if (user.value?.access_role === 'super_admin') return '超级管理员'
+  if (user.value?.access_role === 'department_admin') return '部门管理员'
+  return '成员'
+})
 
 function isItemActive(item: NavigationItem) {
   return item.exact ? route.path === item.path : route.path === item.path || route.path.startsWith(`${item.path}/`)

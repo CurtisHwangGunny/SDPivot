@@ -18,8 +18,8 @@
       <template #is_active="{ row }">
         <t-tag :theme="row.is_active ? 'success' : 'danger'" size="small">{{ row.is_active ? '正常' : '禁用' }}</t-tag>
       </template>
-      <template #is_ops_admin="{ row }">
-        <t-tag :theme="row.is_ops_admin ? 'primary' : 'default'" size="small">{{ row.is_ops_admin ? '运营管理员' : '普通用户' }}</t-tag>
+      <template #access_role="{ row }">
+        <t-tag :theme="isAdminRole(row.access_role) ? 'primary' : 'default'" size="small">{{ roleLabel(row.access_role) }}</t-tag>
       </template>
       <template #created_at="{ row }">
         {{ formatDate(row.created_at) }}
@@ -95,7 +95,7 @@ interface UserRow {
   phone: string
   nickname: string
   is_active: boolean
-  is_ops_admin: boolean
+  access_role: string
   created_at: string
 }
 
@@ -126,7 +126,7 @@ const userColumns = [
   { colKey: 'email', title: '邮箱', width: 200, ellipsis: true },
   { colKey: 'phone', title: '手机号', width: 140 },
   { colKey: 'is_active', title: '状态', width: 80 },
-  { colKey: 'is_ops_admin', title: '角色', width: 110 },
+  { colKey: 'access_role', title: '角色', width: 110 },
   { colKey: 'created_at', title: '注册时间', width: 170 },
   { colKey: 'operation', title: '操作', width: 80 },
 ]
@@ -239,6 +239,16 @@ async function submitImport() {
 function formatDate(value: string) {
   if (!value) return '-'
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
+}
+
+function isAdminRole(role: string) {
+  return role === 'super_admin' || role === 'department_admin'
+}
+
+function roleLabel(role: string) {
+  if (role === 'super_admin') return '超级管理员'
+  if (role === 'department_admin') return '部门管理员'
+  return '成员'
 }
 
 function formatFileSize(bytes: number) {
