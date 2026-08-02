@@ -34,6 +34,7 @@ require (
 	github.com/larksuite/oapi-sdk-go/v3 v3.6.1
 	github.com/longbridgeapp/opencc v0.3.13
 	github.com/mark3labs/mcp-go v0.52.0
+	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/milvus-io/milvus/client/v2 v2.6.4
 	github.com/minio/minio-go/v7 v7.1.0
 	github.com/mmcdole/gofeed v1.3.0
@@ -226,7 +227,6 @@ require (
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
-	github.com/mattn/go-sqlite3 v1.14.24 // indirect
 	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.15 // indirect
 	github.com/milvus-io/milvus/pkg/v2 v2.6.7-0.20251201120310-af64f2acba38 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
