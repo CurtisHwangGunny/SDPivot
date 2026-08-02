@@ -125,8 +125,11 @@ func (h *SDPivotDocumentHandler) UploadDocument(c *gin.Context) {
 	ext := filepath.Ext(header.Filename)
 	savePath := filepath.Join(h.uploadDir, tenantIDStr(tenantID), docID+ext)
 	if err := os.MkdirAll(filepath.Dir(savePath), 0755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare upload directory"})
-		return
+		savePath = filepath.Join(os.TempDir(), "sdpivot-uploads", tenantIDStr(tenantID), docID+ext)
+		if err := os.MkdirAll(filepath.Dir(savePath), 0755); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare upload directory", "detail": err.Error()})
+			return
+		}
 	}
 
 	dst, err := os.Create(savePath)
