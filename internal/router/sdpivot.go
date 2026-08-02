@@ -103,6 +103,11 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 	// Ops admin auth and anonymous announcement routes
 	opsHandler.RegisterPublicRoutes(sk)
 	opsAdminHandler.RegisterPublicOpsRoutes(sk)
+	if sr.product.OPMode {
+		orgs := sk.Group("/organizations")
+		orgs.Any("", handler.OPFeatureDisabled)
+		orgs.Any("/*path", handler.OPFeatureDisabled)
+	}
 
 	// Protected routes (require JWT)
 	protected := sk.Group("")
@@ -122,7 +127,9 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 		})
 
 		// Organization management
-		orgHandler.RegisterRoutes(protected)
+		if !sr.product.OPMode {
+			orgHandler.RegisterRoutes(protected)
+		}
 
 		// Knowledge space management
 		spaceHandler.RegisterRoutes(protected)

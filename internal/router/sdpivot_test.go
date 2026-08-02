@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -8,7 +9,10 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func newSDPivotTestEngine(t *testing.T, product *config.ProductConfig) *gin.Engine {
@@ -128,5 +132,94 @@ func TestSDPivotOPModeDisablesSaaSOpsRoutes(t *testing.T) {
 		if response.Code != http.StatusNotFound {
 			t.Errorf("%s %s status = %d, want 404", route.method, path, response.Code)
 		}
+		assertOPFeatureDisabledResponse(t, response)
+	}
+}
+
+func TestSDPivotOPModeDisablesOrganizationsBeforeValidationAndWrites(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:sdpivot-op-disabled?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&types.Organization{}); err != nil {
+		t.Fatal(err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	NewSDPivotRouter(SDPivotRouterParams{
+		DB:     db,
+		Config: &config.Config{Product: &config.ProductConfig{Brand: "sdpivot", OPMode: true}},
+	}).RegisterRoutes(r)
+
+	for _, test := range []struct {
+		path string
+		body string
+	}{
+		{path: "/api/v1/sdp/organizations", body: `{"name":"must-not-exist"}`},
+		{path: "/api/v1/sdp/organizations/join", body: `{"invite_code":"should-not-be-validated"}`},
+	} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+		request.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Errorf("POST %s status = %d, want 404", test.path, response.Code)
+		}
+		assertOPFeatureDisabledResponse(t, response)
+	}
+
+	var count int64
+	if err := db.Model(&types.Organization{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("organization count = %d, want 0", count)
+	}
+}
+
+func TestOPDisabledFeatureMiddlewareRunsBeforeDownstreamHandlers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(opDisabledFeatureMiddleware())
+	downstreamCalls := 0
+	r.Any("/*path", func(c *gin.Context) {
+		downstreamCalls++
+		c.Status(http.StatusTeapot)
+	})
+
+	for _, test := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodPost, path: "/api/v1/organizations"},
+		{method: http.MethodPost, path: "/api/v1/sdp/organizations/join"},
+		{method: http.MethodPost, path: "/api/v1/sdp/ops/refresh"},
+		{method: http.MethodGet, path: "/api/v1/sdp/ops/config/trial"},
+		{method: http.MethodGet, path: "/api/v1/sdp/ops/announcements"},
+	} {
+		response := httptest.NewRecorder()
+		r.ServeHTTP(response, httptest.NewRequest(test.method, test.path, strings.NewReader(`{"invalid":`)))
+		if response.Code != http.StatusNotFound {
+			t.Errorf("%s %s status = %d, want 404", test.method, test.path, response.Code)
+		}
+		assertOPFeatureDisabledResponse(t, response)
+	}
+	if downstreamCalls != 0 {
+		t.Fatalf("downstream calls = %d, want 0", downstreamCalls)
+	}
+}
+
+func assertOPFeatureDisabledResponse(t *testing.T, response *httptest.ResponseRecorder) {
+	t.Helper()
+	var payload struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode disabled response: %v", err)
+	}
+	if payload.Code != "FEATURE_DISABLED" || payload.Message != "feature is disabled in OP edition" {
+		t.Fatalf("disabled response = %#v", payload)
 	}
 }

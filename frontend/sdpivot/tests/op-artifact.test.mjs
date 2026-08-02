@@ -60,4 +60,8 @@ test('OP artifact contains only the main HTML entry and no operations code', asy
     assert.equal(text.includes(marker), false, `unexpected operations marker: ${marker}`)
   }
   assert.equal(/(?:^|["'`])\/ops(?:[\/"'`?#]|$)/m.test(text), false, 'unexpected /ops route literal')
+  for (const marker of ['/organizations', 'OrgManagementPage', 'OrgPage', '创建组织', '加入企业', '企业管理']) {
+    assert.equal(text.includes(marker), false, `unexpected organization marker: ${marker}`)
+  }
+  assert.equal(/(?:^|["'`])\/org(?:[\/"'`?#]|$)/m.test(text), false, 'unexpected /org route literal')
 })

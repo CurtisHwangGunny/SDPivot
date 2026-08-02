@@ -160,6 +160,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 	// Web embed 公开路由（使用 publish token 鉴权，不走全局 Auth）
 	RegisterEmbedPublicRoutes(r, params.EmbedChannelHandler, params.EmbedChannelService, params.TenantService, params.RedisClient, params.FileService)
+	if isOPMode(params.Config) {
+		r.Use(opDisabledFeatureMiddleware())
+		registerOPDisabledOrganizationRoutes(r.Group("/api/v1"))
+	}
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.Config))
@@ -1093,13 +1097,8 @@ func RegisterSkillRoutes(r *gin.RouterGroup, skillHandler *handler.SkillHandler,
 // RegisterOrganizationRoutes registers organization and sharing routes
 func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.OrganizationHandler, g *rbacGuards, cfg *config.Config) {
 	// Organization routes
-	orgs := r.Group("/organizations")
-	if cfg != nil && cfg.Product != nil && cfg.Product.OPMode {
-		orgs.Use(func(c *gin.Context) {
-			c.AbortWithStatus(http.StatusNotFound)
-		})
-	}
-	{
+	if !isOPMode(cfg) {
+		orgs := r.Group("/organizations")
 		// Create organization (Admin+ in caller's tenant only)
 		orgs.POST("", g.Admin(), orgHandler.CreateOrganization)
 		// List my organizations — Viewer+ floor so revoked/non-member
@@ -1213,6 +1212,62 @@ func RegisterOrganizationRoutes(r *gin.RouterGroup, orgHandler *handler.Organiza
 	// 影响整个租户在会话下拉里看到的 agent 列表。任何 Viewer 改这个表就
 	// 等于替整个租户做决定 — 必须 Admin+ 才允许调整。
 	r.POST("/shared-agents/disabled", g.Admin(), orgHandler.SetSharedAgentDisabledByMe)
+}
+
+func isOPMode(cfg *config.Config) bool {
+	return cfg != nil && cfg.Product != nil && cfg.Product.OPMode
+}
+
+func registerOPDisabledOrganizationRoutes(r *gin.RouterGroup) {
+	orgs := r.Group("/organizations")
+	orgs.Any("", handler.OPFeatureDisabled)
+	orgs.Any("/*path", handler.OPFeatureDisabled)
+}
+
+func opDisabledFeatureMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if isDisabledOPOrganizationPath(path) || isDisabledOPOpsPath(c.Request.Method, path) {
+			handler.OPFeatureDisabled(c)
+			return
+		}
+		c.Next()
+	}
+}
+
+func isDisabledOPOrganizationPath(path string) bool {
+	for _, prefix := range []string{
+		"/api/v1/organizations",
+		"/api/v1/sdp/organizations",
+		"/api/v1/smartknora/organizations",
+	} {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func isDisabledOPOpsPath(method, path string) bool {
+	for _, prefix := range []string{"/api/v1/sdp", "/api/v1/smartknora"} {
+		suffix := strings.TrimPrefix(path, prefix)
+		if suffix == path {
+			continue
+		}
+		switch {
+		case method == http.MethodPost && suffix == "/ops/refresh":
+			return true
+		case (method == http.MethodGet || method == http.MethodPut) && suffix == "/ops/config/trial":
+			return true
+		case suffix == "/ops/announcements" && (method == http.MethodGet || method == http.MethodPost):
+			return true
+		case method == http.MethodGet && suffix == "/ops/announcements/active":
+			return true
+		case method == http.MethodDelete && strings.HasPrefix(suffix, "/ops/announcements/"):
+			return true
+		}
+	}
+	return false
 }
 
 // RegisterEmbedPublicRoutes registers anonymous embed endpoints secured by publish tokens.

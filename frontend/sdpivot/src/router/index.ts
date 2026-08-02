@@ -10,7 +10,9 @@ const mainChildren: RouteRecordRaw[] = [
   ...(!isOpBuild
     ? [{ path: 'ops', name: 'ops', component: () => import('@/views/ops/OpsPage.vue'), meta: { requiresOpsAuth: true } }]
     : []),
-  { path: 'org', name: 'org', component: () => import('@/views/org/OrgPage.vue') },
+  ...(!isOpBuild
+    ? [{ path: 'org', name: 'org', component: () => import('@/views/org/OrgPage.vue') }]
+    : []),
   { path: 'usage', name: 'usage', component: () => import('@/views/qa/UsagePage.vue') },
   { path: 'settings', name: 'settings', component: () => import('@/views/settings/SettingsPage.vue') },
 ]

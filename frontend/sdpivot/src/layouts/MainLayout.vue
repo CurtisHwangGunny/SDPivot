@@ -49,9 +49,9 @@
             <template #icon><t-icon name="control-platform" /></template>
             {{ operationsUi.label }}
           </t-menu-item>
-          <t-menu-item value="org">
+          <t-menu-item v-if="organizationUi" :value="organizationUi.menuValue">
             <template #icon><t-icon name="building" /></template>
-            企业管理
+            {{ organizationUi.label }}
           </t-menu-item>
           <t-menu-item value="usage">
             <template #icon><t-icon name="chart-bar" /></template>
@@ -108,6 +108,7 @@ const operationsUi = isOpBuild
       loginPath: '/ops-login',
       rootPath: '/ops',
     }
+const organizationUi = isOpBuild ? null : { menuValue: 'org', label: '企业管理' }
 
 const router = useRouter()
 const route = useRoute()
@@ -123,7 +124,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/writing')) return 'writing'
   if (path.startsWith('/admin')) return 'admin'
   if (operationsUi !== null && path.startsWith(operationsUi.rootPath)) return operationsUi.menuValue
-  if (path.startsWith('/org')) return 'org'
+  if (organizationUi !== null && path.startsWith('/org')) return organizationUi.menuValue
   if (path.startsWith('/usage')) return 'usage'
   if (path.startsWith('/settings')) return 'settings'
   return 'spaces'

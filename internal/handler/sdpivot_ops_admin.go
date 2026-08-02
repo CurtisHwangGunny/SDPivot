@@ -76,12 +76,12 @@ func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
 func (h *SDPivotOpsAdminHandler) RegisterPublicOpsRoutes(rg *gin.RouterGroup) {
 	if h.opMode {
 		ops := rg.Group("/ops")
-		ops.GET("/config/trial", notFound)
-		ops.PUT("/config/trial", notFound)
-		ops.POST("/announcements", notFound)
-		ops.GET("/announcements", notFound)
-		ops.DELETE("/announcements/:id", notFound)
-		ops.GET("/announcements/active", notFound)
+		ops.GET("/config/trial", OPFeatureDisabled)
+		ops.PUT("/config/trial", OPFeatureDisabled)
+		ops.POST("/announcements", OPFeatureDisabled)
+		ops.GET("/announcements", OPFeatureDisabled)
+		ops.DELETE("/announcements/:id", OPFeatureDisabled)
+		ops.GET("/announcements/active", OPFeatureDisabled)
 		return
 	}
 	ops := rg.Group("/ops")

@@ -32,15 +32,18 @@ func (h *SDPivotOpsHandler) RegisterPublicRoutes(rg *gin.RouterGroup) {
 	ops := rg.Group("/ops")
 	{
 		if h.opMode {
-			ops.POST("/refresh", notFound)
+			ops.POST("/refresh", OPFeatureDisabled)
 		} else {
 			ops.POST("/refresh", h.OpsRefreshToken)
 		}
 	}
 }
 
-func notFound(c *gin.Context) {
-	c.Status(http.StatusNotFound)
+func OPFeatureDisabled(c *gin.Context) {
+	c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+		"code":    "FEATURE_DISABLED",
+		"message": "feature is disabled in OP edition",
+	})
 }
 
 func (h *SDPivotOpsHandler) RegisterProtectedRoutes(rg *gin.RouterGroup) {
