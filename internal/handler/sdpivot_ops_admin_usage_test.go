@@ -13,7 +13,7 @@ import (
 
 func TestGetUsageStatsAggregatesByDateUserAndDepartment(t *testing.T) {
 	db, mock := newOpsAdminSQLMock(t)
-	h := NewSDPivotOpsAdminHandler(db)
+	h := NewSDPivotOpsAdminHandler(db, false)
 
 	mock.ExpectExec(regexp.QuoteMeta("SET LOCAL row_security = off")).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM \(SELECT 1 FROM token_usage tu LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL WHERE tu.created_at >= \$1 AND tu.created_at < \(\$2::date \+ INTERVAL '1 day'\) AND u.department_id = \$3 GROUP BY TO_CHAR\(tu.created_at, 'YYYY-MM-DD'\), tu.tenant_id, tu.user_id, u.department_id\) AS usage_groups`).
@@ -53,7 +53,7 @@ func TestGetUsageStatsAggregatesByDateUserAndDepartment(t *testing.T) {
 
 func TestExportUsageStatsWritesCSV(t *testing.T) {
 	db, mock := newOpsAdminSQLMock(t)
-	h := NewSDPivotOpsAdminHandler(db)
+	h := NewSDPivotOpsAdminHandler(db, false)
 
 	mock.ExpectExec(regexp.QuoteMeta("SET LOCAL row_security = off")).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(`SELECT\s+TO_CHAR\(tu.created_at, 'YYYY-MM-DD'\) AS date,.*FROM token_usage tu.*WHERE tu.user_id = \$1.*ORDER BY date DESC, total_tokens DESC, user_id ASC`).
@@ -83,7 +83,7 @@ func TestExportUsageStatsWritesCSV(t *testing.T) {
 
 func TestGetUsageStatsRejectsInvalidDateRange(t *testing.T) {
 	db, mock := newOpsAdminSQLMock(t)
-	h := NewSDPivotOpsAdminHandler(db)
+	h := NewSDPivotOpsAdminHandler(db, false)
 	mock.ExpectExec(regexp.QuoteMeta("SET LOCAL row_security = off")).WillReturnResult(sqlmock.NewResult(0, 0))
 
 	c, w := newOpsAdminContext(http.MethodGet, "/ops/usage-stats?start_date=2026-08-01&end_date=2026-07-01")

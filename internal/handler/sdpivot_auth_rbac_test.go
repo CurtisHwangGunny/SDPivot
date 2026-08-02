@@ -183,7 +183,7 @@ func TestSDPivotOpsDashboardAndStatisticsRequireLocalSuperAdmin(t *testing.T) {
 					c.Set("role", role)
 					c.Next()
 				})
-				NewSDPivotOpsAdminHandler(nil).RegisterOpsRoutes(r.Group(""))
+				NewSDPivotOpsAdminHandler(nil, false).RegisterOpsRoutes(r.Group(""))
 
 				w := httptest.NewRecorder()
 				r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))

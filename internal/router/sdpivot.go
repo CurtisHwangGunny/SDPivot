@@ -86,8 +86,8 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 	orgHandler := handler.NewSDPivotOrgHandler(sr.db)
 	spaceHandler := handler.NewSDPivotSpaceHandler(sr.db)
 	tokenHandler := handler.NewSDPivotTokenHandler(sr.db)
-	opsHandler := handler.NewSDPivotOpsHandler(sr.db, sr.jwtManager)
-	opsAdminHandler := handler.NewSDPivotOpsAdminHandler(sr.db)
+	opsHandler := handler.NewSDPivotOpsHandler(sr.db, sr.jwtManager, sr.product.OPMode)
+	opsAdminHandler := handler.NewSDPivotOpsAdminHandler(sr.db, sr.product.OPMode)
 
 	// Public routes (no auth required)
 	public := sk.Group("")

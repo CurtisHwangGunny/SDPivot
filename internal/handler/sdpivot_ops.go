@@ -19,19 +19,28 @@ import (
 type SDPivotOpsHandler struct {
 	db         *gorm.DB
 	jwtManager *auth.JWTManager
+	opMode     bool
 }
 
 // NewSDPivotOpsHandler creates a new ops handler.
-func NewSDPivotOpsHandler(db *gorm.DB, jwtManager *auth.JWTManager) *SDPivotOpsHandler {
-	return &SDPivotOpsHandler{db: db, jwtManager: jwtManager}
+func NewSDPivotOpsHandler(db *gorm.DB, jwtManager *auth.JWTManager, opMode bool) *SDPivotOpsHandler {
+	return &SDPivotOpsHandler{db: db, jwtManager: jwtManager, opMode: opMode}
 }
 
 // RegisterRoutes registers ops auth routes.
 func (h *SDPivotOpsHandler) RegisterPublicRoutes(rg *gin.RouterGroup) {
 	ops := rg.Group("/ops")
 	{
-		ops.POST("/refresh", h.OpsRefreshToken)
+		if h.opMode {
+			ops.POST("/refresh", notFound)
+		} else {
+			ops.POST("/refresh", h.OpsRefreshToken)
+		}
 	}
+}
+
+func notFound(c *gin.Context) {
+	c.Status(http.StatusNotFound)
 }
 
 func (h *SDPivotOpsHandler) RegisterProtectedRoutes(rg *gin.RouterGroup) {

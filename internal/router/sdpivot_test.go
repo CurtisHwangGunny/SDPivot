@@ -107,3 +107,26 @@ func TestSDPivotRepresentativeRoutes(t *testing.T) {
 		t.Fatalf("canonical health status = %d", response.Code)
 	}
 }
+
+func TestSDPivotOPModeDisablesSaaSOpsRoutes(t *testing.T) {
+	r := newSDPivotTestEngine(t, &config.ProductConfig{Brand: "sdpivot", OPMode: true})
+	for _, route := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/ops/refresh"},
+		{http.MethodGet, "/ops/config/trial"},
+		{http.MethodPut, "/ops/config/trial"},
+		{http.MethodPost, "/ops/announcements"},
+		{http.MethodGet, "/ops/announcements"},
+		{http.MethodDelete, "/ops/announcements/example"},
+		{http.MethodGet, "/ops/announcements/active"},
+	} {
+		path := "/api/v1/sdp" + route.path
+		response := httptest.NewRecorder()
+		r.ServeHTTP(response, httptest.NewRequest(route.method, path, nil))
+		if response.Code != http.StatusNotFound {
+			t.Errorf("%s %s status = %d, want 404", route.method, path, response.Code)
+		}
+	}
+}

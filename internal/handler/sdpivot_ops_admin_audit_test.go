@@ -40,7 +40,7 @@ func newOpsAdminContext(method, target string) (*gin.Context, *httptest.Response
 
 func TestGetOpsDashboardAllowsLocalSuperAdmin(t *testing.T) {
 	db, mock := newOpsAdminSQLMock(t)
-	h := NewSDPivotOpsAdminHandler(db)
+	h := NewSDPivotOpsAdminHandler(db, false)
 
 	mock.ExpectExec(regexp.QuoteMeta("SET LOCAL row_security = off")).WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "organizations" WHERE deleted_at IS NULL`).
@@ -69,7 +69,7 @@ func TestGetOpsDashboardAllowsLocalSuperAdmin(t *testing.T) {
 
 func TestGetAuditLogsReadsCoreFieldsAndFiltersActorUserID(t *testing.T) {
 	db, mock := newOpsAdminSQLMock(t)
-	h := NewSDPivotOpsAdminHandler(db)
+	h := NewSDPivotOpsAdminHandler(db, false)
 
 	mock.ExpectExec(regexp.QuoteMeta("SET LOCAL row_security = off")).WillReturnResult(sqlmock.NewResult(0, 0))
 	countSQL := `SELECT count\(\*\) FROM "audit_logs" WHERE COALESCE\(user_id, actor_user_id\) = \$1`
@@ -112,7 +112,7 @@ func TestGetAuditLogsReadsCoreFieldsAndFiltersActorUserID(t *testing.T) {
 
 func TestWriteAuditLogWritesActorAndLegacyUserID(t *testing.T) {
 	db, mock := newOpsAdminSQLMock(t)
-	h := NewSDPivotOpsAdminHandler(db)
+	h := NewSDPivotOpsAdminHandler(db, false)
 	c, _ := newOpsAdminContext(http.MethodPut, "/ops/users/target-9/status")
 	c.Set("user_id", "ops-user")
 	c.Set("tenant_id", uint64(7))

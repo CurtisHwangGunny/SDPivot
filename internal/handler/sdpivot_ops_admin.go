@@ -20,11 +20,12 @@ import (
 // SDPivotOpsAdminHandler handles operations admin management endpoints.
 // All endpoints require ops_admin role (PRD §0.1.4).
 type SDPivotOpsAdminHandler struct {
-	db *gorm.DB
+	db     *gorm.DB
+	opMode bool
 }
 
-func NewSDPivotOpsAdminHandler(db *gorm.DB) *SDPivotOpsAdminHandler {
-	return &SDPivotOpsAdminHandler{db: db}
+func NewSDPivotOpsAdminHandler(db *gorm.DB, opMode bool) *SDPivotOpsAdminHandler {
+	return &SDPivotOpsAdminHandler{db: db, opMode: opMode}
 }
 
 // RegisterOpsRoutes registers protected ops admin routes (requires ops_admin role).
@@ -46,14 +47,18 @@ func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
 		ops.GET("/audit-logs", h.GetAuditLogs)
 		ops.GET("/audit-logs/export", h.ExportAuditLogs)
 		ops.GET("/audit-log", h.GetAuditLogs) // compat alias
-		ops.POST("/announcements", h.CreateAnnouncement)
-		ops.GET("/announcements", h.ListAnnouncements)
-		ops.DELETE("/announcements/:id", h.DeleteAnnouncement)
+		if !h.opMode {
+			ops.POST("/announcements", h.CreateAnnouncement)
+			ops.GET("/announcements", h.ListAnnouncements)
+			ops.DELETE("/announcements/:id", h.DeleteAnnouncement)
+		}
 
 		// Config (PRD 4.1.3)
 		ops.GET("/config", h.ListConfigs)
-		ops.GET("/config/trial", h.GetTrialConfig)
-		ops.PUT("/config/trial", h.UpdateTrialConfig)
+		if !h.opMode {
+			ops.GET("/config/trial", h.GetTrialConfig)
+			ops.PUT("/config/trial", h.UpdateTrialConfig)
+		}
 		ops.GET("/config/sms", h.GetSMSConfig)
 		ops.PUT("/config/sms", h.UpdateSMSConfig)
 		ops.PUT("/config/:key", h.UpdateConfig)
@@ -69,6 +74,16 @@ func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
 
 // RegisterPublicOpsRoutes registers public ops routes (no auth required).
 func (h *SDPivotOpsAdminHandler) RegisterPublicOpsRoutes(rg *gin.RouterGroup) {
+	if h.opMode {
+		ops := rg.Group("/ops")
+		ops.GET("/config/trial", notFound)
+		ops.PUT("/config/trial", notFound)
+		ops.POST("/announcements", notFound)
+		ops.GET("/announcements", notFound)
+		ops.DELETE("/announcements/:id", notFound)
+		ops.GET("/announcements/active", notFound)
+		return
+	}
 	ops := rg.Group("/ops")
 	ops.GET("/announcements/active", h.GetActiveAnnouncements)
 }
