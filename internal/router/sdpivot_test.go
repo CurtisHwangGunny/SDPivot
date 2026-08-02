@@ -97,6 +97,9 @@ func TestSDPivotRepresentativeRoutes(t *testing.T) {
 			{http.MethodPost, "/ops/users"},
 			{http.MethodGet, "/ops/dashboard"},
 			{http.MethodGet, "/ops/announcements/active"},
+			{http.MethodGet, "/ops/usage-stats"},
+			{http.MethodGet, "/admin/tags"},
+			{http.MethodGet, "/auth/me"},
 		} {
 			if !hasRoute(r, route.method, prefix+route.path) {
 				t.Fatalf("missing route %s %s%s", route.method, prefix, route.path)
@@ -109,6 +112,21 @@ func TestSDPivotRepresentativeRoutes(t *testing.T) {
 	r.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("canonical health status = %d", response.Code)
+	}
+}
+
+func TestSDPivotCompatRoutesRequireJWT(t *testing.T) {
+	r := newSDPivotTestEngine(t, config.DefaultProductConfig())
+	for _, path := range []string{
+		"/api/v1/sdp/auth/me",
+		"/api/v1/sdp/admin/tags",
+		"/api/v1/sdp/ops/usage-stats",
+	} {
+		response := httptest.NewRecorder()
+		r.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("GET %s status = %d, want 401", path, response.Code)
+		}
 	}
 }
 

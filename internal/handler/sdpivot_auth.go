@@ -15,6 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/auth"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -43,6 +44,68 @@ func (h *SDPivotAuthHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		auth.POST("/refresh", h.RefreshToken)
 		auth.POST("/logout", h.Logout)
 	}
+}
+
+// RegisterProtectedRoutes registers authenticated user profile routes.
+func (h *SDPivotAuthHandler) RegisterProtectedRoutes(rg *gin.RouterGroup) {
+	rg.GET("/auth/me", h.GetCurrentUser)
+}
+
+// GetCurrentUser returns the authenticated user's non-sensitive profile.
+func (h *SDPivotAuthHandler) GetCurrentUser(c *gin.Context) {
+	db := middleware.TenantDB(c, h.db)
+	userID := middleware.GetUserID(c)
+	tenantID := middleware.GetTenantID(c)
+	type currentUser struct {
+		ID                 string           `json:"id"`
+		Username           string           `json:"username"`
+		Email              string           `json:"email"`
+		Avatar             string           `json:"avatar"`
+		TenantID           uint64           `json:"tenant_id"`
+		IsActive           bool             `json:"is_active"`
+		AccessRole         types.AccessRole `json:"access_role"`
+		DepartmentID       *string          `json:"department_id"`
+		DepartmentName     string           `json:"department_name"`
+		Phone              *string          `json:"phone"`
+		Nickname           string           `json:"nickname"`
+		MustChangePassword bool             `json:"must_change_password"`
+	}
+
+	schema := detectOpsUsageStatsSchema(db)
+	departmentName := "''"
+	joinDepartment := ""
+	if schema.HasDepartments {
+		departmentName = "COALESCE(d.name, '')"
+		joinDepartment = "LEFT JOIN departments d ON d.id = NULLIF(to_jsonb(u)->>'department_id', '') AND d.tenant_id = u.tenant_id AND d.deleted_at IS NULL"
+	}
+	var user currentUser
+	query := db.Table("users u").
+		Select(`u.id, u.username, u.email, u.avatar, u.tenant_id, u.is_active,
+			COALESCE(to_jsonb(u)->>'access_role', 'knowledge_viewer') AS access_role,
+			NULLIF(to_jsonb(u)->>'department_id', '') AS department_id,
+			` + departmentName + ` AS department_name,
+			p.phone, COALESCE(p.nickname, '') AS nickname,
+			COALESCE((to_jsonb(u)->>'must_change_password')::boolean, false) AS must_change_password`).
+		Joins("LEFT JOIN smartknora_user_profiles p ON p.user_id = u.id AND p.deleted_at IS NULL")
+	if joinDepartment != "" {
+		query = query.Joins(joinDepartment)
+	}
+	err := query.
+		Where("u.id = ? AND u.tenant_id = ? AND u.is_active = true AND u.deleted_at IS NULL", userID, tenantID).
+		Scan(&user).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load current user"})
+		return
+	}
+	if user.ID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found or inactive"})
+		return
+	}
+	user.AccessRole = types.NormalizeAccessRole(string(user.AccessRole))
+	if !user.AccessRole.IsValid() {
+		user.AccessRole = types.AccessRoleKnowledgeViewer
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "user": user})
 }
 
 // Register handles user registration via phone or email.

@@ -116,6 +116,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 	protected.Use(middleware.TokenMeteringMiddleware(sr.db))
 	{
 		// User profile
+		authHandler.RegisterProtectedRoutes(protected)
 		protected.GET("/profile", func(c *gin.Context) {
 			c.JSON(200, gin.H{"user_id": middleware.GetUserID(c)})
 		})

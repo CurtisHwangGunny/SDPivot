@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -45,7 +46,25 @@ func (h *SDPivotQAHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		admin.GET("/members", h.ListAllMembers)
 		admin.GET("/stats", h.GetAdminStats)
 		admin.GET("/spaces", h.ListAllSpaces)
+		admin.GET("/tags", h.ListTagDictionary)
 	}
+}
+
+// ListTagDictionary returns the shared platform classification dictionary.
+func (h *SDPivotQAHandler) ListTagDictionary(c *gin.Context) {
+	db := middleware.TenantDB(c, h.db)
+	dimensions, tags, err := repository.NewDocumentTagRepository(db).ListClassificationDictionary(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list tag dictionary"})
+		return
+	}
+	if dimensions == nil {
+		dimensions = make([]*types.TagDimension, 0)
+	}
+	if tags == nil {
+		tags = make([]*types.TagDictionary, 0)
+	}
+	c.JSON(http.StatusOK, gin.H{"dimensions": dimensions, "tags": tags})
 }
 
 // ListModels returns the active chat models visible to the current tenant.
@@ -216,19 +235,7 @@ func (h *SDPivotQAHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	sources := "[]"
-	sourceSet := map[string]struct{}{}
-	sourceList := []string{}
-	for _, chunk := range chunks {
-		if _, ok := sourceSet[chunk.DocumentID]; !ok {
-			sourceSet[chunk.DocumentID] = struct{}{}
-			sourceList = append(sourceList, chunk.DocumentID)
-		}
-	}
-	if len(sourceList) > 0 {
-		sourcesBytes, _ := json.Marshal(sourceList)
-		sources = string(sourcesBytes)
-	}
+	sources, retrievalStatus := buildSDPivotQASources(chunks)
 
 	systemPrompt := "你是 SDPivot 的企业知识库问答助手。请严格基于给定参考资料回答；如果参考资料不足，请说明缺少哪些信息。回答要准确、简洁，并优先使用中文。"
 	userPrompt := buildSDPivotQAPrompt(req.Content, chunks)
@@ -263,7 +270,34 @@ func (h *SDPivotQAHandler) SendMessage(c *gin.Context) {
 		"assistant_message": aiMsg,
 		"model_id":          llmResult.ModelID,
 		"model":             llmResult.ModelName,
+		"retrieval_status":  retrievalStatus,
 	})
+}
+
+func buildSDPivotQASources(chunks []types.SDPivotDocumentChunk) (string, string) {
+	if len(chunks) == 0 {
+		return "[]", "no_match"
+	}
+	sourceSet := make(map[string]struct{}, len(chunks))
+	sourceList := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		if chunk.DocumentID == "" {
+			continue
+		}
+		if _, exists := sourceSet[chunk.DocumentID]; exists {
+			continue
+		}
+		sourceSet[chunk.DocumentID] = struct{}{}
+		sourceList = append(sourceList, chunk.DocumentID)
+	}
+	if len(sourceList) == 0 {
+		return "[]", "no_match"
+	}
+	sources, err := json.Marshal(sourceList)
+	if err != nil {
+		return "[]", "no_match"
+	}
+	return string(sources), "matched"
 }
 
 func (h *SDPivotQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint64, userID string, spaceID string, query string, topK int) ([]types.SDPivotDocumentChunk, error) {
