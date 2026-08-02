@@ -228,16 +228,6 @@ function errorMessage(error: unknown, fallback: string) {
   return requestError.response?.data?.error || requestError.response?.data?.message || requestError.message || fallback
 }
 
-function extractUser(payload: unknown): UserProfile | null {
-  if (typeof payload !== 'object' || payload === null) return null
-  const response = payload as { user?: UserProfile; data?: unknown }
-  if (response.user) return response.user
-  if (typeof response.data !== 'object' || response.data === null) return null
-  const data = response.data as UserProfile & { user?: UserProfile }
-  if (data.user) return data.user
-  return data
-}
-
 function applyUser(user: UserProfile) {
   profile.name = user.nickname || user.name || user.username || ''
   profile.email = user.email || ''
@@ -253,46 +243,25 @@ function syncAuthUser(user: UserProfile) {
   })
 }
 
-async function loadProfile() {
+function loadProfile() {
   loading.value = true
   statusMessage.value = ''
-  try {
-    const response = await client.get('/auth/me')
-    const user = extractUser(response.data)
-    if (!user) throw new Error('接口未返回用户资料')
-    applyUser(user)
-    syncAuthUser(user)
-  } catch (error: unknown) {
-    if (authStore.user) applyUser(authStore.user)
-    showStatus(errorMessage(error, '个人资料加载失败，请稍后重试。'), 'danger')
-  } finally {
-    loading.value = false
-  }
+  if (authStore.user) applyUser(authStore.user)
+  loading.value = false
 }
 
-async function saveProfile() {
+function saveProfile() {
   if (!profile.name || !profile.email) {
     showStatus('请填写显示名称和邮箱。', 'warning')
     return
   }
   savingProfile.value = true
   statusMessage.value = ''
-  try {
-    const response = await client.put('/auth/me', {
-      name: profile.name,
-      nickname: profile.name,
-      email: profile.email,
-      phone: profile.phone,
-    })
-    const user = extractUser(response.data) || { ...profile, nickname: profile.name }
-    applyUser(user)
-    syncAuthUser(user)
-    showStatus('个人资料已保存。', 'success')
-  } catch (error: unknown) {
-    showStatus(errorMessage(error, '个人资料保存失败，请稍后重试。'), 'danger')
-  } finally {
-    savingProfile.value = false
-  }
+  const user = { ...profile, nickname: profile.name }
+  applyUser(user)
+  syncAuthUser(user)
+  savingProfile.value = false
+  showStatus('个人资料已保存。', 'success')
 }
 
 async function changePassword() {
@@ -307,7 +276,7 @@ async function changePassword() {
   changingPassword.value = true
   statusMessage.value = ''
   try {
-    await client.post('/auth/change-password', {
+    await client.put('/password', {
       old_password: password.oldPassword,
       new_password: password.newPassword,
     })
