@@ -16,14 +16,14 @@ func TestGetUsageStatsAggregatesByDateUserAndDepartment(t *testing.T) {
 	h := NewSDPivotOpsAdminHandler(db, false)
 
 	mock.ExpectExec(regexp.QuoteMeta("SET LOCAL row_security = off")).WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery(`SELECT count\(\*\) FROM \(SELECT 1 FROM token_usage tu LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL WHERE tu.created_at >= \$1 AND tu.created_at < \(\$2::date \+ INTERVAL '1 day'\) AND u.department_id = \$3 GROUP BY TO_CHAR\(tu.created_at, 'YYYY-MM-DD'\), tu.tenant_id, tu.user_id, u.department_id\) AS usage_groups`).
+	mock.ExpectQuery(`SELECT count\(\*\) FROM \(SELECT 1 FROM token_usage tu LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL WHERE tu.created_at >= \$1 AND tu.created_at < \(\$2::date \+ INTERVAL '1 day'\) AND u.department_id = \$3 GROUP BY TO_CHAR\(tu.created_at, 'YYYY-MM-DD'\), tu.tenant_id, tu.user_id, u.department_id\) AS usage_groups`).
 		WithArgs("2026-07-01", "2026-07-31", "dept-1").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(`SELECT\s+TO_CHAR\(tu.created_at, 'YYYY-MM-DD'\) AS date,\s+tu.tenant_id,\s+COALESCE\(tu.user_id, ''\) AS user_id,\s+COALESCE\(u.username, ''\) AS username,\s+COALESCE\(u.department_id, ''\) AS department_id,\s+COALESCE\(d.name, ''\) AS department_name,\s+COALESCE\(SUM\(tu.input_tokens\), 0\) AS prompt_tokens,\s+COALESCE\(SUM\(tu.output_tokens\), 0\) AS completion_tokens,\s+COALESCE\(SUM\(tu.input_tokens \+ tu.output_tokens\), 0\) AS total_tokens,\s+COUNT\(\*\) AS request_count FROM token_usage tu LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL WHERE tu.created_at >= \$1 AND tu.created_at < \(\$2::date \+ INTERVAL '1 day'\) AND u.department_id = \$3 GROUP BY TO_CHAR\(tu.created_at, 'YYYY-MM-DD'\), tu.tenant_id, tu.user_id, u.username, u.department_id, d.name ORDER BY date DESC, total_tokens DESC, user_id ASC LIMIT \$4`).
+	mock.ExpectQuery(`SELECT\s+TO_CHAR\(tu.created_at, 'YYYY-MM-DD'\) AS date,\s+tu.tenant_id,\s+COALESCE\(tu.user_id, ''\) AS user_id,\s+COALESCE\(u.username, ''\) AS username,\s+COALESCE\(u.department_id, ''\) AS department_id,\s+'' AS department_name,\s+COALESCE\(SUM\(tu.input_tokens\), 0\) AS prompt_tokens,\s+COALESCE\(SUM\(tu.output_tokens\), 0\) AS completion_tokens,\s+COALESCE\(SUM\(tu.input_tokens \+ tu.output_tokens\), 0\) AS total_tokens,\s+COUNT\(\*\) AS request_count FROM token_usage tu LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL WHERE tu.created_at >= \$1 AND tu.created_at < \(\$2::date \+ INTERVAL '1 day'\) AND u.department_id = \$3 GROUP BY TO_CHAR\(tu.created_at, 'YYYY-MM-DD'\), tu.tenant_id, tu.user_id, u.username, u.department_id ORDER BY date DESC, total_tokens DESC, user_id ASC LIMIT \$4`).
 		WithArgs("2026-07-01", "2026-07-31", "dept-1", 20).
 		WillReturnRows(sqlmock.NewRows([]string{"date", "tenant_id", "user_id", "username", "department_id", "department_name", "prompt_tokens", "completion_tokens", "total_tokens", "request_count"}).
-			AddRow("2026-07-24", 7, "user-1", "alice", "dept-1", "Research", 120, 30, 150, 2))
-	mock.ExpectQuery(`SELECT\s+COALESCE\(SUM\(tu.input_tokens\), 0\) AS total_prompt_tokens,\s+COALESCE\(SUM\(tu.output_tokens\), 0\) AS total_completion_tokens,\s+COALESCE\(SUM\(tu.input_tokens \+ tu.output_tokens\), 0\) AS total_tokens,\s+COUNT\(\*\) AS request_count FROM token_usage tu LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL WHERE tu.created_at >= \$1 AND tu.created_at < \(\$2::date \+ INTERVAL '1 day'\) AND u.department_id = \$3`).
+			AddRow("2026-07-24", 7, "user-1", "alice", "dept-1", "", 120, 30, 150, 2))
+	mock.ExpectQuery(`SELECT\s+COALESCE\(SUM\(tu.input_tokens\), 0\) AS total_prompt_tokens,\s+COALESCE\(SUM\(tu.output_tokens\), 0\) AS total_completion_tokens,\s+COALESCE\(SUM\(tu.input_tokens \+ tu.output_tokens\), 0\) AS total_tokens,\s+COUNT\(\*\) AS request_count FROM token_usage tu LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL WHERE tu.created_at >= \$1 AND tu.created_at < \(\$2::date \+ INTERVAL '1 day'\) AND u.department_id = \$3`).
 		WithArgs("2026-07-01", "2026-07-31", "dept-1").
 		WillReturnRows(sqlmock.NewRows([]string{"total_prompt_tokens", "total_completion_tokens", "total_tokens", "request_count"}).AddRow(120, 30, 150, 2))
 
@@ -42,6 +42,9 @@ func TestGetUsageStatsAggregatesByDateUserAndDepartment(t *testing.T) {
 	}
 	if body.Total != 1 || len(body.Stats) != 1 || body.Stats[0].TotalTokens != 150 {
 		t.Fatalf("unexpected usage response: %+v", body)
+	}
+	if body.Stats[0].DepartmentName != "" {
+		t.Fatalf("expected empty department name without departments table, got %q", body.Stats[0].DepartmentName)
 	}
 	if body.Summary["total_tokens"] != 150 || body.Summary["request_count"] != 2 {
 		t.Fatalf("unexpected usage summary: %+v", body.Summary)

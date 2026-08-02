@@ -453,8 +453,7 @@ func parseOpsUsageStatsQuery(c *gin.Context) (opsUsageStatsQuery, error) {
 
 func (h *SDPivotOpsAdminHandler) usageStatsQuery(query opsUsageStatsQuery) *gorm.DB {
 	q := h.db.Table("token_usage tu").
-		Joins("LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL").
-		Joins("LEFT JOIN departments d ON d.id = u.department_id AND d.deleted_at IS NULL")
+		Joins("LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL")
 	if query.StartDate != "" {
 		q = q.Where("tu.created_at >= ?", query.StartDate)
 	}
@@ -480,12 +479,12 @@ func selectOpsUsageStats(q *gorm.DB) *gorm.DB {
 		COALESCE(tu.user_id, '') AS user_id,
 		COALESCE(u.username, '') AS username,
 		COALESCE(u.department_id, '') AS department_id,
-		COALESCE(d.name, '') AS department_name,
+		'' AS department_name,
 		COALESCE(SUM(tu.input_tokens), 0) AS prompt_tokens,
 		COALESCE(SUM(tu.output_tokens), 0) AS completion_tokens,
 		COALESCE(SUM(tu.input_tokens + tu.output_tokens), 0) AS total_tokens,
 		COUNT(*) AS request_count`).
-		Group("TO_CHAR(tu.created_at, 'YYYY-MM-DD'), tu.tenant_id, tu.user_id, u.username, u.department_id, d.name")
+		Group("TO_CHAR(tu.created_at, 'YYYY-MM-DD'), tu.tenant_id, tu.user_id, u.username, u.department_id")
 }
 
 func (h *SDPivotOpsAdminHandler) GetUsageStats(c *gin.Context) {
