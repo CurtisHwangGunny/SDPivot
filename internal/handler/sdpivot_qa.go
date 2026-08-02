@@ -285,10 +285,20 @@ func (h *SDPivotQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint
 	if topK <= 0 || topK > 20 {
 		topK = 5
 	}
-	search := escapeQAQuery(query)
+	keywords := extractQAKeywords(query)
+	if len(keywords) == 0 {
+		return nil, nil
+	}
 	db := tenantDB.Model(&types.SDPivotDocumentChunk{}).
 		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
-		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ? AND document_chunks.content ILIKE ?", tenantID, "completed", "%"+search+"%")
+		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ?", tenantID, "completed")
+	orConditions := make([]string, 0, len(keywords))
+	orArgs := make([]interface{}, 0, len(keywords))
+	for _, keyword := range keywords {
+		orConditions = append(orConditions, "document_chunks.content ILIKE ?")
+		orArgs = append(orArgs, "%"+escapeQAQuery(keyword)+"%")
+	}
+	db = db.Where("("+strings.Join(orConditions, " OR ")+")", orArgs...)
 	if spaceID != "" {
 		db = db.Where("documents.space_id = ?", spaceID)
 	} else {
@@ -297,6 +307,63 @@ func (h *SDPivotQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint
 	var chunks []types.SDPivotDocumentChunk
 	err := db.Order("document_chunks.created_at DESC").Limit(topK).Find(&chunks).Error
 	return chunks, err
+}
+
+func extractQAKeywords(query string) []string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil
+	}
+
+	cleaned := strings.NewReplacer(
+		"？", " ", "?", " ", "。", " ", ".", " ",
+		"，", " ", ",", " ", "、", " ", "：", " ", ":", " ",
+		"的", " ", "了", " ", "是", " ", "在", " ",
+		"包含", " ", "包括", " ", "哪些", " ", "什么", " ",
+		"如何", " ", "怎么", " ", "请", " ", "根据", " ",
+		"知识库", " ", "回答", " ", "引用", " ",
+	).Replace(query)
+
+	keywords := make([]string, 0, 8)
+	seen := make(map[string]struct{})
+	add := func(keyword string) {
+		keyword = strings.TrimSpace(keyword)
+		if len([]rune(keyword)) < 2 {
+			return
+		}
+		if _, exists := seen[keyword]; exists {
+			return
+		}
+		seen[keyword] = struct{}{}
+		keywords = append(keywords, keyword)
+	}
+	for _, part := range strings.Fields(cleaned) {
+		add(part)
+		if len(keywords) == 8 {
+			return keywords
+		}
+	}
+	if len(keywords) > 0 {
+		return keywords
+	}
+
+	runes := []rune(query)
+	for i := 0; i+2 <= len(runes) && len(keywords) < 8; i++ {
+		ngram := string(runes[i : i+2])
+		if !isStopQANgram(ngram) {
+			add(ngram)
+		}
+	}
+	return keywords
+}
+
+func isStopQANgram(ngram string) bool {
+	switch ngram {
+	case "请根", "根据", "据知", "识库", "库回", "回答", "答请", "请引", "引用", "包含", "括哪", "哪些", "些内":
+		return true
+	default:
+		return false
+	}
 }
 
 func escapeQAQuery(input string) string {

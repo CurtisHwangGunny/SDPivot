@@ -2,10 +2,41 @@ package handler
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
+
+func TestExtractQAKeywordsPreservesMeaningfulChinesePhrase(t *testing.T) {
+	keywords := extractQAKeywords("客户成功经营包含哪些内容？")
+	if !slices.Contains(keywords, "客户成功经营") {
+		t.Fatalf("expected customer-success phrase, got %v", keywords)
+	}
+	if slices.Contains(keywords, "包含") || slices.Contains(keywords, "哪些") {
+		t.Fatalf("question words should be removed, got %v", keywords)
+	}
+}
+
+func TestExtractQAKeywordsFallsBackToMeaningfulBigrams(t *testing.T) {
+	keywords := extractQAKeywords("请根据知识库回答")
+	if !slices.Contains(keywords, "知识") {
+		t.Fatalf("expected meaningful bigram, got %v", keywords)
+	}
+	if slices.Contains(keywords, "根据") || slices.Contains(keywords, "回答") {
+		t.Fatalf("stop bigrams should be removed, got %v", keywords)
+	}
+}
+
+func TestExtractQAKeywordsEscapesAndBoundsTerms(t *testing.T) {
+	keywords := extractQAKeywords("one two three four five six seven eight nine 100%_match")
+	if len(keywords) != 8 {
+		t.Fatalf("expected bounded keyword count, got %d: %v", len(keywords), keywords)
+	}
+	if escaped := escapeQAQuery(`100%_match\\`); escaped != `100\%\_match\\\\` {
+		t.Fatalf("unexpected escaped query: %q", escaped)
+	}
+}
 
 func TestBuildSDPivotQASourcesMatched(t *testing.T) {
 	sources, status := buildSDPivotQASources([]types.SDPivotDocumentChunk{
