@@ -109,7 +109,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getUsageStats, type UsageStats } from '@/api/usage'
+import { getUsageSummary, type UsageStats } from '@/api/usage'
 import { SdpButton, SdpErrorState } from '@/components/design'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
 
@@ -148,8 +148,22 @@ async function loadUsageStats() {
   loading.value = true
   loadError.value = ''
   try {
-    const response = await getUsageStats()
-    stats.value = response.data
+    const response = await getUsageSummary()
+    const summary = response.data.summary
+    stats.value = {
+      ...emptyStats(),
+      tokens: {
+        total_tokens: summary.total_tokens,
+        by_person: summary.total_tokens > 0 ? [{
+          name: '当前用户',
+          prompt_tokens: summary.total_prompt_tokens,
+          completion_tokens: summary.total_completion_tokens,
+          total_tokens: summary.total_tokens,
+        }] : [],
+        by_department: [],
+      },
+      qa: { count: summary.request_count, avg_response_time: 0, satisfaction: 0 },
+    }
   } catch (error: unknown) {
     loadError.value = errorMessage(error, '无法获取用量统计，请稍后重试。')
   } finally {

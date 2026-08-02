@@ -41,12 +41,15 @@ export interface UsageStats {
   }
 }
 
-export function getUsageStats() {
-  return client.get<UsageStats>('/usage/stats')
+export interface UsageSummary {
+  total_prompt_tokens: number
+  total_completion_tokens: number
+  total_tokens: number
+  request_count: number
 }
 
 export function getUsageSummary(params?: { start_date?: string; end_date?: string }) {
-  return client.get('/usage/summary', { params })
+  return client.get<{ summary: UsageSummary }>('/usage/summary', { params })
 }
 
 export function getUsageHistory(params?: { page?: number; page_size?: number }) {
