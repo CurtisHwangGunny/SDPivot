@@ -67,7 +67,7 @@ func (h *SDPivotOpsHandler) OpsLogin(c *gin.Context) {
 
 	// Find ops admin user
 	var user types.User
-	if err := h.db.Where("email = ? AND is_ops_admin = true AND is_active = true", req.Email).First(&user).Error; err != nil {
+	if err := h.db.Where("email = ? AND access_role = ? AND is_active = true", req.Email, types.AccessRoleSuperAdmin).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
@@ -141,7 +141,7 @@ func (h *SDPivotOpsHandler) OpsRefreshToken(c *gin.Context) {
 		return
 	}
 	var user types.User
-	if err := h.db.Where("id = ? AND is_ops_admin = true AND is_active = true", rt.UserID).First(&user).Error; err != nil {
+	if err := h.db.Where("id = ? AND access_role = ? AND is_active = true", rt.UserID, types.AccessRoleSuperAdmin).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "ops admin not found"})
 		return
 	}
@@ -195,7 +195,7 @@ func (h *SDPivotOpsHandler) OpsChangePassword(c *gin.Context) {
 
 	// Find user
 	var user types.User
-	if err := h.db.Where("id = ? AND is_ops_admin = true", userID).First(&user).Error; err != nil {
+	if err := h.db.Where("id = ? AND access_role = ?", userID, types.AccessRoleSuperAdmin).First(&user).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
