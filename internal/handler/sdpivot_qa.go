@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -46,25 +45,7 @@ func (h *SDPivotQAHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		admin.GET("/members", h.ListAllMembers)
 		admin.GET("/stats", h.GetAdminStats)
 		admin.GET("/spaces", h.ListAllSpaces)
-		admin.GET("/tags", h.ListTagDictionary)
 	}
-}
-
-// ListTagDictionary returns the shared platform classification dictionary.
-func (h *SDPivotQAHandler) ListTagDictionary(c *gin.Context) {
-	db := middleware.TenantDB(c, h.db)
-	dimensions, tags, err := repository.NewDocumentTagRepository(db).ListClassificationDictionary(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list tag dictionary"})
-		return
-	}
-	if dimensions == nil {
-		dimensions = make([]*types.TagDimension, 0)
-	}
-	if tags == nil {
-		tags = make([]*types.TagDictionary, 0)
-	}
-	c.JSON(http.StatusOK, gin.H{"dimensions": dimensions, "tags": tags})
 }
 
 // ListModels returns the active chat models visible to the current tenant.

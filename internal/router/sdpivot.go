@@ -88,6 +88,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 	tokenHandler := handler.NewSDPivotTokenHandler(sr.db)
 	opsHandler := handler.NewSDPivotOpsHandler(sr.db, sr.jwtManager, sr.product.OPMode)
 	opsAdminHandler := handler.NewSDPivotOpsAdminHandler(sr.db, sr.product.OPMode)
+	adminHandler := handler.NewSDPivotAdminHandler(sr.db)
 
 	// Public routes (no auth required)
 	public := sk.Group("")
@@ -145,6 +146,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 		// AI Q&A + Admin
 		qaHandler := handler.NewSDPivotQAHandler(sr.db)
 		qaHandler.RegisterRoutes(protected)
+		adminHandler.RegisterRoutes(protected)
 
 		// AI Writing + Operations
 		writingHandler := handler.NewSDPivotWritingHandler(sr.db)
