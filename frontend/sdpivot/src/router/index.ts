@@ -1,8 +1,21 @@
 import { STORAGE_KEYS } from '../utils/storage'
+import { getRoleFromToken } from '../utils/jwt'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import redesignRoutes from './redesign'
 
 const isOpBuild = import.meta.env.MODE === 'op'
+
+const allAccessRoles = ['super_admin', 'department_admin', 'knowledge_editor', 'knowledge_viewer']
+const adminRouteRoles: Record<string, string[]> = {
+  '/admin': ['super_admin', 'department_admin'],
+  '/admin/people': ['super_admin', 'department_admin'],
+  '/admin/tags': allAccessRoles,
+  '/admin/models': ['super_admin'],
+  '/admin/security': ['super_admin'],
+  '/admin/departments': ['super_admin', 'department_admin'],
+  '/admin/audit': allAccessRoles,
+  '/admin/usage': ['super_admin', 'department_admin'],
+}
 
 const mainChildren: RouteRecordRaw[] = [
   ...(!isOpBuild
@@ -39,6 +52,10 @@ if (isOpBuild) {
     const token = localStorage.getItem(STORAGE_KEYS.accessToken)
     if (to.name === 'login' && token) return { name: 'spaces' }
     if (to.meta.requiresAuth !== false && !token) return { name: 'login' }
+    if (to.path === '/admin' || to.path.startsWith('/admin/')) {
+      const allowedRoles = adminRouteRoles[to.path]
+      if (!allowedRoles?.includes(getRoleFromToken())) return { name: 'spaces' }
+    }
     return true
   })
 } else {
