@@ -29,6 +29,11 @@ const redesignRoutes: RouteRecordRaw[] = [
   { path: '/admin', name: 'admin', component: () => import('@/views/design/AdminDashboardPage.vue') },
   { path: '/admin/people', name: 'adminPeople', component: () => import('@/views/design/PeopleListPage.vue') },
   { path: '/admin/tags', name: 'adminTags', component: () => import('@/views/design/TagDictionaryPage.vue') },
+  { path: '/admin/models', name: 'adminModels', component: () => import('@/views/design/ModelManagementPage.vue') },
+  { path: '/admin/security', name: 'adminSecurity', component: () => import('@/views/design/SecuritySettingsPage.vue') },
+  { path: '/admin/audit', name: 'adminAudit', component: () => import('@/views/design/AuditLogPage.vue') },
+  { path: '/admin/usage', name: 'adminUsage', component: () => import('@/views/design/AdminUsagePage.vue') },
+  { path: '/admin/departments', name: 'adminDepartments', component: () => import('@/views/design/DepartmentManagementPage.vue') },
 ]
 
 export default redesignRoutes
