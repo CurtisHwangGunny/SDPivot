@@ -1,5 +1,6 @@
 <template>
-  <main class="sdp-personal-settings">
+  <SdpSidebarLayout>
+    <div class="sdp-personal-settings">
     <div class="sdp-personal-settings__shell">
       <header class="sdp-personal-settings__header">
         <div>
@@ -164,7 +165,8 @@
         </section>
       </section>
     </div>
-  </main>
+    </div>
+  </SdpSidebarLayout>
 </template>
 
 <script setup lang="ts">
@@ -172,6 +174,7 @@ import { onMounted, reactive, ref } from 'vue'
 import client from '@/api/client'
 import { SdpButton, SdpNotice } from '@/components/design'
 import { type ThemeMode, useTheme } from '@/composables/useTheme'
+import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 
 type TabKey = 'profile' | 'appearance' | 'notifications'

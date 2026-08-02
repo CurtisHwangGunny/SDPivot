@@ -1,11 +1,24 @@
 import type { RouteRecordRaw } from 'vue-router'
+import client from '@/api/client'
 
 const isOpBuild = import.meta.env.MODE === 'op'
 
 const redesignRoutes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('@/views/design/LoginPage.vue'), meta: { requiresAuth: false } },
   { path: '/register', redirect: '/login' },
-  ...(!isOpBuild ? [{ path: '/org', component: () => import('@/views/design/OrgManagementPage.vue') }] : []),
+  ...(!isOpBuild ? [{
+    path: '/org',
+    component: () => import('@/views/design/OrgManagementPage.vue'),
+    beforeEnter: async () => {
+      try {
+        const response = await client.get<{ op_mode?: boolean }>('/health')
+        if (response.data.op_mode) return '/spaces'
+      } catch {
+        // Let the organization page render its normal API error state.
+      }
+      return true
+    },
+  }] : []),
   { path: '/settings', component: () => import('@/views/design/PersonalSettingsPage.vue') },
   { path: '/spaces', name: 'spaces', component: () => import('@/views/design/SpaceHomePage.vue') },
   { path: '/spaces/:id', name: 'spaceDetail', component: () => import('@/views/design/SpaceDetailPage.vue') },

@@ -47,3 +47,8 @@ test('redesign workspace detail routes are not shadowed by legacy main-layout ro
   assert.doesNotMatch(routerSource, /views\/spaces\/SpaceDetailPage\.vue/)
   assert.doesNotMatch(routerSource, /views\/spaces\/DocumentsPage\.vue/)
 })
+
+test('standard organization route redirects when the backend reports OP mode', () => {
+  assert.match(redesignRouterSource, /client\.get<\{ op_mode\?: boolean \}>\('\/health'\)/)
+  assert.match(redesignRouterSource, /if \(response\.data\.op_mode\) return '\/spaces'/)
+})

@@ -178,9 +178,10 @@
         </t-message>
 
         <div class="sdp-login__agreement">
-          <t-checkbox v-model="agreed" aria-label="同意服务协议和隐私政策">
-            我已阅读并同意
-          </t-checkbox>
+          <label class="sdp-login__agreement-check">
+            <input v-model="agreed" type="checkbox" aria-label="同意服务协议和隐私政策" />
+            <span>我已阅读并同意</span>
+          </label>
           <t-link href="/service-agreement" target="_blank" aria-label="查看服务协议">《服务协议》</t-link>
           <span>和</span>
           <t-link href="/privacy-policy" target="_blank" aria-label="查看隐私政策">《隐私政策》</t-link>
@@ -523,7 +524,28 @@ async function handleEmailLogin() {
 }
 
 .sdp-login__agreement :deep(.t-link) {
+  min-height: var(--space-8);
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--space-1);
   color: var(--brand-700);
+  font-size: var(--text-sm);
+}
+
+.sdp-login__agreement-check {
+  min-height: var(--space-8);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.sdp-login__agreement-check input {
+  width: var(--space-8);
+  height: var(--space-8);
+  flex: 0 0 var(--space-8);
+  margin: 0;
+  accent-color: var(--brand-600);
 }
 
 .sdp-login__tabs {
@@ -578,6 +600,10 @@ async function handleEmailLogin() {
   background: var(--ink-50);
   font-family: var(--font-body);
   font-size: var(--text-sm);
+}
+
+.sdp-login__field :deep(.t-input__inner) {
+  min-height: var(--space-10);
 }
 
 .sdp-login__field :deep(.t-input:hover) {

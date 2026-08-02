@@ -14,6 +14,7 @@ const [
   tagsSource,
   spacesSource,
   qaSource,
+  settingsSource,
 ] = await Promise.all([
   readSource('../src/views/design/LoginPage.vue'),
   readSource('../src/layouts/design/SdpSidebarLayout.vue'),
@@ -24,6 +25,7 @@ const [
   readSource('../src/views/design/TagDictionaryPage.vue'),
   readSource('../src/views/design/SpaceHomePage.vue'),
   readSource('../src/views/design/QAWorkspacePage.vue'),
+  readSource('../src/views/design/PersonalSettingsPage.vue'),
 ])
 
 test('login methods use equal native tab targets with a 40px minimum height', () => {
@@ -39,6 +41,31 @@ test('redesign sidebar exposes a local-first logout action', () => {
     assert.equal(sidebarSource.includes(marker), true, `missing logout marker: ${marker}`)
   }
   assert.match(sidebarSource, /\.sdp-sidebar-layout__user-card button \{[\s\S]*?min-height: var\(--space-8\)/)
+})
+
+test('personal settings uses the redesign sidebar logout layout', () => {
+  assert.match(settingsSource, /<SdpSidebarLayout>/)
+  assert.match(settingsSource, /import SdpSidebarLayout from '@\/layouts\/design\/SdpSidebarLayout\.vue'/)
+})
+
+test('tag dictionary uses the canonical SDPivot admin API', () => {
+  for (const marker of [
+    "client.get<{ dimensions: TagDimension[]; tags: TagEntry[] }>('/admin/tags')",
+    "client.post('/admin/tags', payload)",
+    'client.put(`/admin/tags/${encodeURIComponent(editingTag.value.id)}`, payload)',
+    'client.delete(`/admin/tags/${encodeURIComponent(tag.id)}`)',
+  ]) {
+    assert.equal(tagsSource.includes(marker), true, `missing tag API marker: ${marker}`)
+  }
+  assert.doesNotMatch(tagsSource, /\/api\/v1\/system\/.*tag/)
+})
+
+test('login fields and agreement controls meet minimum target sizes', () => {
+  assert.match(loginSource, /\.sdp-login__field :deep\(\.t-input__inner\) \{[\s\S]*?min-height: var\(--space-10\)/)
+  assert.match(loginSource, /class="sdp-login__agreement-check"/)
+  assert.match(loginSource, /\.sdp-login__agreement-check input \{[\s\S]*?width: var\(--space-8\);[\s\S]*?height: var\(--space-8\)/)
+  assert.match(loginSource, /\.sdp-login__agreement :deep\(\.t-link\) \{[\s\S]*?min-height: var\(--space-8\)/)
+  assert.doesNotMatch(loginSource, /<t-checkbox/)
 })
 
 test('space detail route resolves only to the redesign page and exposes required sections', () => {

@@ -79,8 +79,7 @@ const form = ref({ dimensionId: '', name: '', sortOrder: 0 })
 const dialogRef = ref<HTMLElement | null>(null)
 const nameInputRef = ref<HTMLInputElement | null>(null)
 
-const dimensionCards = computed(() => fallbackDimensions.map(fallback => {
-  const dimension = dimensions.value.find(item => item.code === fallback.code) || fallback
+const dimensionCards = computed(() => dimensions.value.map(dimension => {
   return { ...dimension, tags: tags.value.filter(tag => tag.dimension_id === dimension.id).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'zh-CN')) }
 }))
 
@@ -88,9 +87,9 @@ async function loadDictionary() {
   loading.value = true
   message.value = ''
   try {
-    const [dimensionResponse, dictionaryResponse] = await Promise.all([client.get<TagDimension[]>('/api/v1/system/tag-dimensions'), client.get<{ tags: TagEntry[] }>('/api/v1/system/tag-dictionary')])
-    dimensions.value = dimensionResponse.data || []
-    tags.value = dictionaryResponse.data.tags || []
+    const response = await client.get<{ dimensions: TagDimension[]; tags: TagEntry[] }>('/admin/tags')
+    dimensions.value = response.data.dimensions || []
+    tags.value = response.data.tags || []
   } catch (error: unknown) {
     dimensions.value = fallbackDimensions
     tags.value = []
@@ -113,8 +112,8 @@ async function saveTag() {
   saving.value = true
   try {
     const payload = { dimension_id: form.value.dimensionId, name: form.value.name, color: '', sort_order: Number(form.value.sortOrder) || 0 }
-    if (editingTag.value) await client.put(`/api/v1/system/admin/tag-dictionary/${encodeURIComponent(editingTag.value.id)}`, payload)
-    else await client.post('/api/v1/system/admin/tag-dictionary', payload)
+    if (editingTag.value) await client.put(`/admin/tags/${encodeURIComponent(editingTag.value.id)}`, payload)
+    else await client.post('/admin/tags', payload)
     editorOpen.value = false
     showMessage(editingTag.value ? '标签已更新。' : '标签已添加。', 'success')
     await loadDictionary()
@@ -123,7 +122,7 @@ async function saveTag() {
 
 async function deleteTag(tag: TagEntry) {
   if (!window.confirm(`确定删除标签“${tag.name}”吗？`)) return
-  try { await client.delete(`/api/v1/system/admin/tag-dictionary/${encodeURIComponent(tag.id)}`); showMessage('标签已删除。', 'success'); await loadDictionary() }
+  try { await client.delete(`/admin/tags/${encodeURIComponent(tag.id)}`); showMessage('标签已删除。', 'success'); await loadDictionary() }
   catch (error: unknown) { showMessage(errorMessage(error, '标签删除失败。'), 'error') }
 }
 

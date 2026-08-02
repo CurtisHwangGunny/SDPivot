@@ -99,6 +99,9 @@ func TestSDPivotRepresentativeRoutes(t *testing.T) {
 			{http.MethodGet, "/ops/announcements/active"},
 			{http.MethodGet, "/ops/usage-stats"},
 			{http.MethodGet, "/admin/tags"},
+			{http.MethodPost, "/admin/tags"},
+			{http.MethodPut, "/admin/tags/:id"},
+			{http.MethodDelete, "/admin/tags/:id"},
 			{http.MethodGet, "/auth/me"},
 		} {
 			if !hasRoute(r, route.method, prefix+route.path) {
@@ -112,6 +115,33 @@ func TestSDPivotRepresentativeRoutes(t *testing.T) {
 	r.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("canonical health status = %d", response.Code)
+	}
+	var health struct {
+		OPMode bool `json:"op_mode"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &health); err != nil {
+		t.Fatal(err)
+	}
+	if health.OPMode {
+		t.Fatal("default product health unexpectedly reported OP mode")
+	}
+}
+
+func TestSDPivotHealthReportsOPMode(t *testing.T) {
+	r := newSDPivotTestEngine(t, &config.ProductConfig{Brand: "sdpivot", OPMode: true})
+	response := httptest.NewRecorder()
+	r.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/sdp/health", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("health status = %d", response.Code)
+	}
+	var health struct {
+		OPMode bool `json:"op_mode"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &health); err != nil {
+		t.Fatal(err)
+	}
+	if !health.OPMode {
+		t.Fatal("OP product health did not report OP mode")
 	}
 }
 

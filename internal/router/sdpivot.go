@@ -94,7 +94,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 	public := sk.Group("")
 	{
 		public.GET("/health", func(c *gin.Context) {
-			c.JSON(200, gin.H{"status": "ok", "service": "sdp", "version": "2.0.0"})
+			c.JSON(200, gin.H{"status": "ok", "service": "sdp", "version": "2.0.0", "op_mode": sr.product.OPMode})
 		})
 	}
 
