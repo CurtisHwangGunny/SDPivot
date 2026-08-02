@@ -92,7 +92,7 @@
         <span class="sdp-sidebar-layout__avatar" aria-hidden="true">{{ userInitial }}</span>
         <span class="sdp-sidebar-layout__user-copy">
           <strong>{{ userName }}</strong>
-          <span>{{ mode === 'admin' ? '管理员' : '成员' }}</span>
+          <span>{{ mode === 'admin' || user?.is_system_admin || user?.is_ops_admin ? '管理员' : '成员' }}</span>
         </span>
       </div>
     </aside>
@@ -142,6 +142,7 @@ const isMenuOpen = ref(false)
 const sidebarRef = ref<HTMLElement | null>(null)
 
 const navigationItems = computed(() => props.mode === 'admin' ? adminNavigation : userNavigation)
+const user = computed(() => authStore.user)
 const userName = computed(() => authStore.user?.nickname || authStore.user?.username || '当前用户')
 const userInitial = computed(() => String(userName.value).trim().charAt(0).toUpperCase() || 'U')
 
