@@ -99,8 +99,8 @@
         </template>
       </div>
 
-      <DocumentImportDialog v-model:visible="showImport" :space-id="spaceId" @success="loadDocuments" />
-      <SpaceMembersDialog v-model:visible="showMembers" :space-id="spaceId" @updated="loadMembers" />
+      <SpaceDocumentImportDrawer v-model:open="showImport" :space-id="spaceId" @import="loadDocuments" />
+      <SpaceMemberManagementDrawer v-model:open="showMembers" :space-id="spaceId" :members="members" />
     </div>
   </SdpSidebarLayout>
 </template>
@@ -111,9 +111,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { listDocuments, type Document } from '@/api/documents'
 import { listSessions } from '@/api/qa'
 import { getSpace, listSpaceMembers, updateSpace, type Space } from '@/api/spaces'
-import DocumentImportDialog from '@/components/documents/DocumentImportDialog.vue'
+import SpaceDocumentImportDrawer from '@/components/design/SpaceDocumentImportDrawer.vue'
 import { SdpButton, SdpEmptyState, SdpErrorState, SdpSkeleton } from '@/components/design'
-import SpaceMembersDialog from '@/components/spaces/SpaceMembersDialog.vue'
+import SpaceMemberManagementDrawer from '@/components/design/SpaceMemberManagementDrawer.vue'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
 
 type SpaceMember = { id?: string; user_id: string; role: string; name?: string; nickname?: string; username?: string; email?: string }
