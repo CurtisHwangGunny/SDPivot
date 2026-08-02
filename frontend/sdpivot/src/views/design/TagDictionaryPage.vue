@@ -51,17 +51,13 @@
 </template>
 
 <script setup lang="ts">
-import axios from 'axios'
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { STORAGE_KEYS } from '@/utils/storage'
+import client from '@/api/client'
 import { SdpButton } from '@/components/design'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
 
 interface TagDimension { id: string; code: string; name: string; description: string; sort_order: number }
 interface TagEntry { id: string; dimension_id: string; name: string; color?: string; sort_order: number }
-
-const systemClient = axios.create({ baseURL: '/api/v1/system', timeout: 30000 })
-systemClient.interceptors.request.use(config => { const token = localStorage.getItem(STORAGE_KEYS.accessToken); if (token) config.headers.Authorization = `Bearer ${token}`; return config })
 
 const fallbackDimensions = [
   ['doc_category', '文档类型', '按内容载体与用途分类'], ['biz_category', '业务分类', '按业务流程与领域分类'],
@@ -92,7 +88,7 @@ async function loadDictionary() {
   loading.value = true
   message.value = ''
   try {
-    const [dimensionResponse, dictionaryResponse] = await Promise.all([systemClient.get<TagDimension[]>('/tag-dimensions'), systemClient.get<{ tags: TagEntry[] }>('/tag-dictionary')])
+    const [dimensionResponse, dictionaryResponse] = await Promise.all([client.get<TagDimension[]>('/api/v1/system/tag-dimensions'), client.get<{ tags: TagEntry[] }>('/api/v1/system/tag-dictionary')])
     dimensions.value = dimensionResponse.data || []
     tags.value = dictionaryResponse.data.tags || []
   } catch (error: unknown) {
@@ -117,8 +113,8 @@ async function saveTag() {
   saving.value = true
   try {
     const payload = { dimension_id: form.value.dimensionId, name: form.value.name, color: '', sort_order: Number(form.value.sortOrder) || 0 }
-    if (editingTag.value) await systemClient.put(`/admin/tag-dictionary/${encodeURIComponent(editingTag.value.id)}`, payload)
-    else await systemClient.post('/admin/tag-dictionary', payload)
+    if (editingTag.value) await client.put(`/api/v1/system/admin/tag-dictionary/${encodeURIComponent(editingTag.value.id)}`, payload)
+    else await client.post('/api/v1/system/admin/tag-dictionary', payload)
     editorOpen.value = false
     showMessage(editingTag.value ? '标签已更新。' : '标签已添加。', 'success')
     await loadDictionary()
@@ -127,7 +123,7 @@ async function saveTag() {
 
 async function deleteTag(tag: TagEntry) {
   if (!window.confirm(`确定删除标签“${tag.name}”吗？`)) return
-  try { await systemClient.delete(`/admin/tag-dictionary/${encodeURIComponent(tag.id)}`); showMessage('标签已删除。', 'success'); await loadDictionary() }
+  try { await client.delete(`/api/v1/system/admin/tag-dictionary/${encodeURIComponent(tag.id)}`); showMessage('标签已删除。', 'success'); await loadDictionary() }
   catch (error: unknown) { showMessage(errorMessage(error, '标签删除失败。'), 'error') }
 }
 
