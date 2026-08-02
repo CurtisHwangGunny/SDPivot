@@ -127,6 +127,23 @@ func TestSDPivotRepresentativeRoutes(t *testing.T) {
 	}
 }
 
+func TestSDPivotDepartmentRoutesRegistered(t *testing.T) {
+	r := newSDPivotTestEngine(t, &config.ProductConfig{Brand: "sdpivot", OPMode: true})
+	for _, route := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/sdp/admin/departments"},
+		{http.MethodPost, "/api/v1/sdp/admin/departments"},
+		{http.MethodPut, "/api/v1/sdp/admin/departments/:id"},
+		{http.MethodDelete, "/api/v1/sdp/admin/departments/:id"},
+	} {
+		if !hasRoute(r, route.method, route.path) {
+			t.Errorf("missing route %s %s", route.method, route.path)
+		}
+	}
+}
+
 func TestSDPivotHealthReportsOPMode(t *testing.T) {
 	r := newSDPivotTestEngine(t, &config.ProductConfig{Brand: "sdpivot", OPMode: true})
 	response := httptest.NewRecorder()
