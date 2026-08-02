@@ -255,6 +255,29 @@ func TestTopLevelReadinessSuccess(t *testing.T) {
 	}
 }
 
+func TestEnsureSDPivotSchemaMigratesRBACAndHandlerModels(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, ensureSDPivotSchema(db))
+
+	migrator := db.Migrator()
+	require.True(t, migrator.HasColumn(&types.User{}, "access_role"))
+	require.True(t, migrator.HasColumn(&types.User{}, "department_id"))
+	for _, model := range []interface{}{
+		&types.Department{},
+		&types.SDPivotUserProfile{},
+		&types.KnowledgeSpace{},
+		&types.SDPivotDocument{},
+		&types.SDPivotDocumentChunk{},
+		&types.QASession{},
+		&types.WritingDraft{},
+		&types.TagDimension{},
+		&types.TagDictionary{},
+	} {
+		require.Truef(t, migrator.HasTable(model), "expected table for %T", model)
+	}
+}
+
 func TestInitializeOPAdminFromEnvCreatesAndRepairsIdempotently(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)

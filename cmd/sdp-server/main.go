@@ -62,6 +62,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
+	if err := ensureSDPivotSchema(db); err != nil {
+		log.Fatalf("Failed to ensure schema: %v", err)
+	}
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatalf("Failed to get underlying DB: %v", err)
@@ -156,9 +159,46 @@ func main() {
 	log.Println("[Server] Stopped")
 }
 
+func ensureSDPivotSchema(db *gorm.DB) error {
+	models := []interface{}{
+		&types.Tenant{},
+		&types.TagDimension{},
+		&types.Department{},
+		&types.Model{},
+		&types.User{},
+		&types.TenantMember{},
+		&types.Organization{},
+		&types.OrganizationTenantMember{},
+		&types.TagDictionary{},
+		&types.SDPivotUserProfile{},
+		&types.RefreshToken{},
+		&types.OrgExt{},
+		&types.SDPivotOrgMember{},
+		&types.SDPivotTokenUsage{},
+		&types.KnowledgeSpace{},
+		&types.SpaceCategory{},
+		&types.SpaceMember{},
+		&types.WriteCategoryConfig{},
+		&types.SDPivotChunkStrategy{},
+		&types.SDPivotDocument{},
+		&types.SDPivotDocumentVersion{},
+		&types.SDPivotDocumentChunk{},
+		&types.QASession{},
+		&types.QAMessage{},
+		&types.WritingDraft{},
+		&types.Announcement{},
+	}
+	for _, model := range models {
+		if err := db.AutoMigrate(model); err != nil {
+			return fmt.Errorf("auto-migrate %T: %w", model, err)
+		}
+	}
+	return nil
+}
+
 const (
-	opAdminEmailEnv    = "SDP_BOOTSTRAP_ADMIN_EMAIL"
-	opAdminPasswordEnv = "SDP_BOOTSTRAP_ADMIN_PASSWORD"
+	opAdminEmailEnv       = "SDP_BOOTSTRAP_ADMIN_EMAIL"
+	opAdminPasswordEnv    = "SDP_BOOTSTRAP_ADMIN_PASSWORD"
 	opSysAdminEmailEnv    = "SDP_BOOTSTRAP_SYSADMIN_EMAIL"
 	opSysAdminPasswordEnv = "SDP_BOOTSTRAP_SYSADMIN_PASSWORD"
 )
@@ -166,7 +206,7 @@ const (
 func initializeOPAdminFromEnv(db *gorm.DB) error {
 	email := strings.TrimSpace(os.Getenv(opAdminEmailEnv))
 	password := os.Getenv(opAdminPasswordEnv)
-if email == "" {
+	if email == "" {
 		if email != "" || password != "" {
 			return fmt.Errorf("%s and %s must be configured together", opAdminEmailEnv, opAdminPasswordEnv)
 		}
