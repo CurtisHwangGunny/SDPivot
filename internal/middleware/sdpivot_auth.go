@@ -41,6 +41,19 @@ func HasPermission(role string, permission Permission) bool {
 	return ok
 }
 
+// RequireRole aborts with 403 if the caller JWT role is not in allowedRoles.
+func RequireRole(c *gin.Context, allowedRoles ...string) bool {
+	role := c.GetString("role")
+	normalized := string(types.NormalizeAccessRole(role))
+	for _, allowed := range allowedRoles {
+		if normalized == string(types.NormalizeAccessRole(allowed)) {
+			return false
+		}
+	}
+	c.JSON(http.StatusForbidden, gin.H{"error": "permission denied"})
+	return true
+}
+
 // RequirePermission rejects callers whose JWT role lacks permission.
 func RequirePermission(permission Permission) gin.HandlerFunc {
 	return func(c *gin.Context) {

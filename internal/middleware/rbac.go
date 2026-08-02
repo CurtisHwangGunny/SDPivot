@@ -44,7 +44,7 @@ var ErrResourceNotFound = errors.New("rbac: resource not found")
 //     when enforcement is off, it logs and lets the request through.
 type CreatorLookup func(c *gin.Context) (creatorID string, err error)
 
-// RequireRole returns a gin middleware that aborts the request with
+// RequireTenantRole returns a gin middleware that aborts the request with
 // HTTP 403 unless the caller's TenantRole (set by the auth middleware
 // in TenantRoleContextKey) is at least min.
 //
@@ -64,7 +64,7 @@ type CreatorLookup func(c *gin.Context) (creatorID string, err error)
 // is missing, TenantRoleFromContext defaults to TenantRoleViewer, which
 // is the safest fail-closed value: anything that requires more than
 // Viewer will reject.
-func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
+func RequireTenantRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 	warnOnNilConfig(cfg)
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()

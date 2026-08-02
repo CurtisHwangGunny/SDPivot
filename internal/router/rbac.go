@@ -122,10 +122,10 @@ type rbacGuards struct {
 	// Contributor who owns the KB can edit/delete its sub-resources
 	// (documents, chunks, wiki pages); a Contributor who merely belongs
 	// to the tenant gets 403 unless they're also Admin+.
-	knowledgeKBCreator    middleware.CreatorLookup
-	chunkKBCreator        middleware.CreatorLookup
-	chunkKBCreatorFromID  middleware.CreatorLookup // chunk routes that address chunks by :id (no knowledge id in URL)
-	wikiKBCreator         middleware.CreatorLookup
+	knowledgeKBCreator   middleware.CreatorLookup
+	chunkKBCreator       middleware.CreatorLookup
+	chunkKBCreatorFromID middleware.CreatorLookup // chunk routes that address chunks by :id (no knowledge id in URL)
+	wikiKBCreator        middleware.CreatorLookup
 
 	// Services for the KB-access guard (own / org-shared / via shared
 	// agent). Captured here so route lines can reference g.KBAccess()
@@ -183,19 +183,19 @@ func newRBACGuards(
 // the matrix entries so route lines stay readable.
 
 func (g *rbacGuards) Viewer() gin.HandlerFunc {
-	return middleware.RequireRole(types.TenantRoleViewer, g.cfg)
+	return middleware.RequireTenantRole(types.TenantRoleViewer, g.cfg)
 }
 
 func (g *rbacGuards) Contributor() gin.HandlerFunc {
-	return middleware.RequireRole(types.TenantRoleContributor, g.cfg)
+	return middleware.RequireTenantRole(types.TenantRoleContributor, g.cfg)
 }
 
 func (g *rbacGuards) Admin() gin.HandlerFunc {
-	return middleware.RequireRole(types.TenantRoleAdmin, g.cfg)
+	return middleware.RequireTenantRole(types.TenantRoleAdmin, g.cfg)
 }
 
 func (g *rbacGuards) Owner() gin.HandlerFunc {
-	return middleware.RequireRole(types.TenantRoleOwner, g.cfg)
+	return middleware.RequireTenantRole(types.TenantRoleOwner, g.cfg)
 }
 
 func (g *rbacGuards) SystemAdmin() gin.HandlerFunc {

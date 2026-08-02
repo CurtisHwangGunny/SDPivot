@@ -67,3 +67,36 @@ func TestRequirePermissionEnforcesViewerAndEditorBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestRequireRoleNormalizesAndRestrictsAccessRoles(t *testing.T) {
+	tests := []struct {
+		name    string
+		role    string
+		allowed []string
+		want    int
+	}{
+		{"super admin allowed", "super_admin", []string{"super_admin"}, http.StatusOK},
+		{"legacy ops admin normalized", "ops_admin", []string{"super_admin"}, http.StatusOK},
+		{"department admin allowed for user management", "department_admin", []string{"super_admin", "department_admin"}, http.StatusOK},
+		{"department admin rejected from super admin action", "department_admin", []string{"super_admin"}, http.StatusForbidden},
+		{"missing role rejected", "", []string{"super_admin"}, http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := gin.New()
+			r.GET("/protected", func(c *gin.Context) {
+				c.Set("role", tt.role)
+				if RequireRole(c, tt.allowed...) {
+					return
+				}
+				c.Status(http.StatusOK)
+			})
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/protected", nil))
+			assert.Equal(t, tt.want, w.Code)
+			if tt.want == http.StatusForbidden {
+				assert.JSONEq(t, `{"error":"permission denied"}`, w.Body.String())
+			}
+		})
+	}
+}

@@ -30,7 +30,7 @@ func NewSDPivotOpsAdminHandler(db *gorm.DB, opMode bool) *SDPivotOpsAdminHandler
 
 // RegisterOpsRoutes registers protected ops admin routes (requires ops_admin role).
 func (h *SDPivotOpsAdminHandler) RegisterOpsRoutes(rg *gin.RouterGroup) {
-	ops := rg.Group("/ops", middleware.RequirePermission(middleware.PermissionUserRoleAssign))
+	ops := rg.Group("/ops", middleware.RequirePermission(middleware.PermissionDepartmentManage))
 	{
 		ops.GET("/dashboard", h.GetOpsDashboard)
 		ops.GET("/enterprises", h.ListEnterprises)
@@ -93,6 +93,7 @@ func requireOpsAdmin(c *gin.Context) bool {
 	return middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign)
 }
 
+// Deprecated: Use middleware.RequireRole instead.
 func denyIfNotOpsAdmin(c *gin.Context) bool {
 	if !requireOpsAdmin(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "ops_admin access required"})
@@ -116,7 +117,7 @@ func parsePagination(c *gin.Context) (int, int) {
 // ── Dashboard ──────────────────────────────────────────────
 
 func (h *SDPivotOpsAdminHandler) GetOpsDashboard(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	h.db.Exec("SET LOCAL row_security = off")
@@ -147,7 +148,7 @@ func (h *SDPivotOpsAdminHandler) GetOpsDashboard(c *gin.Context) {
 // ── Enterprises ────────────────────────────────────────────
 
 func (h *SDPivotOpsAdminHandler) ListEnterprises(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	h.db.Exec("SET LOCAL row_security = off")
@@ -208,7 +209,7 @@ func (h *SDPivotOpsAdminHandler) ListEnterprises(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) GetEnterprise(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	h.db.Exec("SET LOCAL row_security = off")
@@ -239,7 +240,7 @@ func (h *SDPivotOpsAdminHandler) GetEnterprise(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) UpdateEnterpriseStatus(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	id := c.Param("id")
@@ -264,7 +265,7 @@ func (h *SDPivotOpsAdminHandler) UpdateEnterpriseStatus(c *gin.Context) {
 // ── Users ──────────────────────────────────────────────────
 
 func (h *SDPivotOpsAdminHandler) ListUsers(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
 		return
 	}
 	h.db.Exec("SET LOCAL row_security = off")
@@ -318,7 +319,7 @@ func (h *SDPivotOpsAdminHandler) ListUsers(c *gin.Context) {
 
 // UpdateUserRole assigns one of the four product roles to a user.
 func (h *SDPivotOpsAdminHandler) UpdateUserRole(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
 		return
 	}
 	userID := c.Param("id")
@@ -375,7 +376,7 @@ func (h *SDPivotOpsAdminHandler) UpdateUserRole(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) UpdateUserStatus(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
 		return
 	}
 	userID := c.Param("id")
@@ -529,7 +530,7 @@ func selectOpsUsageStats(q *gorm.DB, schema opsUsageStatsSchema) *gorm.DB {
 }
 
 func (h *SDPivotOpsAdminHandler) GetUsageStats(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	db := middleware.TenantDB(c, h.db)
@@ -588,7 +589,7 @@ func (h *SDPivotOpsAdminHandler) GetUsageStats(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) ExportUsageStats(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	db := middleware.TenantDB(c, h.db)
@@ -635,7 +636,7 @@ func (h *SDPivotOpsAdminHandler) ExportUsageStats(c *gin.Context) {
 // ── Audit Logs ─────────────────────────────────────────────
 
 func (h *SDPivotOpsAdminHandler) GetAuditLogs(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	h.db.Exec("SET LOCAL row_security = off")
@@ -695,7 +696,7 @@ func (h *SDPivotOpsAdminHandler) GetAuditLogs(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) ExportAuditLogs(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	h.db.Exec("SET LOCAL row_security = off")
@@ -747,7 +748,7 @@ func (h *SDPivotOpsAdminHandler) ExportAuditLogs(c *gin.Context) {
 // ── Announcements ──────────────────────────────────────────
 
 func (h *SDPivotOpsAdminHandler) CreateAnnouncement(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	tenantID := middleware.GetTenantID(c)
@@ -777,7 +778,7 @@ func (h *SDPivotOpsAdminHandler) CreateAnnouncement(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) ListAnnouncements(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	tenantID := middleware.GetTenantID(c)
@@ -788,7 +789,7 @@ func (h *SDPivotOpsAdminHandler) ListAnnouncements(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) DeleteAnnouncement(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	id := c.Param("id")

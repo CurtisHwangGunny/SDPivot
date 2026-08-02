@@ -14,7 +14,7 @@ import (
 
 // rbacTestHarness builds a tiny gin engine with the RBAC middleware in
 // front of a no-op handler. It seeds context just like the real auth
-// middleware would, so RequireRole / RequireOwnershipOrRole see the
+// middleware would, so RequireTenantRole / RequireOwnershipOrRole see the
 // expected TenantRole and UserID.
 //
 // Returning the recorder rather than asserting inline keeps each test
@@ -54,11 +54,11 @@ func cfgRBACWithCrossTenant(enabled bool) *config.Config {
 	}}
 }
 
-// ---------- RequireRole ----------
+// ---------- RequireTenantRole ----------
 
 func TestRequireRole_AllowsAtMin(t *testing.T) {
 	w := rbacTestHarness(types.TenantRoleAdmin, "u1",
-		RequireRole(types.TenantRoleAdmin, cfgRBAC(true)))
+		RequireTenantRole(types.TenantRoleAdmin, cfgRBAC(true)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("Admin should clear Admin gate, got %d", w.Code)
 	}
@@ -66,7 +66,7 @@ func TestRequireRole_AllowsAtMin(t *testing.T) {
 
 func TestRequireRole_AllowsAboveMin(t *testing.T) {
 	w := rbacTestHarness(types.TenantRoleOwner, "u1",
-		RequireRole(types.TenantRoleAdmin, cfgRBAC(true)))
+		RequireTenantRole(types.TenantRoleAdmin, cfgRBAC(true)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("Owner should clear Admin gate, got %d", w.Code)
 	}
@@ -74,7 +74,7 @@ func TestRequireRole_AllowsAboveMin(t *testing.T) {
 
 func TestRequireRole_RejectsBelowMin(t *testing.T) {
 	w := rbacTestHarness(types.TenantRoleContributor, "u1",
-		RequireRole(types.TenantRoleAdmin, cfgRBAC(true)))
+		RequireTenantRole(types.TenantRoleAdmin, cfgRBAC(true)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("Contributor must NOT clear Admin gate, got %d", w.Code)
 	}
@@ -82,7 +82,7 @@ func TestRequireRole_RejectsBelowMin(t *testing.T) {
 
 func TestRequireRole_ViewerCannotEdit(t *testing.T) {
 	w := rbacTestHarness(types.TenantRoleViewer, "u1",
-		RequireRole(types.TenantRoleContributor, cfgRBAC(true)))
+		RequireTenantRole(types.TenantRoleContributor, cfgRBAC(true)))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("Viewer must NOT clear edit gate, got %d", w.Code)
 	}
@@ -99,7 +99,7 @@ func TestRequireRole_FailOpenWhenRBACDisabled(t *testing.T) {
 	// EnableRBAC=false: the middleware should log but not block, so the
 	// downstream handler still runs. This is the rollout-safety guarantee.
 	w := rbacTestHarness(types.TenantRoleViewer, "u1",
-		RequireRole(types.TenantRoleOwner, cfgRBAC(false)))
+		RequireTenantRole(types.TenantRoleOwner, cfgRBAC(false)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("EnableRBAC=false must let Viewer through Owner gate, got %d", w.Code)
 	}
@@ -109,7 +109,7 @@ func TestRequireRole_NilConfigFailsOpen(t *testing.T) {
 	// Defensive: nil config must not panic and must fail open (no enforcement
 	// configured = behave like the legacy path).
 	w := rbacTestHarness(types.TenantRoleViewer, "u1",
-		RequireRole(types.TenantRoleAdmin, nil))
+		RequireTenantRole(types.TenantRoleAdmin, nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("nil config must fail open, got %d", w.Code)
 	}
@@ -137,7 +137,7 @@ func TestRequireRole_CrossTenantSuperuserBypass(t *testing.T) {
 		c.Next()
 	})
 	router.GET("/protected",
-		RequireRole(types.TenantRoleOwner, cfgRBACWithCrossTenant(true)),
+		RequireTenantRole(types.TenantRoleOwner, cfgRBACWithCrossTenant(true)),
 		func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{}) },
 	)
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)

@@ -1774,7 +1774,7 @@ func servePresignedPreview(r *gin.Engine, cfg *config.Config) {
 	absDir, _ := filepath.Abs(baseDir)
 
 	r.GET("/api/v1/files/presigned-preview",
-		middleware.RequireRole(types.TenantRoleAdmin, cfg),
+		middleware.RequireTenantRole(types.TenantRoleAdmin, cfg),
 		func(c *gin.Context) {
 			ctx := c.Request.Context()
 			filePath := strings.TrimSpace(c.Query("file_path"))

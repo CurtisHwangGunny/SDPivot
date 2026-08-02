@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -61,7 +62,7 @@ type createOpsUserRequest struct {
 // CreateUser provisions one SDPivot user with the same workspace defaults as
 // batch import.
 func (h *SDPivotOpsAdminHandler) CreateUser(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
 		return
 	}
 
@@ -99,7 +100,7 @@ func (h *SDPivotOpsAdminHandler) CreateUser(c *gin.Context) {
 // Valid rows are committed independently so one bad row does not discard the
 // rest of the batch; row-level validation and database failures are returned.
 func (h *SDPivotOpsAdminHandler) ImportUsers(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
 		return
 	}
 

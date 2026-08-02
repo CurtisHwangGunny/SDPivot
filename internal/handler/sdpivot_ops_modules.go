@@ -10,6 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/Tencent/WeKnora/internal/middleware"
 )
 
 // ============================================================
@@ -28,7 +30,7 @@ type OpsSystemConfig struct {
 func (OpsSystemConfig) TableName() string { return "system_configs" }
 
 func (h *SDPivotOpsAdminHandler) ListConfigs(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	var configs []OpsSystemConfig
@@ -42,7 +44,7 @@ func (h *SDPivotOpsAdminHandler) ListConfigs(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) UpdateConfig(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	key := c.Param("key")
@@ -110,7 +112,7 @@ func isSMSSecretConfig(key string) bool {
 }
 
 func (h *SDPivotOpsAdminHandler) GetSMSConfig(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	response := make(map[string]interface{}, len(smsConfigDefaults)+3)
@@ -126,7 +128,7 @@ func (h *SDPivotOpsAdminHandler) GetSMSConfig(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) UpdateSMSConfig(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	var req struct {
@@ -179,7 +181,7 @@ func (h *SDPivotOpsAdminHandler) UpdateSMSConfig(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) GetTrialConfig(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	trialDays := h.getOrCreateConfigValue("trial_days", "30", "试用期天数")
@@ -191,7 +193,7 @@ func (h *SDPivotOpsAdminHandler) GetTrialConfig(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) UpdateTrialConfig(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	var req struct {
@@ -248,7 +250,7 @@ func (h *SDPivotOpsAdminHandler) getOrCreateConfigValue(key, defaultValue, descr
 // ============================================================
 
 func (h *SDPivotOpsAdminHandler) ListModels(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	h.db.Exec("SET LOCAL row_security = off")
@@ -278,7 +280,7 @@ func (h *SDPivotOpsAdminHandler) ListModels(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) CreateModel(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	var req struct {
@@ -323,7 +325,7 @@ func (h *SDPivotOpsAdminHandler) CreateModel(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) UpdateModel(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	id := c.Param("id")
@@ -356,7 +358,7 @@ func (h *SDPivotOpsAdminHandler) UpdateModel(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) DeleteModel(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	id := c.Param("id")
@@ -366,7 +368,7 @@ func (h *SDPivotOpsAdminHandler) DeleteModel(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) SetDefaultModel(c *gin.Context) {
-	if denyIfNotOpsAdmin(c) {
+	if middleware.RequireRole(c, "super_admin") {
 		return
 	}
 	id := c.Param("id")
