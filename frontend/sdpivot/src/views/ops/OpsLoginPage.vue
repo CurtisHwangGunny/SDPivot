@@ -1,8 +1,8 @@
 <template>
   <div class="ops-shell">
     <section class="ops-brand-panel">
-      <div class="brand-badge">SDPivot · SDP Operations</div>
-      <h1>SDPivot 运营管理端</h1>
+      <div class="brand-badge">SDPivot·文枢 · SDP Operations</div>
+      <h1>SDPivot·文枢 运营管理端</h1>
       <p>面向运营管理员的专用入口。保留首次登录改密流程，同时将视觉语言对齐到新版品牌体系。</p>
       <div class="ops-brand-points">
         <div class="brand-point">

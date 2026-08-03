@@ -3,13 +3,13 @@
     <section class="sdp-login__brand" aria-labelledby="sdp-login-brand">
       <div class="sdp-login__brand-content">
         <div class="sdp-login__identity">
-          <svg class="sdp-login__logo" viewBox="0 0 48 48" role="img" aria-label="SDPivot logo">
+          <svg class="sdp-login__logo" viewBox="0 0 48 48" role="img" aria-label="SDPivot·文枢 logo">
             <path d="M24 4 42 14v20L24 44 6 34V14L24 4Z" />
             <path d="m24 14 9 5v10l-9 5-9-5V19l9-5Z" />
           </svg>
           <div>
             <p class="sdp-login__product">企业知识智能平台</p>
-            <h1 id="sdp-login-brand">SDPivot</h1>
+            <h1 id="sdp-login-brand">SDPivot·文枢</h1>
           </div>
         </div>
 
@@ -59,7 +59,7 @@
     <section class="sdp-login__form-panel" aria-labelledby="sdp-login-title">
       <div class="sdp-login__form-shell">
         <header class="sdp-login__header">
-          <p>SDPivot Workspace</p>
+          <p>SDPivot·文枢 Workspace</p>
           <h2 id="sdp-login-title">欢迎回来</h2>
           <span>登录后继续访问你的知识工作台</span>
         </header>

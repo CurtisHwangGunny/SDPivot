@@ -9,13 +9,13 @@
             <path d="M20 12L28 16V24L20 28L12 24V16L20 12Z" fill="#EAFBF2"/>
           </svg>
         </div>
-        <h1 class="brand-name">SDPivot</h1>
+        <h1 class="brand-name">SDPivot·文枢</h1>
         <p class="brand-en">SDP</p>
         <p class="tagline">让知识、问答与写作协同成为同一条工作流。</p>
         <ul class="hero-points">
           <li>知识空间集中管理企业资料</li>
           <li>AI 问答与 AI 写作共享统一知识底座</li>
-          <li>统一 SDPivot 设计语言与品牌体验</li>
+          <li>统一 SDPivot·文枢 设计语言与品牌体验</li>
         </ul>
       </div>
     </section>

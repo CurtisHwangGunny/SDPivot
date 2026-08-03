@@ -2,7 +2,7 @@
   <div class="register-shell">
     <section class="register-brand-panel">
       <div class="brand-badge">Create account</div>
-      <h1>加入 SDPivot</h1>
+      <h1>加入 SDPivot·文枢</h1>
       <p>创建你的专属账号，进入统一的知识空间、AI 问答与 AI 写作工作台。</p>
       <div class="brand-points">
         <div class="brand-point">

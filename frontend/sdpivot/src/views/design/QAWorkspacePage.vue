@@ -95,7 +95,7 @@
             :class="`sdp-qa-workspace__message--${message.role === 'user' ? 'user' : 'assistant'}`"
             :aria-label="message.role === 'user' ? '你的消息' : 'AI 回答'"
           >
-            <p class="sdp-qa-workspace__message-role">{{ message.role === 'user' ? 'You' : 'SDPivot AI' }}</p>
+            <p class="sdp-qa-workspace__message-role">{{ message.role === 'user' ? 'You' : 'SDPivot·文枢 AI' }}</p>
             <div class="sdp-qa-workspace__bubble">{{ message.content }}</div>
 
             <div v-if="message.role !== 'user' && parseSources(message.sources).length" class="sdp-qa-workspace__citations" aria-label="回答引用来源">
@@ -123,7 +123,7 @@
           </article>
 
           <article v-if="sending" class="sdp-qa-workspace__message sdp-qa-workspace__message--assistant" role="status">
-            <p class="sdp-qa-workspace__message-role">SDPivot AI</p>
+            <p class="sdp-qa-workspace__message-role">SDPivot·文枢 AI</p>
             <div class="sdp-qa-workspace__bubble sdp-qa-workspace__streaming">
               <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
               <strong>正在检索知识并生成回答</strong>

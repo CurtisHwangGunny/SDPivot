@@ -10,7 +10,7 @@
             </svg>
           </div>
           <div>
-            <div class="brand-title">SDPivot</div>
+            <div class="brand-title">SDPivot·文枢</div>
             <div class="brand-subtitle">SDP Workspace</div>
           </div>
         </div>

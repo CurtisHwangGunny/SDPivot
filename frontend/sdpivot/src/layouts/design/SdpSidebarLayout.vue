@@ -1,14 +1,14 @@
 <template>
   <div class="sdp-sidebar-layout">
     <header class="sdp-sidebar-layout__mobile-header">
-      <RouterLink class="sdp-sidebar-layout__mobile-brand" to="/spaces" aria-label="前往 SDPivot 首页">
+      <RouterLink class="sdp-sidebar-layout__mobile-brand" to="/spaces" aria-label="前往 SDPivot·文枢 首页">
         <span class="sdp-sidebar-layout__brand-mark" aria-hidden="true">
           <svg viewBox="0 0 32 32" role="img">
             <path d="M16 2 29 9.5v13L16 30 3 22.5v-13L16 2Z" fill="currentColor" />
             <path d="m16 9 7 4v6l-7 4-7-4v-6l7-4Z" fill="var(--ink-950)" />
           </svg>
         </span>
-        <span>SDPivot</span>
+        <span>SDPivot·文枢</span>
       </RouterLink>
 
       <button
@@ -38,12 +38,12 @@
       ref="sidebarRef"
       class="sdp-sidebar-layout__sidebar"
       :class="{ 'sdp-sidebar-layout__sidebar--open': isMenuOpen }"
-      aria-label="SDPivot 侧边栏"
+      aria-label="SDPivot·文枢 侧边栏"
       @keydown.esc="closeMenu"
     >
       <div class="sdp-sidebar-layout__top">
         <div class="sdp-sidebar-layout__brand-row">
-          <RouterLink class="sdp-sidebar-layout__brand" to="/spaces" aria-label="前往 SDPivot 首页" @click="closeMenu">
+          <RouterLink class="sdp-sidebar-layout__brand" to="/spaces" aria-label="前往 SDPivot·文枢 首页" @click="closeMenu">
             <span class="sdp-sidebar-layout__brand-mark" aria-hidden="true">
               <svg viewBox="0 0 32 32" role="img">
                 <path d="M16 2 29 9.5v13L16 30 3 22.5v-13L16 2Z" fill="currentColor" />
@@ -51,7 +51,7 @@
               </svg>
             </span>
             <span class="sdp-sidebar-layout__brand-copy">
-              <strong>SDPivot</strong>
+              <strong>SDPivot·文枢</strong>
               <span>{{ mode === 'admin' ? '管理中心' : '知识工作台' }}</span>
             </span>
           </RouterLink>
