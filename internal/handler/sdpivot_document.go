@@ -86,6 +86,12 @@ func (h *SDPivotDocumentHandler) UploadDocument(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 	spaceID := c.PostForm("space_id")
+	if spaceID == "" {
+		spaceID = c.Param("spaceId")
+	}
+	if spaceID == "" {
+		spaceID = c.Param("space_id")
+	}
 	tags := c.PostForm("tags")
 
 	if spaceID == "" {
@@ -213,6 +219,12 @@ func (h *SDPivotDocumentHandler) ListDocuments(c *gin.Context) {
 	if err := c.ShouldBindQuery(&query); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if query.SpaceID == "" {
+		query.SpaceID = c.Param("spaceId")
+	}
+	if query.SpaceID == "" {
+		query.SpaceID = c.Param("space_id")
 	}
 
 	db := tenantDB.Model(&types.SDPivotDocument{}).Where("tenant_id = ?", tenantID)

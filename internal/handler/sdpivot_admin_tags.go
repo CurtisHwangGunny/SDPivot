@@ -21,11 +21,15 @@ func NewSDPivotAdminHandler(db *gorm.DB) *SDPivotAdminHandler {
 }
 
 func (h *SDPivotAdminHandler) RegisterRoutes(rg *gin.RouterGroup) {
-	admin := rg.Group("/admin", middleware.RequirePermission(middleware.PermissionUserRoleAssign))
-	admin.GET("/tags", h.ListTagDictionary)
-	admin.POST("/tags", h.CreateTagDictionaryEntry)
-	admin.PUT("/tags/:id", h.UpdateTagDictionaryEntry)
-	admin.DELETE("/tags/:id", h.DeleteTagDictionaryEntry)
+	// Read-only admin routes: accessible to all authenticated users (viewer can read)
+	adminRead := rg.Group("/admin")
+	adminRead.GET("/tags", h.ListTagDictionary)
+
+	// Write routes: require elevated permission
+	adminWrite := rg.Group("/admin", middleware.RequirePermission(middleware.PermissionUserRoleAssign))
+	adminWrite.POST("/tags", h.CreateTagDictionaryEntry)
+	adminWrite.PUT("/tags/:id", h.UpdateTagDictionaryEntry)
+	adminWrite.DELETE("/tags/:id", h.DeleteTagDictionaryEntry)
 }
 
 // ListTagDictionary returns the shared platform classification dictionary.

@@ -144,11 +144,22 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 		docHandler := handler.NewSDPivotDocumentHandler(sr.db)
 		docHandler.RegisterRoutes(protected)
 
+		// Space-scoped document routes (compatibility alias for /spaces/:spaceId/documents)
+		spaceDocs := protected.Group("/spaces/:spaceId/documents")
+		spaceDocs.GET("", docHandler.ListDocuments)
+		spaceDocs.POST("", docHandler.UploadDocument)
+		spaceDocs.GET("/:docId", docHandler.GetDocument)
+		spaceDocs.DELETE("/:docId", docHandler.DeleteDocument)
+
 		// AI Q&A + Admin
 		qaHandler := handler.NewSDPivotQAHandler(sr.db)
 		qaHandler.RegisterRoutes(protected)
 		adminHandler.RegisterRoutes(protected)
 		departmentHandler.RegisterRoutes(protected)
+
+		// Admin model list (read-only, maps to ops handler)
+		adminModelAlias := protected.Group("/admin")
+		adminModelAlias.GET("/models", opsAdminHandler.ListModels)
 
 		// AI Writing + Operations
 		writingHandler := handler.NewSDPivotWritingHandler(sr.db)
