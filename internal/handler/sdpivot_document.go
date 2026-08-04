@@ -82,6 +82,10 @@ func (h *SDPivotDocumentHandler) UploadDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
 	// Limit upload size to 50MB
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 50<<20)
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionKnowledgeWrite) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": "knowledge.write"})
+		return
+	}
 
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
@@ -330,6 +334,10 @@ func (h *SDPivotDocumentHandler) GetDocumentVersions(c *gin.Context) {
 // DeleteDocument soft-deletes a document.
 func (h *SDPivotDocumentHandler) DeleteDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionKnowledgeWrite) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": "knowledge.write"})
+		return
+	}
 	docID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
@@ -352,6 +360,10 @@ func (h *SDPivotDocumentHandler) DeleteDocument(c *gin.Context) {
 // ReparseDocument triggers re-parsing of a document.
 func (h *SDPivotDocumentHandler) ReparseDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionKnowledgeWrite) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": "knowledge.write"})
+		return
+	}
 	docID := c.Param("id")
 
 	doc, ok := h.authorizeDocument(c, tenantDB, docID, spaceAccessEdit)
@@ -409,6 +421,10 @@ func (h *SDPivotDocumentHandler) GetChunk(c *gin.Context) {
 // UpdateChunk updates a chunk's content.
 func (h *SDPivotDocumentHandler) UpdateChunk(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionKnowledgeWrite) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": "knowledge.write"})
+		return
+	}
 	chunkID := c.Param("id")
 	tenantID := middleware.GetTenantID(c)
 
@@ -697,6 +713,10 @@ func createSDPivotDocumentWithVersion(tenantDB *gorm.DB, doc *types.SDPivotDocum
 // UploadManualDocument handles manual text/markdown input.
 func (h *SDPivotDocumentHandler) UploadManualDocument(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionKnowledgeWrite) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": "knowledge.write"})
+		return
+	}
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
@@ -769,6 +789,10 @@ func (h *SDPivotDocumentHandler) UploadManualDocument(c *gin.Context) {
 // UploadFromURL handles web page URL import.
 func (h *SDPivotDocumentHandler) UploadFromURL(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
+	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionKnowledgeWrite) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": "knowledge.write"})
+		return
+	}
 	userID := middleware.GetUserID(c)
 	tenantID := middleware.GetTenantID(c)
 
