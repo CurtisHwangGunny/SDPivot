@@ -30,7 +30,6 @@ const mainChildren: RouteRecordRaw[] = [
 
 const routes: RouteRecordRaw[] = [
   ...redesignRoutes,
-  { path: '/register', name: 'register', component: () => import('@/views/auth/RegisterPage.vue'), meta: { requiresAuth: false } },
   ...(!isOpBuild
     ? [{ path: '/ops-login', name: 'opsLogin', component: () => import('@/views/ops/OpsLoginPage.vue'), meta: { requiresAuth: false } }]
     : []),
