@@ -144,8 +144,8 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 		docHandler := handler.NewSDPivotDocumentHandler(sr.db)
 		docHandler.RegisterRoutes(protected)
 
-		// Space-scoped document routes (compatibility alias for /spaces/:spaceId/documents)
-		spaceDocs := protected.Group("/spaces/:spaceId/documents")
+		// Space-scoped document routes (compatibility alias for /spaces/:id/documents)
+		spaceDocs := protected.Group("/spaces/:id/documents")
 		spaceDocs.GET("", docHandler.ListDocuments)
 		spaceDocs.POST("", docHandler.UploadDocument)
 		spaceDocs.GET("/:docId", docHandler.GetDocument)
