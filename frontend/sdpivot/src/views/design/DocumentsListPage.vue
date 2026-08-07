@@ -50,7 +50,7 @@
                   <td>{{ formatSize(document.file_size) }}</td>
                   <td><span class="sdp-documents-list__status" :class="`sdp-documents-list__status--${statusTone(document.parse_status)}`"><i aria-hidden="true" />{{ statusLabel(document.parse_status) }}</span></td>
                   <td>{{ formatDate(document.updated_at || document.created_at) }}</td>
-                  <td><SdpButton variant="ghost" size="sm" :aria-label="`删除文档 ${document.title || document.file_name}`" @click="requestDelete(document)">删除</SdpButton></td>
+                  <td><div class="sdp-documents-list__actions"><SdpButton v-if="canWrite" variant="ghost" size="sm" :disabled="document.parse_status !== 'completed'" :loading="autoTaggingId === document.id" :aria-label="`自动生成标签 ${document.title || document.file_name}`" @click="handleAutoTag(document)">自动生成标签</SdpButton><SdpButton variant="ghost" size="sm" :aria-label="`删除文档 ${document.title || document.file_name}`" @click="requestDelete(document)">删除</SdpButton></div></td>
                 </tr>
               </tbody>
             </table>
@@ -80,9 +80,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { listDocuments, uploadDocument, deleteDocument, type Document } from '@/api/documents'
+import { autoTagDocument, listDocuments, uploadDocument, deleteDocument, type Document } from '@/api/documents'
 import { SdpButton, SdpConfirmDialog, SdpEmptyState, SdpErrorState, SdpSkeleton } from '@/components/design'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
+import { getRoleFromToken } from '@/utils/jwt'
 
 const route = useRoute()
 const spaceId = computed(() => String(route.params.id || ''))
@@ -103,6 +104,8 @@ const showDeleteConfirm = ref(false)
 const pendingDelete = ref<Document | null>(null)
 const deleting = ref(false)
 const announcement = ref('')
+const autoTaggingId = ref('')
+const canWrite = computed(() => ['super_admin', 'department_admin', 'knowledge_editor'].includes(getRoleFromToken()))
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 async function loadDocuments() {
@@ -149,6 +152,15 @@ async function handleDelete() {
   } catch (error: unknown) { announcement.value = errorMessage(error, '删除失败，请稍后重试。') } finally { deleting.value = false }
 }
 
+async function handleAutoTag(document: Document) {
+  if (autoTaggingId.value || document.parse_status !== 'completed') return
+  autoTaggingId.value = document.id
+  try {
+    const response = await autoTagDocument(document.id)
+    announcement.value = `自动生成标签完成，新增 ${response.data.created} 个标签`
+  } catch (error: unknown) { announcement.value = errorMessage(error, '自动生成标签失败，请稍后重试。') } finally { autoTaggingId.value = '' }
+}
+
 function statusLabel(status: string) { return ({ pending: '等待中', parsing: '解析中', processing: '解析中', completed: '已完成', failed: '失败' } as Record<string, string>)[status] || status || '未知' }
 function statusTone(status: string) { if (status === 'completed') return 'complete'; if (status === 'failed') return 'failed'; if (status === 'parsing' || status === 'processing') return 'active'; return 'pending' }
 function formatSize(bytes: number) { if (!bytes) return '—'; if (bytes < 1024) return `${bytes} B`; if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`; return `${(bytes / 1024 / 1024).toFixed(1)} MB` }
@@ -187,6 +199,7 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
 .sdp-documents-list tbody tr:hover { background: var(--brand-50); }
 .sdp-documents-list td strong, .sdp-documents-list td small { display: block; max-width: calc(var(--space-24) * 2.5); overflow: hidden; text-overflow: ellipsis; }
 .sdp-documents-list td strong { color: var(--ink-950); }
+.sdp-documents-list__actions { display: flex; align-items: center; gap: var(--space-1); }
 .sdp-documents-list td small { margin-top: var(--space-1); color: var(--ink-500); font-size: var(--text-xs); }
 .sdp-documents-list__status { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-3); border-radius: var(--radius-pill); color: var(--ink-800); background: var(--ink-200); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); }
 .sdp-documents-list__status i { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-pill); background: var(--ink-600); }

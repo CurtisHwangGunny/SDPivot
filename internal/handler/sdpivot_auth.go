@@ -374,6 +374,7 @@ func (h *SDPivotAuthHandler) Login(c *gin.Context) {
 
 	// Update last login time
 	h.db.Model(&user).Update("updated_at", now)
+	writeSDPivotLoginAuditLog(h.db, c, &user)
 
 	c.JSON(http.StatusOK, types.SDPivotAuthResponse{
 		Success:      true,

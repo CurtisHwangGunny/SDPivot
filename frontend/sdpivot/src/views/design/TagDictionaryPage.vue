@@ -15,11 +15,13 @@
 
         <p v-if="message" class="sdp-tag-dictionary__message" :class="{ 'sdp-tag-dictionary__message--error': messageType === 'error' }" role="status" aria-live="polite">{{ message }}</p>
 
-        <section class="sdp-tag-dictionary__grid" aria-label="七维标签字典">
+        <nav class="sdp-tag-dictionary__tabs" aria-label="标签管理视图"><button type="button" :class="{ active: activeTab === 'dictionary' }" @click="activeTab = 'dictionary'">标签维度与字典</button><button v-if="canReview" type="button" :class="{ active: activeTab === 'feedback' }" @click="openFeedbackTab">待确认队列 <span v-if="feedbackItems.length">{{ feedbackItems.length }}</span></button></nav>
+
+        <section v-if="activeTab === 'dictionary'" class="sdp-tag-dictionary__grid" aria-label="多维标签字典">
           <article v-for="dimension in dimensionCards" :key="dimension.code" class="sdp-tag-dictionary__card">
             <header>
               <div><span>{{ dimension.code }}</span><h2>{{ dimension.name }}</h2><p>{{ dimension.description }}</p></div>
-              <button type="button" :aria-label="`为${dimension.name}添加标签`" @click="openEditor(dimension)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button>
+              <div class="sdp-tag-dictionary__dimension-actions"><button v-if="canManage" type="button" :aria-label="`编辑维度 ${dimension.name}`" @click="openDimensionEditor(dimension)">维度</button><button v-if="canManage" type="button" :aria-label="`为${dimension.name}添加标签`" @click="openEditor(dimension)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></button></div>
             </header>
             <div v-if="loading" class="sdp-tag-dictionary__empty">正在加载标签...</div>
             <div v-else-if="dimension.tags.length === 0" class="sdp-tag-dictionary__empty">暂无标签值</div>
@@ -27,13 +29,18 @@
               <li v-for="tag in dimension.tags" :key="tag.id">
                 <span class="sdp-tag-dictionary__tag-dot" aria-hidden="true" />
                 <strong>{{ tag.name }}</strong>
-                <div><button type="button" :aria-label="`编辑标签 ${tag.name}`" @click="openEditor(dimension, tag)">编辑</button><button type="button" :aria-label="`删除标签 ${tag.name}`" @click="deleteTag(tag)">删除</button></div>
+                <div v-if="canManage"><button type="button" :aria-label="`编辑标签 ${tag.name}`" @click="openEditor(dimension, tag)">编辑</button><button type="button" :aria-label="`删除标签 ${tag.name}`" @click="removeTag(tag)">删除</button></div>
               </li>
             </ul>
-            <footer><span>{{ dimension.tags.length }} 个标签</span><button type="button" :aria-label="`添加${dimension.name}标签`" @click="openEditor(dimension)">添加标签</button></footer>
+            <footer><span>{{ dimension.tags.length }} 个标签</span><button v-if="canManage" type="button" :aria-label="`添加${dimension.name}标签`" @click="openEditor(dimension)">添加标签</button></footer>
           </article>
+          <button v-if="canManage" type="button" class="sdp-tag-dictionary__new-dimension" @click="openDimensionEditor()">+ 新增标签维度</button>
         </section>
+
+        <section v-else class="sdp-tag-dictionary__feedback" aria-label="标签待确认队列"><header><div><p>Learning Feedback</p><h2>标签待确认队列</h2></div><div><SdpButton variant="secondary" size="sm" :disabled="!selectedFeedback.length" @click="reviewSelected('rejected')">批量驳回</SdpButton><SdpButton size="sm" :disabled="!selectedFeedback.length" @click="reviewSelected('reviewed')">批量确认</SdpButton></div></header><div v-if="feedbackLoading" class="sdp-tag-dictionary__empty">正在加载反馈...</div><div v-else-if="!feedbackItems.length" class="sdp-tag-dictionary__empty">暂无待确认反馈</div><ul v-else><li v-for="item in feedbackItems" :key="item.id"><label><input v-model="selectedFeedback" type="checkbox" :value="item.id"><span><strong>{{ item.document_title }}</strong><small>{{ item.tag_name || item.original_tag }} · {{ item.feedback === 'correct' ? '标记正确' : '标记错误' }}</small></span></label><time>{{ formatDate(item.created_at) }}</time></li></ul></section>
       </div>
+
+      <div v-if="dimensionEditorOpen" class="sdp-tag-dictionary__backdrop" role="presentation" @mousedown.self="closeDimensionEditor"><section class="sdp-tag-dictionary__dialog" role="dialog" aria-modal="true" aria-labelledby="dimension-editor-title"><header><div><p>Dimension</p><h2 id="dimension-editor-title">{{ editingDimension ? '编辑标签维度' : '新增标签维度' }}</h2></div><button type="button" aria-label="关闭维度编辑" @click="closeDimensionEditor">关闭</button></header><form @submit.prevent="saveDimension"><label><span>维度名称</span><input v-model.trim="dimensionForm.name" required maxlength="128"></label><label><span>维度代码</span><input v-model.trim="dimensionForm.code" required maxlength="64" placeholder="business"></label><label><span>说明</span><input v-model.trim="dimensionForm.description" maxlength="500"></label><label><span>状态</span><select v-model="dimensionForm.enabled"><option :value="true">启用</option><option :value="false">停用</option></select></label><div class="sdp-tag-dictionary__dialog-actions"><SdpButton v-if="editingDimension" variant="secondary" @click="removeDimension">删除维度</SdpButton><SdpButton variant="secondary" @click="closeDimensionEditor">取消</SdpButton><SdpButton :loading="savingDimension" @click="saveDimension">保存维度</SdpButton></div></form></section></div>
 
       <div v-if="editorOpen" class="sdp-tag-dictionary__backdrop" role="presentation" @mousedown.self="closeEditor">
         <section ref="dialogRef" class="sdp-tag-dictionary__dialog" role="dialog" aria-modal="true" aria-labelledby="tag-editor-title" @keydown.esc="closeEditor" @keydown.tab="trapFocus">
@@ -52,19 +59,17 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import client from '@/api/client'
+import { createTag, createTagDimension, deleteTag, deleteTagDimension, getTagDictionary, getTagDimensions, getTagFeedbackQueue, reviewTagFeedback, updateTag, updateTagDimension, type TagDimension, type TagEntry, type TagFeedbackItem } from '@/api/tags'
 import { SdpButton } from '@/components/design'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
-
-interface TagDimension { id: string; code: string; name: string; description: string; sort_order: number }
-interface TagEntry { id: string; dimension_id: string; name: string; color?: string; sort_order: number }
+import { getRoleFromToken } from '@/utils/jwt'
 
 const fallbackDimensions = [
   ['doc_category', '文档类型', '按内容载体与用途分类'], ['biz_category', '业务分类', '按业务流程与领域分类'],
   ['industry', '行业', '标识内容适用的行业范围'], ['keyword', '关键词', '沉淀可检索的核心主题词'],
   ['security_level', '安全等级', '定义内容访问与传播边界'], ['timeliness', '时效性', '标记内容的有效时间特征'],
   ['dept_scope', '部门范围', '标识主要负责或适用部门'],
-].map(([code, name, description], index) => ({ id: code, code, name, description, sort_order: index * 10 }))
+].map(([code, name, description], index) => ({ id: code, code, name, description, enabled: true, sort_order: index * 10 }))
 
 const dimensions = ref<TagDimension[]>([])
 const tags = ref<TagEntry[]>([])
@@ -78,6 +83,17 @@ const editingTag = ref<TagEntry | null>(null)
 const form = ref({ dimensionId: '', name: '', sortOrder: 0 })
 const dialogRef = ref<HTMLElement | null>(null)
 const nameInputRef = ref<HTMLInputElement | null>(null)
+const activeTab = ref<'dictionary' | 'feedback'>('dictionary')
+const feedbackItems = ref<TagFeedbackItem[]>([])
+const selectedFeedback = ref<string[]>([])
+const feedbackLoading = ref(false)
+const dimensionEditorOpen = ref(false)
+const editingDimension = ref<TagDimension | null>(null)
+const savingDimension = ref(false)
+const dimensionForm = ref({ name: '', code: '', description: '', enabled: true, sort_order: 0 })
+const role = getRoleFromToken()
+const canManage = role === 'super_admin'
+const canReview = ['super_admin', 'department_admin'].includes(role)
 
 const dimensionCards = computed(() => dimensions.value.map(dimension => {
   return { ...dimension, tags: tags.value.filter(tag => tag.dimension_id === dimension.id).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name, 'zh-CN')) }
@@ -87,9 +103,9 @@ async function loadDictionary() {
   loading.value = true
   message.value = ''
   try {
-    const response = await client.get<{ dimensions: TagDimension[]; tags: TagEntry[] }>('/admin/tags')
-    dimensions.value = response.data.dimensions || []
-    tags.value = response.data.tags || []
+    const [dictionaryResponse, dimensionResponse] = await Promise.all([getTagDictionary(), getTagDimensions()])
+    dimensions.value = dimensionResponse.data.dimensions || dictionaryResponse.data.dimensions || []
+    tags.value = dictionaryResponse.data.tags || []
   } catch (error: unknown) {
     dimensions.value = fallbackDimensions
     tags.value = []
@@ -112,19 +128,28 @@ async function saveTag() {
   saving.value = true
   try {
     const payload = { dimension_id: form.value.dimensionId, name: form.value.name, color: '', sort_order: Number(form.value.sortOrder) || 0 }
-    if (editingTag.value) await client.put(`/admin/tags/${encodeURIComponent(editingTag.value.id)}`, payload)
-    else await client.post('/admin/tags', payload)
+    if (editingTag.value) await updateTag(editingTag.value.id, payload)
+    else await createTag(payload)
     editorOpen.value = false
     showMessage(editingTag.value ? '标签已更新。' : '标签已添加。', 'success')
     await loadDictionary()
   } catch (error: unknown) { showMessage(errorMessage(error, '标签保存失败。'), 'error') } finally { saving.value = false }
 }
 
-async function deleteTag(tag: TagEntry) {
+async function removeTag(tag: TagEntry) {
   if (!window.confirm(`确定删除标签“${tag.name}”吗？`)) return
-  try { await client.delete(`/admin/tags/${encodeURIComponent(tag.id)}`); showMessage('标签已删除。', 'success'); await loadDictionary() }
+  try { await deleteTag(tag.id); showMessage('标签已删除。', 'success'); await loadDictionary() }
   catch (error: unknown) { showMessage(errorMessage(error, '标签删除失败。'), 'error') }
 }
+
+function openDimensionEditor(dimension?: TagDimension) { editingDimension.value = dimension || null; dimensionForm.value = { name: dimension?.name || '', code: dimension?.code || '', description: dimension?.description || '', enabled: dimension?.enabled ?? true, sort_order: dimension?.sort_order || 0 }; dimensionEditorOpen.value = true }
+function closeDimensionEditor() { if (!savingDimension.value) dimensionEditorOpen.value = false }
+async function saveDimension() { if (!dimensionForm.value.name || !dimensionForm.value.code || savingDimension.value) return; savingDimension.value = true; try { if (editingDimension.value) await updateTagDimension(editingDimension.value.id, dimensionForm.value); else await createTagDimension(dimensionForm.value); dimensionEditorOpen.value = false; showMessage('标签维度已保存。', 'success'); await loadDictionary() } catch (error: unknown) { showMessage(errorMessage(error, '标签维度保存失败。'), 'error') } finally { savingDimension.value = false } }
+async function removeDimension() { if (!editingDimension.value || !window.confirm(`确定删除维度“${editingDimension.value.name}”吗？`)) return; try { await deleteTagDimension(editingDimension.value.id); dimensionEditorOpen.value = false; showMessage('标签维度已删除。', 'success'); await loadDictionary() } catch (error: unknown) { showMessage(errorMessage(error, '标签维度删除失败。'), 'error') } }
+async function openFeedbackTab() { activeTab.value = 'feedback'; await loadFeedback() }
+async function loadFeedback() { feedbackLoading.value = true; try { const response = await getTagFeedbackQueue(); feedbackItems.value = response.data.items || []; selectedFeedback.value = [] } catch (error: unknown) { showMessage(errorMessage(error, '反馈队列加载失败。'), 'error') } finally { feedbackLoading.value = false } }
+async function reviewSelected(decision: 'reviewed' | 'rejected') { if (!selectedFeedback.value.length) return; try { await reviewTagFeedback(selectedFeedback.value, decision); showMessage(decision === 'reviewed' ? '反馈已确认。' : '反馈已驳回。', 'success'); await loadFeedback() } catch (error: unknown) { showMessage(errorMessage(error, '反馈审核失败。'), 'error') } }
+function formatDate(value: string) { return value ? new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }) : '—' }
 
 function showMessage(value: string, type: 'success' | 'error') { message.value = value; messageType.value = type }
 function errorMessage(error: unknown, fallback: string) { const value = error as { message?: string; response?: { data?: { error?: string; message?: string } } }; return value?.response?.data?.error || value?.response?.data?.message || value?.message || fallback }
@@ -153,6 +178,21 @@ onMounted(loadDictionary)
 .sdp-tag-dictionary__message { padding: var(--space-3) var(--space-4); border: 1px solid var(--brand-300); border-radius: var(--radius-sm); color: var(--brand-900); background: var(--brand-50); font-size: var(--text-sm); }
 .sdp-tag-dictionary__message--error { border-color: var(--ink-400); color: var(--ink-900); background: var(--ink-200); }
 .sdp-tag-dictionary__grid { display: grid; grid-template-columns: repeat(2, minmax(var(--space-0), 1fr)); gap: var(--space-4); align-items: start; }
+.sdp-tag-dictionary__tabs { display: flex; gap: var(--space-2); border-bottom: 1px solid var(--ink-300); }
+.sdp-tag-dictionary__tabs button { padding: var(--space-3) var(--space-4); border: 0; border-bottom: 2px solid transparent; color: var(--ink-600); background: transparent; cursor: pointer; }
+.sdp-tag-dictionary__tabs button.active { border-bottom-color: var(--brand-700); color: var(--brand-900); font-weight: var(--font-weight-semibold); }
+.sdp-tag-dictionary__tabs span { padding: 0 var(--space-2); border-radius: var(--radius-pill); color: var(--ink-50); background: var(--brand-700); font-size: var(--text-xs); }
+.sdp-tag-dictionary__dimension-actions { display: flex; gap: var(--space-2); }
+.sdp-tag-dictionary__new-dimension { min-height: calc(var(--space-24) * 2); border: 1px dashed var(--brand-500); border-radius: var(--radius-lg); color: var(--brand-800); background: var(--brand-50); font-weight: var(--font-weight-semibold); cursor: pointer; }
+.sdp-tag-dictionary__feedback { overflow: hidden; border: 1px solid var(--ink-200); border-radius: var(--radius-lg); background: var(--ink-50); }
+.sdp-tag-dictionary__feedback > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-5); border-bottom: 1px solid var(--ink-200); }
+.sdp-tag-dictionary__feedback > header > div:last-child { display: flex; gap: var(--space-2); }
+.sdp-tag-dictionary__feedback ul { list-style: none; }
+.sdp-tag-dictionary__feedback li, .sdp-tag-dictionary__feedback label { display: flex; align-items: center; }
+.sdp-tag-dictionary__feedback li { justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--ink-200); }
+.sdp-tag-dictionary__feedback label { gap: var(--space-3); }
+.sdp-tag-dictionary__feedback strong, .sdp-tag-dictionary__feedback small { display: block; }
+.sdp-tag-dictionary__feedback small, .sdp-tag-dictionary__feedback time { margin-top: var(--space-1); color: var(--ink-500); font-size: var(--text-xs); }
 .sdp-tag-dictionary__card { overflow: hidden; border: 1px solid var(--ink-200); border-radius: var(--radius-lg); background: var(--ink-50); box-shadow: var(--shadow-xs); }
 .sdp-tag-dictionary__card header { align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding: var(--space-5); border-bottom: 1px solid var(--ink-200); background: var(--ink-100); }
 .sdp-tag-dictionary__card header > div > span { color: var(--brand-700); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); }

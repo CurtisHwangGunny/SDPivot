@@ -4,10 +4,10 @@
       <div class="sdp-people-list__shell">
         <header class="sdp-people-list__header">
           <div><p>People Directory</p><h1>人员管理</h1><span>统一管理成员身份、角色、部门与账户状态。</span></div>
-          <SdpButton aria-label="邀请新成员" @click="showInviteNotice = true">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 19v-1.5a4.5 4.5 0 0 0-4.5-4.5h-5A4.5 4.5 0 0 0 1 17.5V19m7-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm11-1v6m-3-3h6" /></svg>
-            邀请成员
-          </SdpButton>
+          <div class="sdp-people-list__header-actions">
+            <SdpButton variant="secondary" aria-label="批量导入成员" @click="openImportDialog">批量导入</SdpButton>
+            <SdpButton aria-label="配置成员角色" @click="openRoleDialog()">角色配置</SdpButton>
+          </div>
         </header>
 
         <p v-if="showInviteNotice" class="sdp-people-list__notice" role="status">
@@ -54,10 +54,10 @@
                 <tr v-for="member in pageMembers" v-else :key="memberKey(member)">
                   <td><label class="sdp-people-list__checkbox"><input type="checkbox" :checked="selectedIds.includes(memberKey(member))" :aria-label="`选择成员 ${displayName(member)}`" @change="toggleMember(member)"></label></td>
                   <td><div class="sdp-people-list__identity"><span aria-hidden="true">{{ displayName(member).charAt(0).toUpperCase() }}</span><div><strong>{{ displayName(member) }}</strong><small>{{ member.email || member.user_id }}</small></div></div></td>
-                  <td><span class="sdp-people-list__role" :class="{ 'sdp-people-list__role--admin': isAdmin(member) }">{{ roleLabel(member.role) }}</span></td>
+                  <td><span class="sdp-people-list__role" :class="{ 'sdp-people-list__role--admin': isAdmin(member) }">{{ roleLabel(member.access_role || member.role) }}</span></td>
                   <td>{{ member.department || '未分配' }}</td>
                   <td><span class="sdp-people-list__status" :class="{ 'sdp-people-list__status--disabled': !isActive(member) }"><i aria-hidden="true" />{{ isActive(member) ? '启用' : '停用' }}</span></td>
-                  <td><div class="sdp-people-list__actions"><button type="button" :aria-label="`编辑成员 ${displayName(member)}`" @click="announceAction(`已选择编辑 ${displayName(member)}`)">编辑</button><button type="button" :aria-label="`${isActive(member) ? '停用' : '启用'}成员 ${displayName(member)}`" @click="toggleStatus(member)">{{ isActive(member) ? '停用' : '启用' }}</button></div></td>
+                  <td><div class="sdp-people-list__actions"><button type="button" :aria-label="`配置成员 ${displayName(member)} 的角色`" @click="openRoleDialog(member)">配置角色</button><button type="button" :aria-label="`${isActive(member) ? '停用' : '启用'}成员 ${displayName(member)}`" @click="toggleStatus(member)">{{ isActive(member) ? '停用' : '启用' }}</button></div></td>
                 </tr>
               </tbody>
             </table>
@@ -71,6 +71,27 @@
           <p class="sr-only" aria-live="polite">{{ actionAnnouncement }}</p>
         </section>
       </div>
+
+      <div v-if="importVisible" class="sdp-people-list__modal" role="presentation" @click.self="importVisible = false">
+        <section role="dialog" aria-modal="true" aria-labelledby="people-import-title">
+          <header><div><p>Batch Provisioning</p><h2 id="people-import-title">批量导入成员</h2></div><button type="button" aria-label="关闭批量导入" @click="importVisible = false">关闭</button></header>
+          <p>支持 CSV 或 JSON。字段：username/name/email/phone/password/department_id；新用户默认角色为知识查阅者，并在首次登录时强制改密。</p>
+          <label class="sdp-people-list__file"><input type="file" accept=".csv,.json,application/json,text/csv" :disabled="importing" @change="selectImportFile"><strong>{{ importFile?.name || '选择 CSV / JSON 文件' }}</strong><span>最多 1000 条，文件不超过 10 MB</span></label>
+          <div v-if="importResult" class="sdp-people-list__import-result"><strong>成功 {{ importResult.imported }} / {{ importResult.total }}</strong><span v-if="importResult.failed">失败 {{ importResult.failed }} 条</span><ul v-if="importResult.errors.length"><li v-for="(item, index) in importResult.errors.slice(0, 8)" :key="index">第 {{ item.row }} 条：{{ item.message }}</li></ul></div>
+          <footer><SdpButton variant="secondary" @click="importVisible = false">取消</SdpButton><SdpButton :loading="importing" :disabled="!importFile" @click="submitImport">开始导入</SdpButton></footer>
+        </section>
+      </div>
+
+      <div v-if="roleVisible" class="sdp-people-list__modal" role="presentation" @click.self="roleVisible = false">
+        <section role="dialog" aria-modal="true" aria-labelledby="people-role-title">
+          <header><div><p>RBAC Assignment</p><h2 id="people-role-title">角色配置</h2></div><button type="button" aria-label="关闭角色配置" @click="roleVisible = false">关闭</button></header>
+          <label>成员<select v-model="roleForm.userId" aria-label="选择成员" @change="syncRoleForm"><option value="">请选择成员</option><option v-for="member in members" :key="memberKey(member)" :value="member.user_id || memberKey(member)">{{ displayName(member) }}</option></select></label>
+          <label>角色<select v-model="roleForm.role" aria-label="选择角色"><option v-for="role in roles" :key="role.code" :value="role.code">{{ role.name }}</option></select></label>
+          <label v-if="roleForm.role === 'department_admin'">部门 ID<input v-model="roleForm.departmentId" type="text" placeholder="department_id" aria-label="部门 ID"></label>
+          <p class="sdp-people-list__role-note">角色调整立即影响下一次签发的访问令牌，并写入审计日志。</p>
+          <footer><SdpButton variant="secondary" @click="roleVisible = false">取消</SdpButton><SdpButton :loading="roleSaving" :disabled="!roleForm.userId" @click="saveRole">保存角色</SdpButton></footer>
+        </section>
+      </div>
     </div>
   </SdpSidebarLayout>
 </template>
@@ -78,8 +99,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { listMembers, type AdminMember } from '@/api/spaces'
+import { batchImportAdminUsers, listAdminRoles, updateAdminUserRole, type AdminRole, type AdminUserImportResult } from '@/api/admin'
 import { SdpButton } from '@/components/design'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
+import { MessagePlugin } from 'tdesign-vue-next'
 
 const members = ref<AdminMember[]>([])
 const loading = ref(true)
@@ -93,6 +116,14 @@ const page = ref(1)
 const pageSize = ref(8)
 const showInviteNotice = ref(false)
 const actionAnnouncement = ref('')
+const roles = ref<AdminRole[]>([])
+const importVisible = ref(false)
+const importing = ref(false)
+const importFile = ref<File | null>(null)
+const importResult = ref<AdminUserImportResult | null>(null)
+const roleVisible = ref(false)
+const roleSaving = ref(false)
+const roleForm = ref<{ userId: string; role: AdminRole['code']; departmentId: string }>({ userId: '', role: 'knowledge_viewer', departmentId: '' })
 
 const departments = computed(() => [...new Set(members.value.map(member => member.department).filter((value): value is string => Boolean(value)))].sort())
 const filteredMembers = computed(() => {
@@ -131,9 +162,9 @@ async function loadMembers() {
 
 function memberKey(member: AdminMember) { return String(member.id || member.user_id) }
 function displayName(member: AdminMember) { return member.name || member.nickname || member.username || member.email || `成员 ${member.user_id.slice(0, 8)}` }
-function isAdmin(member: AdminMember) { return ['admin', 'owner', 'super_admin'].includes(String(member.role || '').toLocaleLowerCase()) }
+function isAdmin(member: AdminMember) { return ['admin', 'owner', 'super_admin', 'department_admin'].includes(String(member.access_role || member.role || '').toLocaleLowerCase()) }
 function isActive(member: AdminMember) { return !['disabled', 'inactive', 'blocked'].includes(String(member.status || 'active').toLocaleLowerCase()) }
-function roleLabel(role: string) { return ['admin', 'owner', 'super_admin'].includes(String(role).toLocaleLowerCase()) ? '管理员' : '普通成员' }
+function roleLabel(role: string) { return roles.value.find(item => item.code === role)?.name || ({ admin: '部门管理员', owner: '超级管理员', member: '知识查阅者' } as Record<string, string>)[role] || role || '知识查阅者' }
 function toggleMember(member: AdminMember) { const id = memberKey(member); selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter(value => value !== id) : [...selectedIds.value, id] }
 function togglePageSelection() { selectedIds.value = allPageSelected.value ? selectedIds.value.filter(id => !currentPageIds.value.includes(id)) : [...new Set([...selectedIds.value, ...currentPageIds.value])] }
 function clearFilters() { searchQuery.value = ''; roleFilter.value = 'all'; departmentFilter.value = 'all' }
@@ -153,15 +184,53 @@ function applyBulkAction() {
   bulkAction.value = ''
 }
 
+function openImportDialog() { importFile.value = null; importResult.value = null; importVisible.value = true }
+function selectImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] || null
+  input.value = ''
+  if (!file) return
+  if (!/\.(csv|json)$/i.test(file.name) || file.size > 10 * 1024 * 1024) { MessagePlugin.warning('请选择不超过 10 MB 的 CSV 或 JSON 文件'); return }
+  importFile.value = file
+}
+async function fileAsBase64(file: File) { return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1] || ''); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file) }) }
+async function submitImport() {
+  if (!importFile.value) return
+  importing.value = true
+  try {
+    const payload = /\.json$/i.test(importFile.value.name) ? JSON.parse(await importFile.value.text()) : { csv_base64: await fileAsBase64(importFile.value) }
+    const response = await batchImportAdminUsers(payload)
+    importResult.value = response.data
+    MessagePlugin.success(`成功导入 ${response.data.imported} 名成员`)
+    await loadMembers()
+  } catch (error: unknown) { const value = error as { response?: { data?: { error?: string } } }; MessagePlugin.error(value.response?.data?.error || '批量导入失败') } finally { importing.value = false }
+}
+function openRoleDialog(member?: AdminMember) {
+  roleForm.value = { userId: member ? (member.user_id || memberKey(member)) : '', role: (member?.access_role as AdminRole['code']) || 'knowledge_viewer', departmentId: member?.department_id || '' }
+  roleVisible.value = true
+}
+function syncRoleForm() {
+  const member = members.value.find(item => (item.user_id || memberKey(item)) === roleForm.value.userId)
+  if (member) roleForm.value = { userId: roleForm.value.userId, role: (member.access_role as AdminRole['code']) || 'knowledge_viewer', departmentId: member.department_id || '' }
+}
+async function saveRole() {
+  roleSaving.value = true
+  try { await updateAdminUserRole(roleForm.value.userId, roleForm.value.role, roleForm.value.departmentId); MessagePlugin.success('角色配置已保存'); roleVisible.value = false; await loadMembers() }
+  catch (error: unknown) { const value = error as { response?: { data?: { error?: string } } }; MessagePlugin.error(value.response?.data?.error || '角色配置失败') } finally { roleSaving.value = false }
+}
+
+async function loadRoles() { try { roles.value = (await listAdminRoles()).data.roles || [] } catch { roles.value = [] } }
+
 watch([searchQuery, roleFilter, departmentFilter, pageSize], () => { page.value = 1 })
 watch(totalPages, value => { if (page.value > value) page.value = value })
-onMounted(loadMembers)
+onMounted(() => { loadMembers(); loadRoles() })
 </script>
 
 <style scoped>
 .sdp-people-list { min-height: 100dvh; color: var(--ink-900); background: var(--ink-100); font-family: var(--font-body); }
 .sdp-people-list__shell { display: grid; gap: var(--space-6); width: min(100%, var(--content-max-width)); margin-inline: auto; padding: var(--space-8); }
-.sdp-people-list__header, .sdp-people-list__panel-head, .sdp-people-list__filters, .sdp-people-list__batch, .sdp-people-list__pagination, .sdp-people-list__identity, .sdp-people-list__actions { display: flex; align-items: center; }
+.sdp-people-list__header, .sdp-people-list__header-actions, .sdp-people-list__panel-head, .sdp-people-list__filters, .sdp-people-list__batch, .sdp-people-list__pagination, .sdp-people-list__identity, .sdp-people-list__actions { display: flex; align-items: center; }
+.sdp-people-list__header-actions { gap: var(--space-3); }
 .sdp-people-list__header { justify-content: space-between; gap: var(--space-6); }
 .sdp-people-list__header p, .sdp-people-list__panel-head p { color: var(--brand-700); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); letter-spacing: .08em; text-transform: uppercase; }
 .sdp-people-list__header h1 { margin-top: var(--space-1); color: var(--ink-950); font-family: var(--font-display); font-size: var(--text-4xl); line-height: var(--leading-tight); }
@@ -214,6 +283,21 @@ onMounted(loadMembers)
 .sdp-people-list__pagination button:disabled { cursor: not-allowed; opacity: .5; }
 .sdp-people-list__pagination .sdp-people-list__page--active { border-color: var(--brand-600); color: var(--ink-50); background: var(--brand-700); }
 .sdp-people-list button:focus-visible, .sdp-people-list input:focus-visible, .sdp-people-list select:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.sdp-people-list__modal { position: fixed; z-index: 80; inset: 0; display: grid; place-items: center; padding: var(--space-5); background: color-mix(in srgb, var(--ink-950) 58%, transparent); }
+.sdp-people-list__modal > section { width: min(100%, 38rem); max-height: 90dvh; overflow-y: auto; padding: var(--space-6); border: 1px solid var(--ink-300); border-radius: var(--radius-lg); background: var(--ink-50); box-shadow: var(--shadow-lg); }
+.sdp-people-list__modal header, .sdp-people-list__modal footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.sdp-people-list__modal header { margin-bottom: var(--space-5); }
+.sdp-people-list__modal header p { color: var(--brand-700); font: var(--font-weight-semibold) var(--text-xs) var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.sdp-people-list__modal header button { border: 0; color: var(--ink-600); background: transparent; cursor: pointer; }
+.sdp-people-list__modal > section > p, .sdp-people-list__role-note { margin-bottom: var(--space-4); color: var(--ink-600); font-size: var(--text-sm); line-height: var(--leading-relaxed); }
+.sdp-people-list__modal label:not(.sdp-people-list__file) { display: grid; gap: var(--space-2); margin-top: var(--space-4); color: var(--ink-700); font-size: var(--text-sm); font-weight: var(--font-weight-semibold); }
+.sdp-people-list__modal select, .sdp-people-list__modal input { min-height: var(--space-10); padding: var(--space-2) var(--space-3); border: 1px solid var(--ink-300); border-radius: var(--radius-sm); background: var(--ink-50); }
+.sdp-people-list__file { display: grid; gap: var(--space-2); padding: var(--space-8); border: 1px dashed var(--brand-500); border-radius: var(--radius-md); color: var(--ink-700); background: var(--brand-50); text-align: center; cursor: pointer; }
+.sdp-people-list__file input { position: absolute; opacity: 0; pointer-events: none; }
+.sdp-people-list__file span { color: var(--ink-500); font-size: var(--text-xs); }
+.sdp-people-list__modal footer { justify-content: flex-end; margin-top: var(--space-6); }
+.sdp-people-list__import-result { display: grid; gap: var(--space-2); margin-top: var(--space-4); padding: var(--space-4); border-radius: var(--radius-sm); background: var(--ink-100); font-size: var(--text-sm); }
+.sdp-people-list__import-result ul { padding-left: var(--space-5); color: var(--ink-600); }
 @media (max-width: 48rem) { .sdp-people-list__shell { padding: var(--space-6); } .sdp-people-list__stats { grid-template-columns: 1fr; } .sdp-people-list__filters { align-items: stretch; flex-direction: column; } .sdp-people-list__search { min-width: var(--space-0); } .sdp-people-list__filters label, .sdp-people-list__filters input, .sdp-people-list__filters select, .sdp-people-list__filters > button { width: 100%; } }
 @media (max-width: 40rem) { .sdp-people-list__shell { padding: var(--space-4); } .sdp-people-list__header { align-items: flex-start; flex-direction: column; } .sdp-people-list__header h1 { font-size: var(--text-3xl); } .sdp-people-list__header :deep(.sdp-button) { width: 100%; } .sdp-people-list__panel-head, .sdp-people-list__filters, .sdp-people-list__batch, .sdp-people-list__pagination { padding-inline: var(--space-4); } .sdp-people-list__pagination { align-items: stretch; flex-direction: column; } .sdp-people-list__pagination p { margin-right: var(--space-0); } }
 </style>

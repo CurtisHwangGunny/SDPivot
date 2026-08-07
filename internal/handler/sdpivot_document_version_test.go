@@ -51,6 +51,7 @@ func serveSDPivotDocumentRequest(t *testing.T, db *gorm.DB, uploadDir string, te
 	router.Use(func(c *gin.Context) {
 		c.Set("tenant_id", tenantID)
 		c.Set("user_id", "user-1")
+		c.Set("role", "knowledge_editor")
 		c.Next()
 	})
 	h := &SDPivotDocumentHandler{db: db, uploadDir: uploadDir}

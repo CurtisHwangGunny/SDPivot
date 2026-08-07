@@ -13,6 +13,26 @@ export interface WritingDraft {
   updated_at: string
 }
 
+export interface WritingCategory {
+  id: string
+  name: string
+  description: string
+  sort: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WritingTemplate {
+  id: string
+  category_id: string
+  name: string
+  content: string
+  is_builtin: boolean
+  sort: number
+  created_at: string
+  updated_at: string
+}
+
 export const CATEGORIES = [
   { value: 'notice', label: '通知' },
   { value: 'announcement', label: '公告' },
@@ -70,6 +90,38 @@ export function deleteDraft(id: string) {
 
 export function exportDraft(id: string, format: string) {
   return client.post(`/writing/drafts/${id}/export`, { format }, { responseType: 'blob' })
+}
+
+export function listWritingCategories() {
+  return client.get<{ categories: WritingCategory[] }>('/writing/categories')
+}
+
+export function createWritingCategory(data: Pick<WritingCategory, 'name' | 'description' | 'sort'>) {
+  return client.post<{ category: WritingCategory }>('/writing/categories', data)
+}
+
+export function updateWritingCategory(id: string, data: Partial<Pick<WritingCategory, 'name' | 'description' | 'sort'>>) {
+  return client.put(`/writing/categories/${id}`, data)
+}
+
+export function deleteWritingCategory(id: string) {
+  return client.delete(`/writing/categories/${id}`)
+}
+
+export function listWritingTemplates(categoryId?: string) {
+  return client.get<{ templates: WritingTemplate[] }>('/writing/templates', { params: categoryId ? { category_id: categoryId } : undefined })
+}
+
+export function createWritingTemplate(data: Pick<WritingTemplate, 'category_id' | 'name' | 'content' | 'is_builtin' | 'sort'>) {
+  return client.post<{ template: WritingTemplate }>('/writing/templates', data)
+}
+
+export function updateWritingTemplate(id: string, data: Partial<Pick<WritingTemplate, 'category_id' | 'name' | 'content' | 'is_builtin' | 'sort'>>) {
+  return client.put(`/writing/templates/${id}`, data)
+}
+
+export function deleteWritingTemplate(id: string) {
+  return client.delete(`/writing/templates/${id}`)
 }
 
 export function getOpsDashboard() {

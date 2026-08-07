@@ -75,6 +75,10 @@ func SDPivotAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if IsAPITokenAuthenticated(c) {
+			c.Next()
+			return
+		}
 
 		// Check for public routes
 		if isSDPivotPublicPath(c.Request.URL.Path, c.Request.Method) {

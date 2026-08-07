@@ -32,10 +32,10 @@ func (h *SDPivotSpaceHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		spaces.GET("/:id", h.GetSpace)
 		spaces.PUT("/:id", h.UpdateSpace)
 		spaces.DELETE("/:id", h.DeleteSpace)
-		spaces.GET("/:id/members", h.ListSpaceMembers)
-		spaces.POST("/:id/members", h.AddSpaceMember)
-		spaces.DELETE("/:id/members/:userId", h.RemoveSpaceMember)
-		spaces.PUT("/:id/members/:userId", h.UpdateSpaceMemberRole)
+		spaces.GET("/:id/members", middleware.RequirePermission(middleware.PermissionKnowledgeRead), h.ListSpaceMembers)
+		spaces.POST("/:id/members", middleware.RequirePermission(middleware.PermissionDepartmentManage), h.AddSpaceMember)
+		spaces.DELETE("/:id/members/:userId", middleware.RequirePermission(middleware.PermissionDepartmentManage), h.RemoveSpaceMember)
+		spaces.PUT("/:id/members/:userId", middleware.RequirePermission(middleware.PermissionDepartmentManage), h.UpdateSpaceMemberRole)
 	}
 
 	categories := rg.Group("/categories")
@@ -110,6 +110,9 @@ func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 		}
 		return
 	}
+	writeSDPivotAuditLog(h.db, c, auditActionSpaceCreate, auditModuleSpace, "space", space.ID, map[string]interface{}{
+		"name": space.Name, "visibility": space.Visibility,
+	})
 
 	c.JSON(http.StatusCreated, gin.H{"space": space})
 }
@@ -225,8 +228,24 @@ func (h *SDPivotSpaceHandler) DeleteSpace(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete space members"})
 		return
 	}
+	writeSDPivotAuditLog(h.db, c, auditActionSpaceDelete, auditModuleSpace, "space", spaceID, nil)
 
 	c.JSON(http.StatusOK, gin.H{"message": "space deleted"})
+}
+
+type spaceMemberResponse struct {
+	ID             string    `json:"id"`
+	SpaceID        string    `json:"space_id"`
+	UserID         string    `json:"user_id"`
+	Role           string    `json:"role"`
+	Username       string    `json:"username"`
+	Email          string    `json:"email"`
+	Nickname       string    `json:"nickname"`
+	Phone          string    `json:"phone"`
+	DepartmentID   string    `json:"department_id"`
+	DepartmentName string    `json:"department"`
+	Status         string    `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // ListSpaceMembers lists members of a knowledge space.
@@ -238,8 +257,19 @@ func (h *SDPivotSpaceHandler) ListSpaceMembers(c *gin.Context) {
 		return
 	}
 
-	var members []types.SpaceMember
-	if err := tenantDB.Where("space_id = ?", spaceID).Find(&members).Error; err != nil {
+	members := make([]spaceMemberResponse, 0)
+	if err := tenantDB.Table("space_members sm").
+		Select(`sm.id, sm.space_id, sm.user_id, sm.role, sm.created_at,
+			users.username, users.email, COALESCE(profiles.nickname, '') AS nickname,
+			COALESCE(profiles.phone, '') AS phone, COALESCE(users.department_id, '') AS department_id,
+			COALESCE(departments.name, '') AS department,
+			CASE WHEN users.is_active THEN '正常' ELSE '停用' END AS status`).
+		Joins("JOIN users ON users.id = sm.user_id AND users.tenant_id = ?", middleware.GetTenantID(c)).
+		Joins("LEFT JOIN smartknora_user_profiles profiles ON profiles.user_id = users.id AND profiles.deleted_at IS NULL").
+		Joins("LEFT JOIN departments ON departments.id = users.department_id AND departments.deleted_at IS NULL").
+		Where("sm.space_id = ?", spaceID).
+		Order("sm.created_at ASC").
+		Scan(&members).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list space members"})
 		return
 	}

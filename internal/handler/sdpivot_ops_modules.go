@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -11,7 +13,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/handler/dto"
 	"github.com/Tencent/WeKnora/internal/middleware"
+	"github.com/Tencent/WeKnora/internal/types"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // ============================================================
@@ -250,98 +255,108 @@ func (h *SDPivotOpsAdminHandler) getOrCreateConfigValue(key, defaultValue, descr
 // ============================================================
 
 func (h *SDPivotOpsAdminHandler) ListModels(c *gin.Context) {
-	if middleware.RequireRole(c, "super_admin") {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
 		return
 	}
-	h.db.Exec("SET LOCAL row_security = off")
 
-	type ModelRow struct {
-		ID          string    `json:"id"`
-		Name        string    `json:"name"`
-		DisplayName string    `json:"display_name"`
-		Type        string    `json:"type"`
-		Source      string    `json:"source"`
-		Description string    `json:"description"`
-		IsDefault   bool      `json:"is_default"`
-		IsBuiltin   bool      `json:"is_builtin"`
-		ManagedBy   string    `json:"managed_by"`
-		Status      string    `json:"status"`
-		CreatedAt   time.Time `json:"created_at"`
+	models := make([]*types.Model, 0)
+	query := h.db.Where("deleted_at IS NULL")
+	if strings.Contains(c.FullPath(), "/admin/models") {
+		query = query.Where("tenant_id = ? OR is_builtin = true", middleware.GetTenantID(c))
+	} else if query.Dialector.Name() == "postgres" {
+		query.Exec("SET LOCAL row_security = off")
+	}
+	if err := query.
+		Order("is_default DESC, created_at DESC").
+		Find(&models).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load models"})
+		return
 	}
 
-	var models []ModelRow
-	h.db.Table("models").
-		Select("id, name, display_name, type, source, description, is_default, is_builtin, managed_by, status, created_at").
-		Where("deleted_at IS NULL").
-		Order("is_default DESC, created_at DESC").
-		Find(&models)
-
-	c.JSON(http.StatusOK, gin.H{"models": models})
+	c.JSON(http.StatusOK, gin.H{"models": dto.NewModelResponses(models)})
 }
 
 func (h *SDPivotOpsAdminHandler) CreateModel(c *gin.Context) {
-	if middleware.RequireRole(c, "super_admin") {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
 		return
 	}
 	var req struct {
-		Name        string `json:"name" binding:"required"`
-		DisplayName string `json:"display_name"`
-		Type        string `json:"type" binding:"required"`
-		Source      string `json:"source"`
-		Description string `json:"description"`
-		Parameters  string `json:"parameters"`
+		Name        string            `json:"name" binding:"required"`
+		DisplayName string            `json:"display_name"`
+		Type        types.ModelType   `json:"type" binding:"required"`
+		Source      types.ModelSource `json:"source" binding:"required"`
+		Description string            `json:"description"`
+		Parameters  json.RawMessage   `json:"parameters"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if req.Parameters == "" {
-		req.Parameters = "{}"
+	parameters, err := parseModelParameters(req.Parameters)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "parameters must be a JSON object"})
+		return
 	}
-
-	model := map[string]interface{}{
-		"id":           uuid.New().String(),
-		"name":         req.Name,
-		"display_name": req.DisplayName,
-		"type":         req.Type,
-		"source":       req.Source,
-		"description":  req.Description,
-		"parameters":   req.Parameters,
-		"is_default":   false,
-		"is_builtin":   false,
-		"managed_by":   "ops",
-		"tenant_id":    1,
-		"status":       "active",
-		"created_at":   time.Now(),
-		"updated_at":   time.Now(),
+	if parameters.BaseURL != "" {
+		if err := secutils.ValidateURLForSSRF(parameters.BaseURL); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or unsafe model endpoint"})
+			return
+		}
 	}
-
-	if err := h.db.Table("models").Create(model).Error; err != nil {
+	now := time.Now()
+	model := types.Model{
+		ID: uuid.NewString(), TenantID: middleware.GetTenantID(c), Name: strings.TrimSpace(req.Name),
+		DisplayName: strings.TrimSpace(req.DisplayName), Type: req.Type, Source: req.Source,
+		Description: strings.TrimSpace(req.Description), Parameters: parameters, IsDefault: false,
+		IsBuiltin: false, ManagedBy: "ops", Status: types.ModelStatusActive, CreatedAt: now, UpdatedAt: now,
+	}
+	if model.TenantID == 0 {
+		model.TenantID = types.DefaultBuiltinModelTenantID
+	}
+	if err := h.db.Create(&model).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create model"})
 		return
 	}
-	h.writeAuditLog(c, "create_model", "model", model["id"].(string), "name: "+req.Name)
-	c.JSON(http.StatusCreated, gin.H{"model": model})
+	h.writeAuditLog(c, "create_model", "model", model.ID, "name: "+req.Name)
+	c.JSON(http.StatusCreated, gin.H{"model": dto.NewModelResponse(&model)})
 }
 
 func (h *SDPivotOpsAdminHandler) UpdateModel(c *gin.Context) {
-	if middleware.RequireRole(c, "super_admin") {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
 		return
 	}
 	id := c.Param("id")
 	var req struct {
-		DisplayName *string `json:"display_name"`
-		Source      *string `json:"source"`
-		Description *string `json:"description"`
-		Status      *string `json:"status"`
+		Name        *string            `json:"name"`
+		DisplayName *string            `json:"display_name"`
+		Type        *types.ModelType   `json:"type"`
+		Source      *types.ModelSource `json:"source"`
+		Description *string            `json:"description"`
+		Status      *types.ModelStatus `json:"status"`
+		Parameters  json.RawMessage    `json:"parameters"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	var model types.Model
+	if err := h.db.Where("id = ? AND tenant_id = ? AND is_builtin = false AND deleted_at IS NULL", id, middleware.GetTenantID(c)).First(&model).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "model not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load model"})
+		}
+		return
+	}
 	updates := map[string]interface{}{"updated_at": time.Now()}
+	if req.Name != nil {
+		updates["name"] = strings.TrimSpace(*req.Name)
+	}
 	if req.DisplayName != nil {
-		updates["display_name"] = *req.DisplayName
+		updates["display_name"] = strings.TrimSpace(*req.DisplayName)
+	}
+	if req.Type != nil {
+		updates["type"] = *req.Type
 	}
 	if req.Source != nil {
 		updates["source"] = *req.Source
@@ -352,7 +367,31 @@ func (h *SDPivotOpsAdminHandler) UpdateModel(c *gin.Context) {
 	if req.Status != nil {
 		updates["status"] = *req.Status
 	}
-	h.db.Table("models").Where("id = ?", id).Updates(updates)
+	if len(req.Parameters) > 0 && string(req.Parameters) != "null" {
+		parameters, err := parseModelParameters(req.Parameters)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "parameters must be a JSON object"})
+			return
+		}
+		if parameters.APIKey == "" {
+			parameters.APIKey = model.Parameters.APIKey
+		}
+		if parameters.AppSecret == "" {
+			parameters.AppSecret = model.Parameters.AppSecret
+		}
+		if parameters.BaseURL != "" {
+			if err := secutils.ValidateURLForSSRF(parameters.BaseURL); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or unsafe model endpoint"})
+				return
+			}
+		}
+		updates["parameters"] = parameters
+	}
+	result := h.db.Model(&types.Model{}).Where("id = ? AND tenant_id = ? AND is_builtin = false", id, middleware.GetTenantID(c)).Updates(updates)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update model"})
+		return
+	}
 	h.writeAuditLog(c, "update_model", "model", id, "")
 	c.JSON(http.StatusOK, gin.H{"message": "model updated"})
 }
@@ -368,20 +407,77 @@ func (h *SDPivotOpsAdminHandler) DeleteModel(c *gin.Context) {
 }
 
 func (h *SDPivotOpsAdminHandler) SetDefaultModel(c *gin.Context) {
-	if middleware.RequireRole(c, "super_admin") {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
 		return
 	}
 	id := c.Param("id")
+	tenantID := middleware.GetTenantID(c)
+	var model types.Model
+	if err := h.db.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL AND status = ?", id, tenantID, types.ModelStatusActive).First(&model).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "active model not found"})
+		return
+	}
+	multiModel := h.multiModelEnabled(tenantID)
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if !multiModel {
+			if err := tx.Model(&types.Model{}).Where("tenant_id = ? AND type = ? AND deleted_at IS NULL", tenantID, model.Type).Update("is_default", false).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&types.Model{}).Where("id = ? AND tenant_id = ?", id, tenantID).Update("is_default", true).Error
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set default model"})
+		return
+	}
+	h.writeAuditLog(c, "set_default_model", "model", id, "type: "+string(model.Type))
+	c.JSON(http.StatusOK, gin.H{"message": "default model set", "model_id": id, "multi_model_enabled": multiModel})
+}
 
-	// Unset all defaults of same type
-	var modelType string
-	h.db.Table("models").Where("id = ?", id).Select("type").Row().Scan(&modelType)
+func (h *SDPivotOpsAdminHandler) TestModel(c *gin.Context) {
+	if middleware.RequireRole(c, "super_admin", "department_admin") {
+		return
+	}
+	id := c.Param("id")
+	tenantID := middleware.GetTenantID(c)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+	result, err := NewSDPivotLLMService(h.db).GenerateWithModel(ctx, tenantID, id, "You are a connectivity check.", "Reply with OK.", 8)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "model connectivity test failed", "detail": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "model connection succeeded", "model_id": id, "response": result.Content})
+}
 
-	h.db.Table("models").Where("type = ? AND deleted_at IS NULL", modelType).Update("is_default", false)
-	h.db.Table("models").Where("id = ?", id).Update("is_default", true)
+func parseModelParameters(raw json.RawMessage) (types.ModelParameters, error) {
+	var parameters types.ModelParameters
+	if len(raw) == 0 || string(raw) == "null" {
+		return parameters, nil
+	}
+	if raw[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(raw, &encoded); err != nil {
+			return parameters, err
+		}
+		raw = json.RawMessage(encoded)
+	}
+	if err := json.Unmarshal(raw, &parameters); err != nil {
+		return parameters, err
+	}
+	return parameters, nil
+}
 
-	h.writeAuditLog(c, "set_default_model", "model", id, "type: "+modelType)
-	c.JSON(http.StatusOK, gin.H{"message": "default model set", "model_id": id})
+func (h *SDPivotOpsAdminHandler) multiModelEnabled(tenantID uint64) bool {
+	var value string
+	err := h.db.Table("system_settings").Select("value").
+		Where("tenant_id = ? AND section = ? AND key = ?", tenantID, "global", "multi_model_enabled").
+		Scan(&value).Error
+	if err != nil {
+		return false
+	}
+	value = strings.ToLower(strings.TrimSpace(value))
+	return value == "true" || value == "1" || value == "yes" || value == "on"
 }
 
 // ============================================================

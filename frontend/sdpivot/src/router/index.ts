@@ -11,9 +11,11 @@ const adminRouteRoles: Record<string, string[]> = {
   '/admin/people': ['super_admin', 'department_admin'],
   '/admin/tags': allAccessRoles,
   '/admin/models': ['super_admin'],
-  '/admin/security': ['super_admin'],
+  '/admin/security': ['super_admin', 'department_admin'],
+  '/admin/config': ['super_admin', 'department_admin'],
+  '/admin/api-tokens': ['super_admin', 'department_admin'],
   '/admin/departments': ['super_admin', 'department_admin'],
-  '/admin/audit': allAccessRoles,
+  '/admin/audit': ['super_admin', 'department_admin'],
   '/admin/usage': ['super_admin', 'department_admin'],
 }
 

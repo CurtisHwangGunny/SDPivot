@@ -92,7 +92,7 @@ func (h *SDPivotOpsAdminHandler) CreateUser(c *gin.Context) {
 	}
 
 	username := importedUsername(row)
-	h.writeAuditLog(c, "create_user", "user", username, "created user: "+username)
+	writeSDPivotAuditLog(h.db, c, auditActionUserCreated, auditModuleUser, "user", username, map[string]interface{}{"username": username})
 	c.JSON(http.StatusCreated, gin.H{"message": "user created", "username": username})
 }
 
@@ -135,10 +135,9 @@ func (h *SDPivotOpsAdminHandler) ImportUsers(c *gin.Context) {
 	}
 	result.Failed = result.Total - result.Imported
 
-	h.writeAuditLog(c, "import_users", "user", "", fmt.Sprintf(
-		"file: %s, total: %d, imported: %d, failed: %d",
-		filepath.Base(header.Filename), result.Total, result.Imported, result.Failed,
-	))
+	writeSDPivotAuditLog(h.db, c, auditActionUserImported, auditModuleUser, "user", "", map[string]interface{}{
+		"file": filepath.Base(header.Filename), "total": result.Total, "imported": result.Imported, "failed": result.Failed,
+	})
 	c.JSON(http.StatusOK, result)
 }
 

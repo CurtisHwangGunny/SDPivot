@@ -76,7 +76,7 @@
           <span class="subtle">预计 {{ fileQueue.length }} 个文件将在 {{ estimatedMinutes }} 分钟内完成解析</span>
           <div class="actions">
             <button class="btn secondary" type="button" @click="close">稍后处理</button>
-            <button class="btn primary" type="button" :disabled="!fileQueue.length" @click="startImport">开始导入</button>
+            <button class="btn primary" type="button" :disabled="!hasPendingFiles || uploading" @click="startImport">{{ uploading ? '导入中...' : '开始导入' }}</button>
           </div>
         </footer>
       </aside>
@@ -85,7 +85,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, onUnmounted, watch } from 'vue';
+import { uploadDocument } from '@/api/documents';
 import SdpEmptyState from './SdpEmptyState.vue';
 
 const props = defineProps<{
@@ -95,11 +96,12 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   'update:open': [value: boolean];
-  import: [files: File[]];
+  imported: [];
 }>();
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const fileQueue = reactive<Array<{ name: string; meta: string; progress: number; status: string; variant: string; file: File }>>([]);
+const uploading = ref(false);
 
 const steps = [
   { title: '1 上传', description: '选择文件或批量拖入', active: true },
@@ -116,6 +118,7 @@ const rules = reactive([
 ]);
 
 const estimatedMinutes = computed(() => Math.max(1, Math.ceil(fileQueue.length * 0.8)));
+const hasPendingFiles = computed(() => fileQueue.some(file => file.status === '待上传' || file.status === '失败'));
 
 function fileTypeIcon(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -126,6 +129,10 @@ function fileTypeIcon(name: string): string {
 function addFiles(files: FileList | File[]) {
   for (const file of Array.from(files)) {
     if (fileQueue.some(f => f.file.name === file.name && f.file.size === file.size)) continue;
+    if (file.size > 50 * 1024 * 1024) {
+      fileQueue.push({ name: file.name, meta: '文件超过 50MB 限制', progress: 0, status: '失败', variant: 'yellow', file });
+      continue;
+    }
     const size = file.size > 1024 * 1024
       ? `${(file.size / (1024 * 1024)).toFixed(1)}MB`
       : `${(file.size / 1024).toFixed(0)}KB`;
@@ -155,6 +162,7 @@ function triggerFileInput() {
 }
 
 function removeFile(index: number) {
+  if (uploading.value && fileQueue[index]?.status === '上传中') return;
   fileQueue.splice(index, 1);
 }
 
@@ -164,10 +172,31 @@ function clearCompleted() {
   }
 }
 
-function startImport() {
-  if (fileQueue.length) {
-    emit('import', fileQueue.map(f => f.file));
+async function startImport() {
+  if (!props.spaceId || uploading.value) return;
+  uploading.value = true;
+  let completed = 0;
+  for (const item of fileQueue) {
+    if (item.status !== '待上传' && item.status !== '失败') continue;
+    item.status = '上传中';
+    item.variant = 'blue';
+    item.meta = '正在上传';
+    item.progress = 0;
+    try {
+      const response = await uploadDocument({ space_id: props.spaceId, file: item.file }, percent => { item.progress = percent; });
+      item.progress = 100;
+      item.status = '已完成';
+      item.variant = 'green';
+      item.meta = response.data.message || '上传完成';
+      completed++;
+    } catch (error: unknown) {
+      item.status = '失败';
+      item.variant = 'yellow';
+      item.meta = errorMessage(error, '上传失败，请重试');
+    }
   }
+  uploading.value = false;
+  if (completed > 0) emit('imported');
 }
 
 function close() { emit('update:open', false); }
@@ -175,6 +204,13 @@ function close() { emit('update:open', false); }
 watch(() => props.open, (value) => {
   document.body.style.overflow = value ? 'hidden' : '';
 });
+onUnmounted(() => { document.body.style.overflow = ''; });
+
+function errorMessage(error: unknown, fallback: string) {
+  if (typeof error !== 'object' || !error) return fallback;
+  const value = error as { message?: string; response?: { data?: { error?: string; message?: string } } };
+  return value.response?.data?.error || value.response?.data?.message || value.message || fallback;
+}
 </script>
 
 <style scoped>

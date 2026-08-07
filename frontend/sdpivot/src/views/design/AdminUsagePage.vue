@@ -1,13 +1,28 @@
 <template>
-  <SdpSidebarLayout mode="admin">
-    <section class="sdp-admin-placeholder">
-      <p>Usage Insights</p>
-      <h1>用量统计</h1>
-      <span>开发中</span>
-    </section>
-  </SdpSidebarLayout>
+  <SdpSidebarLayout mode="admin"><main class="usage-report"><div class="shell">
+    <header><div><p>Usage Insights</p><h1>用量统计</h1><span>按人员或部门分析 SDPivot·文枢 Token 消耗并导出报表。</span></div><div class="header-actions"><SdpButton variant="secondary" :loading="loading" @click="load">刷新</SdpButton><SdpButton :disabled="rows.length===0" @click="exportReport">导出 CSV</SdpButton></div></header>
+    <SdpNotice v-if="error" type="danger" :title="error" />
+    <section class="filters"><div class="segmented"><button type="button" :class="{active:groupBy==='user'}" @click="groupBy='user';load()">按人员</button><button type="button" :class="{active:groupBy==='department'}" @click="groupBy='department';load()">按部门</button></div><label>开始日期<input v-model="startDate" type="date" /></label><label>结束日期<input v-model="endDate" type="date" /></label><SdpButton variant="secondary" @click="load">应用筛选</SdpButton></section>
+    <section class="kpis"><article><span>总 Token</span><strong>{{ number(total.total_tokens) }}</strong></article><article><span>输入 Token</span><strong>{{ number(total.prompt_tokens) }}</strong></article><article><span>输出 Token</span><strong>{{ number(total.completion_tokens) }}</strong></article><article><span>请求次数</span><strong>{{ number(total.request_count) }}</strong></article></section>
+    <section class="panel"><div class="panel-head"><div><p>Report</p><h2>{{ groupBy==='user'?'人员':'部门' }}消费明细</h2></div><span>{{ rows.length }} 条聚合记录</span></div><div class="table-wrap"><table><thead><tr><th>{{ groupBy==='user'?'人员':'部门' }}</th><th>输入 Token</th><th>输出 Token</th><th>总 Token</th><th>请求次数</th><th>占比</th></tr></thead><tbody><tr v-for="row in rows" :key="row.id||row.name"><th>{{ row.name }}</th><td>{{ number(row.prompt_tokens) }}</td><td>{{ number(row.completion_tokens) }}</td><td><strong>{{ number(row.total_tokens) }}</strong></td><td>{{ number(row.request_count) }}</td><td>{{ percent(row.total_tokens) }}%</td></tr><tr v-if="!loading&&rows.length===0"><td colspan="6" class="empty">当前筛选范围暂无用量数据</td></tr></tbody></table></div></section>
+  </div></main></SdpSidebarLayout>
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { downloadUsageReport, getUsageReportByDepartment, getUsageReportByUser, type UsageReportItem } from '@/api/usage'
+import { SdpButton, SdpNotice } from '@/components/design'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
+const groupBy=ref<'user'|'department'>('user'),startDate=ref(''),endDate=ref(''),rows=ref<UsageReportItem[]>([]),loading=ref(true),error=ref('')
+const params=computed(()=>({start_date:startDate.value||undefined,end_date:endDate.value||undefined}))
+const total=computed(()=>rows.value.reduce((sum,row)=>({prompt_tokens:sum.prompt_tokens+row.prompt_tokens,completion_tokens:sum.completion_tokens+row.completion_tokens,total_tokens:sum.total_tokens+row.total_tokens,request_count:sum.request_count+row.request_count}),{prompt_tokens:0,completion_tokens:0,total_tokens:0,request_count:0}))
+async function load(){loading.value=true;error.value='';try{const response=groupBy.value==='user'?await getUsageReportByUser(params.value):await getUsageReportByDepartment(params.value);rows.value=response.data.items||[]}catch(e){const value=e as {response?:{data?:{error?:string}}};error.value=value.response?.data?.error||'用量报表加载失败'}finally{loading.value=false}}
+async function exportReport(){try{await downloadUsageReport(groupBy.value,params.value)}catch{error.value='用量报表导出失败'}}
+function number(value:number){return new Intl.NumberFormat('zh-CN').format(Number(value)||0)}
+function percent(value:number){return total.value.total_tokens?Math.round(value/total.value.total_tokens*100):0}
+onMounted(load)
 </script>
+
+<style scoped>
+.usage-report{min-height:100dvh;background:var(--ink-100);color:var(--ink-900);font-family:var(--font-body)}.shell{display:grid;gap:var(--space-5);max-width:var(--content-max-width);margin:auto;padding:var(--space-8)}header,.header-actions,.filters,.segmented,.panel-head{display:flex;align-items:center}header,.panel-head{justify-content:space-between;gap:var(--space-5)}header p,.panel-head p{color:var(--brand-700);font:var(--font-weight-semibold) var(--text-xs)/1 var(--font-mono);letter-spacing:.08em;text-transform:uppercase}h1{margin-top:var(--space-1);font:var(--font-weight-bold) var(--text-4xl)/1.1 var(--font-display)}header span{display:block;margin-top:var(--space-2);color:var(--ink-600)}.header-actions,.filters{gap:var(--space-3)}.filters,.panel{padding:var(--space-5);border:1px solid var(--ink-200);border-radius:var(--radius-lg);background:var(--ink-50)}.filters label{display:grid;gap:var(--space-1);font-size:var(--text-xs);font-weight:bold}.filters input{padding:var(--space-2) var(--space-3);border:1px solid var(--ink-300);border-radius:var(--radius-sm);background:var(--ink-50);font:inherit}.segmented{padding:var(--space-1);border:1px solid var(--ink-200);border-radius:var(--radius-sm);background:var(--ink-100)}.segmented button{padding:var(--space-2) var(--space-4);border:0;border-radius:var(--radius-xs);background:transparent;font:inherit;font-weight:bold;cursor:pointer}.segmented button.active{background:var(--brand-500)}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-4)}.kpis article{padding:var(--space-5);border:1px solid var(--ink-200);border-radius:var(--radius-md);background:var(--ink-50)}.kpis span{color:var(--ink-600);font-size:var(--text-xs)}.kpis strong{display:block;margin-top:var(--space-2);font:var(--font-weight-bold) var(--text-3xl)/1 var(--font-display)}h2{margin-top:var(--space-1);font:var(--font-weight-bold) var(--text-xl)/1.2 var(--font-display)}.panel-head{margin-bottom:var(--space-5)}.panel-head>span{color:var(--ink-500);font-size:var(--text-xs)}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{padding:var(--space-3) var(--space-4);border-top:1px solid var(--ink-200);font-size:var(--text-sm);text-align:right;white-space:nowrap}thead th{border-top:0;background:var(--ink-100);color:var(--ink-600);font-size:var(--text-xs)}th:first-child,td:first-child{text-align:left}.empty{text-align:center!important;color:var(--ink-500)}@media(max-width:55rem){.shell{padding:var(--space-4)}header,.filters{align-items:stretch;flex-direction:column}.header-actions{width:100%}.kpis{grid-template-columns:repeat(2,1fr)}}@media(max-width:35rem){.kpis{grid-template-columns:1fr}.header-actions{flex-direction:column}}
+</style>

@@ -99,8 +99,8 @@
         </template>
       </div>
 
-      <SpaceDocumentImportDrawer v-model:open="showImport" :space-id="spaceId" @import="loadDocuments" />
-      <SpaceMemberManagementDrawer v-model:open="showMembers" :space-id="spaceId" :members="members" />
+      <SpaceDocumentImportDrawer v-model:open="showImport" :space-id="spaceId" @imported="loadDocuments" />
+      <SpaceMemberManagementDrawer v-model:open="showMembers" :space-id="spaceId" :members="members" @updated="loadMembers" />
     </div>
   </SdpSidebarLayout>
 </template>

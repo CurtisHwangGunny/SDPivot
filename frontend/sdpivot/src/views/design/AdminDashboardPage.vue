@@ -36,6 +36,23 @@
           </article>
         </section>
 
+        <section class="sdp-admin-dashboard__panel" aria-labelledby="trend-title">
+          <header class="sdp-admin-dashboard__section-head">
+            <div><p>Last 7 Days</p><h2 id="trend-title">平台趋势</h2></div>
+            <span>按日统计</span>
+          </header>
+          <div class="sdp-admin-dashboard__trends">
+            <article v-for="trend in trends" :key="trend.label" class="sdp-admin-dashboard__trend">
+              <header><div><strong>{{ trend.label }}</strong><small>{{ trend.note }}</small></div><b>{{ number(trend.total) }}</b></header>
+              <div class="sdp-admin-dashboard__bars" :aria-label="`${trend.label}近七日趋势`">
+                <div v-for="point in trend.points" :key="point.date" class="sdp-admin-dashboard__bar-item" :title="`${point.date}: ${number(point.value)}`">
+                  <span><i :style="{ height: `${barHeight(point.value, trend.max)}%` }" /></span><small>{{ shortDate(point.date) }}</small>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
         <section class="sdp-admin-dashboard__panel" aria-labelledby="quick-actions-title">
           <header class="sdp-admin-dashboard__section-head">
             <div><p>Quick Access</p><h2 id="quick-actions-title">快捷操作</h2></div>
@@ -68,7 +85,7 @@
           <section class="sdp-admin-dashboard__panel" aria-labelledby="activity-title">
             <header class="sdp-admin-dashboard__section-head">
               <div><p>Audit Trail</p><h2 id="activity-title">最近活动</h2></div>
-              <button type="button" aria-label="查看全部活动日志" @click="goTo('/admin/security')">全部日志</button>
+              <button type="button" aria-label="查看全部活动日志" @click="goTo('/admin/audit')">全部日志</button>
             </header>
             <ol class="sdp-admin-dashboard__activity">
               <li v-for="activity in activities" :key="activity.time + activity.title">
@@ -86,6 +103,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { getAdminDashboard, type AdminDashboardData } from '@/api/admin'
 import { getAdminStats, type AdminStats } from '@/api/spaces'
 import { listModels } from '@/api/qa'
 import { SdpButton } from '@/components/design'
@@ -93,6 +111,7 @@ import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
 
 const router = useRouter()
 const stats = ref<AdminStats>({ space_count: 0, document_count: 0, member_count: 0, model_count: 0 })
+const dashboard = ref<AdminDashboardData>({ qa_trend: [], document_trend: [], token_trend: [] })
 const loading = ref(true)
 const loadError = ref('')
 const lastChecked = ref('刚刚')
@@ -108,7 +127,7 @@ const quickActions = [
   ['模型配置', '/admin/config', 'AI', commonIcon], ['检索配置', '/admin/config', 'AI', commonIcon],
   ['对象存储', '/admin/config', '系统', commonIcon], ['短信服务', '/admin/config', '系统', commonIcon],
   ['登录配置', '/admin/security', '安全', commonIcon], ['密码策略', '/admin/security', '安全', commonIcon],
-  ['IP 白名单', '/admin/security', '安全', commonIcon], ['审计日志', '/admin/security', '安全', commonIcon],
+  ['IP 白名单', '/admin/security', '安全', commonIcon], ['审计日志', '/admin/audit', '安全', commonIcon],
   ['数据备份', '/admin/config', '运维', commonIcon], ['系统参数', '/admin/config', '系统', commonIcon],
   ['用量统计', '/usage', '运营', commonIcon], ['健康检查', '/admin', '运维', commonIcon],
 ].map(([label, path, group, icon]) => ({ label, path, group, icon }))
@@ -138,12 +157,23 @@ const kpis = computed(() => [
   { label: '可用模型', value: stats.value.model_count || 0, note: '问答与写作模型', icon: 'M9 3h6l1 3h3v12h-3l-1 3H9l-1-3H5V6h3l1-3Zm3 6v6m-3-3h6' },
 ])
 
+const trends = computed(() => [
+  trendCard('问答次数', '用户提问量', dashboard.value.qa_trend),
+  trendCard('新增文档', '进入知识空间', dashboard.value.document_trend),
+  trendCard('Token 消耗', '输入与输出合计', dashboard.value.token_trend),
+])
+
+function trendCard(label: string, note: string, points: AdminDashboardData['qa_trend']) {
+  return { label, note, points, total: points.reduce((sum, point) => sum + point.value, 0), max: Math.max(0, ...points.map((point) => point.value)) }
+}
+
 async function loadDashboard() {
   loading.value = true
   loadError.value = ''
   try {
-    const [statsResponse, modelsResponse] = await Promise.all([getAdminStats(), listModels().catch(() => ({ data: { models: [] } }))])
+    const [statsResponse, modelsResponse, dashboardResponse] = await Promise.all([getAdminStats(), listModels().catch(() => ({ data: { models: [] } })), getAdminDashboard()])
     stats.value = { ...statsResponse.data, model_count: modelsResponse.data.models?.length || 0 }
+    dashboard.value = dashboardResponse.data
     lastChecked.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   } catch (error: unknown) {
     loadError.value = errorMessage(error, '无法获取管理数据，请检查管理员权限后重试。')
@@ -158,6 +188,9 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 function goTo(path: string) { void router.push(path) }
+function number(value: number) { return new Intl.NumberFormat('zh-CN').format(Number(value) || 0) }
+function shortDate(value: string) { const [, month, day] = value.split('-'); return `${month}/${day}` }
+function barHeight(value: number, max: number) { return value > 0 && max > 0 ? Math.max(8, Math.round(value / max * 100)) : 3 }
 function focusServices() { servicesRef.value?.focus() }
 function handleQuickKeydown(event: KeyboardEvent) {
   if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
@@ -206,6 +239,18 @@ onMounted(loadDashboard)
 .sdp-admin-dashboard__kpi strong { display: block; margin-top: var(--space-1); color: var(--ink-950); font-family: var(--font-display); font-size: var(--text-3xl); line-height: var(--leading-tight); }
 .sdp-admin-dashboard__kpi small { display: block; margin-top: var(--space-2); color: var(--ink-500); font-size: var(--text-xs); }
 .sdp-admin-dashboard__panel { padding: var(--space-6); border: 1px solid var(--ink-200); border-radius: var(--radius-lg); background: var(--ink-50); box-shadow: var(--shadow-xs); }
+.sdp-admin-dashboard__trends { display: grid; grid-template-columns: repeat(3, minmax(var(--space-0), 1fr)); gap: var(--space-4); }
+.sdp-admin-dashboard__trend { min-width: var(--space-0); padding: var(--space-5); border: 1px solid var(--ink-200); border-radius: var(--radius-md); background: linear-gradient(145deg, var(--ink-50), var(--brand-50)); }
+.sdp-admin-dashboard__trend header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.sdp-admin-dashboard__trend header strong, .sdp-admin-dashboard__trend header small { display: block; }
+.sdp-admin-dashboard__trend header strong { color: var(--ink-900); font-size: var(--text-sm); }
+.sdp-admin-dashboard__trend header small { margin-top: var(--space-1); color: var(--ink-500); font-size: var(--text-xs); }
+.sdp-admin-dashboard__trend header b { color: var(--brand-900); font: var(--font-weight-bold) var(--text-2xl)/1 var(--font-display); }
+.sdp-admin-dashboard__bars { display: grid; grid-template-columns: repeat(7, minmax(var(--space-0), 1fr)); gap: var(--space-2); height: 9rem; margin-top: var(--space-5); }
+.sdp-admin-dashboard__bar-item { display: grid; grid-template-rows: 1fr auto; gap: var(--space-2); min-width: var(--space-0); text-align: center; }
+.sdp-admin-dashboard__bar-item > span { display: flex; align-items: flex-end; justify-content: center; min-height: var(--space-0); border-radius: var(--radius-xs); background: color-mix(in srgb, var(--brand-100) 65%, transparent); }
+.sdp-admin-dashboard__bar-item i { width: 58%; min-height: 3px; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--brand-700); transition: height var(--duration-normal); }
+.sdp-admin-dashboard__bar-item small { overflow: hidden; color: var(--ink-500); font: var(--text-xs)/1 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .sdp-admin-dashboard__section-head { justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-5); }
 .sdp-admin-dashboard__section-head h2 { margin-top: var(--space-1); color: var(--ink-950); font-family: var(--font-display); font-size: var(--text-xl); }
 .sdp-admin-dashboard__section-head > span { color: var(--ink-500); font-size: var(--text-xs); }
@@ -232,7 +277,7 @@ onMounted(loadDashboard)
 .sdp-admin-dashboard__activity p { margin-top: var(--space-1); color: var(--ink-600); font-size: var(--text-xs); }
 .sdp-admin-dashboard__activity time { display: block; margin-top: var(--space-2); color: var(--ink-500); font-family: var(--font-mono); font-size: var(--text-xs); }
 .sdp-admin-dashboard button:focus-visible, .sdp-admin-dashboard__panel:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
-@media (max-width: 64rem) { .sdp-admin-dashboard__kpis { grid-template-columns: repeat(2, 1fr); } .sdp-admin-dashboard__quick-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 64rem) { .sdp-admin-dashboard__kpis { grid-template-columns: repeat(2, 1fr); } .sdp-admin-dashboard__quick-grid { grid-template-columns: repeat(3, 1fr); } .sdp-admin-dashboard__trends { grid-template-columns: 1fr; } }
 @media (max-width: 48rem) { .sdp-admin-dashboard__shell { padding: var(--space-6); } .sdp-admin-dashboard__topbar { align-items: flex-start; flex-direction: column; } .sdp-admin-dashboard__lower-grid { grid-template-columns: 1fr; } }
 @media (max-width: 40rem) { .sdp-admin-dashboard__shell { padding: var(--space-4); } .sdp-admin-dashboard__topbar h1 { font-size: var(--text-3xl); } .sdp-admin-dashboard__top-actions, .sdp-admin-dashboard__top-actions :deep(.sdp-button) { width: 100%; } .sdp-admin-dashboard__top-actions { flex-direction: column; } .sdp-admin-dashboard__status { align-items: flex-start; flex-wrap: wrap; } .sdp-admin-dashboard__kpis, .sdp-admin-dashboard__quick-grid { grid-template-columns: 1fr; } .sdp-admin-dashboard__panel { padding: var(--space-5); } }
 </style>

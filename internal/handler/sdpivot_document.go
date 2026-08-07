@@ -48,6 +48,7 @@ func (h *SDPivotDocumentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	{
 		docs.POST("/upload", h.UploadDocument)
 		docs.POST("/manual", h.UploadManualDocument)
+		docs.POST("/import-url", h.UploadFromURL)
 		docs.POST("/url", h.UploadFromURL)
 		docs.GET("", h.ListDocuments)
 		docs.GET("/:id", h.GetDocument)
@@ -207,6 +208,9 @@ func (h *SDPivotDocumentHandler) UploadDocument(c *gin.Context) {
 	if err := h.parseAndStoreDocument(tenantDB, &doc, content); err != nil {
 		parseMessage = "document uploaded, parsing failed: " + err.Error()
 	}
+	writeSDPivotAuditLog(h.db, c, auditActionDocumentUpload, auditModuleDocument, "document", doc.ID, map[string]interface{}{
+		"space_id": doc.SpaceID, "title": doc.Title, "file_size": doc.FileSize,
+	})
 
 	c.JSON(http.StatusCreated, gin.H{
 		"document": doc,
@@ -353,6 +357,9 @@ func (h *SDPivotDocumentHandler) DeleteDocument(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete document chunks"})
 		return
 	}
+	writeSDPivotAuditLog(h.db, c, auditActionDocumentDelete, auditModuleDocument, "document", doc.ID, map[string]interface{}{
+		"space_id": doc.SpaceID, "title": doc.Title,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "document deleted"})
 }
@@ -721,13 +728,19 @@ func (h *SDPivotDocumentHandler) UploadManualDocument(c *gin.Context) {
 	tenantID := middleware.GetTenantID(c)
 
 	var req struct {
-		SpaceID string `json:"space_id" binding:"required"`
-		Title   string `json:"title" binding:"required"`
-		Content string `json:"content" binding:"required"`
+		SpaceID string `json:"space_id"`
+		Title   string `json:"title"`
+		Content string `json:"content"`
 		Tags    string `json:"tags"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	req.SpaceID = strings.TrimSpace(req.SpaceID)
+	req.Title = strings.TrimSpace(req.Title)
+	if req.SpaceID == "" || req.Title == "" || strings.TrimSpace(req.Content) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "space_id, title and content are required"})
 		return
 	}
 	if _, ok := authorizeSpace(c, tenantDB, req.SpaceID, spaceAccessEdit); !ok {

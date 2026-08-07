@@ -74,6 +74,10 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 20h14" /></svg>
               导出
             </button>
+            <button type="button" aria-label="管理写作模板和优先级" @click="managementVisible = true">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+              模板/优先级
+            </button>
           </div>
         </header>
 
@@ -140,14 +144,64 @@
           <p v-if="saveError" class="sdp-writing-workspace__save-error" role="alert">{{ saveError }}</p>
         </div>
       </main>
+
+      <div v-if="managementVisible" class="sdp-writing-workspace__management-backdrop" role="presentation" @click.self="managementVisible = false">
+        <aside class="sdp-writing-workspace__management" role="dialog" aria-modal="true" aria-labelledby="writing-management-title">
+          <header>
+            <div><p>Template Governance</p><h2 id="writing-management-title">模板 / 优先级管理</h2></div>
+            <button type="button" aria-label="关闭模板管理" @click="managementVisible = false">关闭</button>
+          </header>
+
+          <section class="sdp-writing-workspace__priority-guide">
+            <strong>固定生成链</strong>
+            <ol><li><span>P1</span>标准 / 自定义模板结构</li><li><span>P2</span>同类型标签文档自学习</li><li><span>P3</span>当前草稿补充要求</li></ol>
+          </section>
+
+          <section v-if="isAdmin" class="sdp-writing-workspace__management-section">
+            <div class="sdp-writing-workspace__section-title"><div><span>Categories</span><h3>写作类别</h3></div><button type="button" @click="editCategory()">新增类别</button></div>
+            <div class="sdp-writing-workspace__management-list">
+              <article v-for="category in managedCategories" :key="category.id"><div><strong>{{ category.name }}</strong><small>{{ category.description || '暂无说明' }} · 排序 {{ category.sort }}</small></div><div><button type="button" @click="editCategory(category)">编辑</button><button type="button" @click="removeCategory(category)">删除</button></div></article>
+              <p v-if="!managedCategories.length">暂无自定义写作类别。</p>
+            </div>
+          </section>
+
+          <section class="sdp-writing-workspace__management-section">
+            <div class="sdp-writing-workspace__section-title"><div><span>Templates</span><h3>模板库</h3></div><button v-if="canManageTemplates" type="button" :disabled="!managedCategories.length" @click="editTemplate()">新增模板</button></div>
+            <div class="sdp-writing-workspace__management-list">
+              <article v-for="template in managedTemplates" :key="template.id"><div><strong>{{ template.name }} <i v-if="template.is_builtin">内置</i></strong><small>{{ categoryName(template.category_id) }} · 排序 {{ template.sort }}</small><p>{{ template.content }}</p></div><div v-if="canEditTemplate(template)"><button type="button" @click="editTemplate(template)">编辑</button><button type="button" @click="removeTemplate(template)">删除</button></div></article>
+              <p v-if="!managedTemplates.length">暂无可用模板。管理员先创建类别后，编辑者即可维护自定义模板。</p>
+            </div>
+          </section>
+
+          <form v-if="categoryEditing" class="sdp-writing-workspace__management-form" @submit.prevent="saveCategory">
+            <h3>{{ categoryForm.id ? '编辑类别' : '新增类别' }}</h3>
+            <label>名称<input v-model="categoryForm.name" required maxlength="100"></label>
+            <label>说明<textarea v-model="categoryForm.description" rows="3" /></label>
+            <label>排序<input v-model.number="categoryForm.sort" type="number"></label>
+            <footer><button type="button" @click="categoryEditing = false">取消</button><button type="submit" :disabled="managementSaving">保存</button></footer>
+          </form>
+
+          <form v-if="templateEditing" class="sdp-writing-workspace__management-form" @submit.prevent="saveTemplate">
+            <h3>{{ templateForm.id ? '编辑模板' : '新增模板' }}</h3>
+            <label>类别<select v-model="templateForm.category_id" required><option v-for="category in managedCategories" :key="category.id" :value="category.id">{{ category.name }}</option></select></label>
+            <label>名称<input v-model="templateForm.name" required maxlength="100"></label>
+            <label>模板内容<textarea v-model="templateForm.content" required rows="8" /></label>
+            <label>排序<input v-model.number="templateForm.sort" type="number"></label>
+            <label v-if="isAdmin" class="sdp-writing-workspace__builtin"><input v-model="templateForm.is_builtin" type="checkbox">设为内置标准模板</label>
+            <footer><button type="button" @click="templateEditing = false">取消</button><button type="submit" :disabled="managementSaving">保存</button></footer>
+          </form>
+          <p v-if="managementError" class="sdp-writing-workspace__save-error" role="alert">{{ managementError }}</p>
+        </aside>
+      </div>
     </div>
   </SdpSidebarLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { CATEGORIES, createDraft, getDraft, listDrafts, updateDraft, type WritingDraft } from '@/api/writing'
+import { CATEGORIES, createDraft, getDraft, listDrafts, updateDraft, listWritingCategories, createWritingCategory, updateWritingCategory, deleteWritingCategory, listWritingTemplates, createWritingTemplate, updateWritingTemplate, deleteWritingTemplate, type WritingCategory, type WritingDraft, type WritingTemplate } from '@/api/writing'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
+import { getRoleFromToken } from '@/utils/jwt'
 
 const templates = [
   { value: 'business-report', label: '商务报告' },
@@ -165,6 +219,18 @@ const saving = ref(false)
 const loadError = ref('')
 const saveError = ref('')
 const saveState = ref('已同步')
+const managementVisible = ref(false)
+const managementSaving = ref(false)
+const managementError = ref('')
+const managedCategories = ref<WritingCategory[]>([])
+const managedTemplates = ref<WritingTemplate[]>([])
+const categoryEditing = ref(false)
+const templateEditing = ref(false)
+const categoryForm = ref({ id: '', name: '', description: '', sort: 0 })
+const templateForm = ref({ id: '', category_id: '', name: '', content: '', is_builtin: false, sort: 0 })
+const currentRole = getRoleFromToken()
+const isAdmin = ['super_admin', 'department_admin'].includes(currentRole)
+const canManageTemplates = ['super_admin', 'department_admin', 'knowledge_editor'].includes(currentRole)
 
 const groupedDrafts = computed(() => {
   const order = ['draft', 'review', 'completed']
@@ -293,7 +359,54 @@ function handleDraftKeydown(event: KeyboardEvent) {
   buttons[nextIndex]?.focus()
 }
 
-onMounted(loadDrafts)
+function categoryName(id: string) { return managedCategories.value.find(item => item.id === id)?.name || '未分类' }
+function canEditTemplate(template: WritingTemplate) { return canManageTemplates && (!template.is_builtin || isAdmin) }
+async function loadWritingManagement() {
+  managementError.value = ''
+  try {
+    const [categoriesResponse, templatesResponse] = await Promise.all([listWritingCategories(), listWritingTemplates()])
+    managedCategories.value = categoriesResponse.data.categories || []
+    managedTemplates.value = templatesResponse.data.templates || []
+  } catch (error: unknown) { managementError.value = errorMessage(error, '模板与类别加载失败。') }
+}
+function editCategory(category?: WritingCategory) {
+  categoryForm.value = category ? { id: category.id, name: category.name, description: category.description, sort: category.sort } : { id: '', name: '', description: '', sort: managedCategories.value.length * 10 }
+  categoryEditing.value = true
+  templateEditing.value = false
+}
+async function saveCategory() {
+  managementSaving.value = true
+  try {
+    const payload = { name: categoryForm.value.name.trim(), description: categoryForm.value.description.trim(), sort: categoryForm.value.sort }
+    if (categoryForm.value.id) await updateWritingCategory(categoryForm.value.id, payload); else await createWritingCategory(payload)
+    categoryEditing.value = false
+    await loadWritingManagement()
+  } catch (error: unknown) { managementError.value = errorMessage(error, '写作类别保存失败。') } finally { managementSaving.value = false }
+}
+async function removeCategory(category: WritingCategory) {
+  if (!window.confirm(`确认删除类别“${category.name}”？`)) return
+  try { await deleteWritingCategory(category.id); await loadWritingManagement() } catch (error: unknown) { managementError.value = errorMessage(error, '写作类别删除失败。') }
+}
+function editTemplate(template?: WritingTemplate) {
+  templateForm.value = template ? { id: template.id, category_id: template.category_id, name: template.name, content: template.content, is_builtin: template.is_builtin, sort: template.sort } : { id: '', category_id: managedCategories.value[0]?.id || '', name: '', content: '', is_builtin: false, sort: managedTemplates.value.length * 10 }
+  templateEditing.value = true
+  categoryEditing.value = false
+}
+async function saveTemplate() {
+  managementSaving.value = true
+  try {
+    const payload = { category_id: templateForm.value.category_id, name: templateForm.value.name.trim(), content: templateForm.value.content.trim(), is_builtin: templateForm.value.is_builtin, sort: templateForm.value.sort }
+    if (templateForm.value.id) await updateWritingTemplate(templateForm.value.id, payload); else await createWritingTemplate(payload)
+    templateEditing.value = false
+    await loadWritingManagement()
+  } catch (error: unknown) { managementError.value = errorMessage(error, '写作模板保存失败。') } finally { managementSaving.value = false }
+}
+async function removeTemplate(template: WritingTemplate) {
+  if (!window.confirm(`确认删除模板“${template.name}”？`)) return
+  try { await deleteWritingTemplate(template.id); await loadWritingManagement() } catch (error: unknown) { managementError.value = errorMessage(error, '写作模板删除失败。') }
+}
+
+onMounted(() => { loadDrafts(); loadWritingManagement() })
 </script>
 
 <style scoped>
@@ -371,6 +484,31 @@ onMounted(loadDrafts)
 .sdp-writing-workspace__ai-bar button { padding: var(--space-2) var(--space-3); border: 1px solid var(--ink-700); border-radius: var(--radius-pill); color: var(--ink-300); background: var(--ink-900); font: var(--text-xs) var(--font-body); }
 .sdp-writing-workspace__save-error { max-width: calc(var(--space-24) * 7); margin: var(--space-3) auto var(--space-0); }
 .sdp-writing-workspace button:focus-visible, .sdp-writing-workspace select:focus-visible, .sdp-writing-workspace input:focus-visible, .sdp-writing-workspace textarea:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.sdp-writing-workspace__management-backdrop { position: fixed; z-index: 90; inset: 0; display: flex; justify-content: flex-end; background: color-mix(in srgb, var(--ink-950) 54%, transparent); }
+.sdp-writing-workspace__management { width: min(100%, 42rem); height: 100dvh; overflow-y: auto; padding: var(--space-6); color: var(--ink-900); background: var(--ink-50); box-shadow: var(--shadow-lg); }
+.sdp-writing-workspace__management > header, .sdp-writing-workspace__section-title, .sdp-writing-workspace__management-list article, .sdp-writing-workspace__management-form footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.sdp-writing-workspace__management > header { padding-bottom: var(--space-5); border-bottom: 1px solid var(--ink-200); }
+.sdp-writing-workspace__management > header p, .sdp-writing-workspace__section-title span { color: var(--brand-700); font: var(--font-weight-semibold) var(--text-xs) var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.sdp-writing-workspace__management > header button, .sdp-writing-workspace__section-title button, .sdp-writing-workspace__management-list article button, .sdp-writing-workspace__management-form button { padding: var(--space-2) var(--space-3); border: 1px solid var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-800); background: var(--ink-50); font: var(--font-weight-semibold) var(--text-xs) var(--font-body); cursor: pointer; }
+.sdp-writing-workspace__priority-guide { margin-top: var(--space-5); padding: var(--space-5); border: 1px solid var(--brand-300); border-radius: var(--radius-md); background: var(--brand-50); }
+.sdp-writing-workspace__priority-guide ol { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: 0; list-style: none; }
+.sdp-writing-workspace__priority-guide li { display: flex; align-items: center; gap: var(--space-3); color: var(--ink-700); font-size: var(--text-sm); }
+.sdp-writing-workspace__priority-guide li span { padding: var(--space-1) var(--space-2); border-radius: var(--radius-xs); color: var(--brand-900); background: var(--brand-100); font-family: var(--font-mono); font-weight: var(--font-weight-bold); }
+.sdp-writing-workspace__management-section { margin-top: var(--space-7); }
+.sdp-writing-workspace__section-title h3 { margin-top: var(--space-1); font-family: var(--font-display); font-size: var(--text-xl); }
+.sdp-writing-workspace__management-list { display: grid; gap: var(--space-3); margin-top: var(--space-4); }
+.sdp-writing-workspace__management-list article { align-items: flex-start; padding: var(--space-4); border: 1px solid var(--ink-200); border-radius: var(--radius-sm); background: var(--ink-100); }
+.sdp-writing-workspace__management-list article > div:first-child { min-width: 0; display: grid; gap: var(--space-1); }
+.sdp-writing-workspace__management-list article > div:last-child { display: flex; flex: 0 0 auto; gap: var(--space-1); }
+.sdp-writing-workspace__management-list small, .sdp-writing-workspace__management-list p { color: var(--ink-500); font-size: var(--text-xs); }
+.sdp-writing-workspace__management-list article p { max-height: 3.4em; overflow: hidden; line-height: 1.7; }
+.sdp-writing-workspace__management-list i { padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); color: var(--brand-900); background: var(--brand-100); font-size: var(--text-xs); font-style: normal; }
+.sdp-writing-workspace__management-form { display: grid; gap: var(--space-4); margin-top: var(--space-6); padding: var(--space-5); border: 1px solid var(--ink-300); border-radius: var(--radius-md); background: var(--ink-100); }
+.sdp-writing-workspace__management-form label { display: grid; gap: var(--space-2); color: var(--ink-700); font-size: var(--text-sm); font-weight: var(--font-weight-semibold); }
+.sdp-writing-workspace__management-form input:not([type='checkbox']), .sdp-writing-workspace__management-form select, .sdp-writing-workspace__management-form textarea { width: 100%; padding: var(--space-2) var(--space-3); border: 1px solid var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-900); background: var(--ink-50); font: var(--text-sm) var(--font-body); }
+.sdp-writing-workspace__management-form textarea { resize: vertical; }
+.sdp-writing-workspace__management-form .sdp-writing-workspace__builtin { display: flex; align-items: center; grid-template-columns: none; }
+.sdp-writing-workspace__management-form footer { justify-content: flex-end; }
 @media (max-width: 72rem) { .sdp-writing-workspace__topbar { align-items: flex-start; flex-direction: column; } .sdp-writing-workspace__tools { justify-content: flex-start; } .sdp-writing-workspace__priority { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 56rem) { .sdp-writing-workspace { min-height: calc(100dvh - var(--header-height)); grid-template-columns: 1fr; } .sdp-writing-workspace__drafts { height: auto; max-height: calc(var(--space-24) * 3); border-right: 0; border-bottom: 1px solid var(--ink-200); } .sdp-writing-workspace__editor { height: auto; min-height: calc(100dvh - var(--header-height)); overflow: visible; } .sdp-writing-workspace__canvas { padding-inline: var(--space-4); } .sdp-writing-workspace__paper { padding: var(--space-6); } .sdp-writing-workspace__priority ol { align-items: stretch; flex-direction: column; } .sdp-writing-workspace__priority li[aria-hidden] { transform: rotate(90deg); align-self: center; } }
 @media (max-width: 40rem) { .sdp-writing-workspace__topbar { padding: var(--space-4); } .sdp-writing-workspace__tools, .sdp-writing-workspace__tools label, .sdp-writing-workspace__tools select, .sdp-writing-workspace__tools button { width: 100%; } .sdp-writing-workspace__tools label { align-items: stretch; flex-direction: column; } .sdp-writing-workspace__tools button { justify-content: center; } .sdp-writing-workspace__paper { padding: var(--space-5); } .sdp-writing-workspace__title input { font-size: var(--text-2xl); } .sdp-writing-workspace__ai-bar { align-items: flex-start; border-radius: var(--radius-md); } .sdp-writing-workspace__ai-bar button { display: none; } }

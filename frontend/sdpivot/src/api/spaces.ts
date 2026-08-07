@@ -31,7 +31,11 @@ export function deleteSpace(id: string) {
 }
 
 export function listSpaceMembers(id: string) {
-  return client.get(`/spaces/${id}/members`)
+  return client.get<{ members: AdminMember[] }>(`/spaces/${id}/members`)
+}
+
+export function addSpaceMember(id: string, data: { user_id: string; role: 'editor' | 'viewer' }) {
+  return client.post(`/spaces/${id}/members`, data)
 }
 
 export interface AdminStats {
@@ -49,6 +53,8 @@ export interface AdminMember {
   username?: string
   email?: string
   role: string
+  access_role?: string
+  department_id?: string
   department?: string
   status?: string
   created_at?: string

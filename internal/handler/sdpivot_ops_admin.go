@@ -447,7 +447,7 @@ func (h *SDPivotOpsAdminHandler) UpdateUserRole(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user role"})
 		return
 	}
-	h.writeAuditLog(c, "update_user_role", "user", userID, fmt.Sprintf("role: %s", req.Role))
+	writeSDPivotAuditLog(h.db, c, auditActionUserRoleUpdated, auditModuleUser, "user", userID, map[string]interface{}{"role": req.Role, "department_id": departmentID})
 	c.JSON(http.StatusOK, gin.H{"message": "user role updated", "role": req.Role, "department_id": departmentID})
 }
 
@@ -495,7 +495,7 @@ func (h *SDPivotOpsAdminHandler) UpdateUserStatus(c *gin.Context) {
 		return
 	}
 
-	h.writeAuditLog(c, "update_user_status", "user", userID, fmt.Sprintf("is_active: %v", req.IsActive))
+	writeSDPivotAuditLog(h.db, c, auditActionUserStatus, auditModuleUser, "user", userID, map[string]interface{}{"is_active": req.IsActive})
 
 	c.JSON(http.StatusOK, gin.H{"message": "user status updated", "is_active": req.IsActive})
 }

@@ -159,17 +159,16 @@ func TestAdminTagRouteRequiresSuperAdmin(t *testing.T) {
 		want int
 	}{
 		{name: "super admin", role: string(types.AccessRoleSuperAdmin), want: http.StatusOK},
-		{name: "department admin", role: string(types.AccessRoleDepartmentAdmin), want: http.StatusForbidden},
-		{name: "viewer", role: string(types.AccessRoleKnowledgeViewer), want: http.StatusForbidden},
+		{name: "department admin", role: string(types.AccessRoleDepartmentAdmin), want: http.StatusOK},
+		{name: "viewer", role: string(types.AccessRoleKnowledgeViewer), want: http.StatusOK},
+		{name: "editor", role: string(types.AccessRoleKnowledgeEditor), want: http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, mock := newOpsAdminSQLMock(t)
-			if tc.want == http.StatusOK {
-				mock.ExpectQuery(`SELECT \* FROM "tag_dimensions" ORDER BY sort_order ASC, code ASC`).
-					WillReturnRows(sqlmock.NewRows([]string{"id", "code", "name", "description", "sort_order"}))
-				mock.ExpectQuery(`SELECT \* FROM "tag_dictionary" ORDER BY dimension_id ASC, sort_order ASC, name ASC`).
-					WillReturnRows(sqlmock.NewRows([]string{"id", "dimension_id", "name", "color", "sort_order"}))
-			}
+			mock.ExpectQuery(`SELECT \* FROM "tag_dimensions" ORDER BY sort_order ASC, code ASC`).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "code", "name", "description", "sort_order"}))
+			mock.ExpectQuery(`SELECT \* FROM "tag_dictionary" ORDER BY dimension_id ASC, sort_order ASC, name ASC`).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "dimension_id", "name", "color", "sort_order"}))
 			r := gin.New()
 			r.Use(func(c *gin.Context) {
 				c.Set("role", tc.role)
@@ -183,4 +182,19 @@ func TestAdminTagRouteRequiresSuperAdmin(t *testing.T) {
 			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+
+	t.Run("viewer cannot write", func(t *testing.T) {
+		db, mock := newOpsAdminSQLMock(t)
+		r := gin.New()
+		r.Use(func(c *gin.Context) {
+			c.Set("role", string(types.AccessRoleKnowledgeViewer))
+			c.Next()
+		})
+		NewSDPivotAdminHandler(db).RegisterRoutes(r.Group(""))
+
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/admin/tags", nil))
+		require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
 }

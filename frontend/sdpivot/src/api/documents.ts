@@ -28,12 +28,16 @@ export function listDocuments(params: { space_id?: string; parse_status?: string
   return client.get<{ documents: Document[]; total: number; page: number; page_size: number }>('/documents', { params })
 }
 
-export function uploadDocument(data: { space_id: string; file: File; tags?: string }) {
+export function uploadDocument(data: { space_id: string; file: File; tags?: string }, onProgress?: (percent: number) => void) {
   const form = new FormData()
   form.append('space_id', data.space_id)
   form.append('file', data.file)
   if (data.tags) form.append('tags', data.tags)
-  return client.post('/documents/upload', form)
+  return client.post<{ document: Document; message: string }>('/documents/upload', form, {
+    onUploadProgress: event => {
+      if (event.total) onProgress?.(Math.round((event.loaded * 100) / event.total))
+    },
+  })
 }
 
 export function getDocument(id: string) {
@@ -46,6 +50,10 @@ export function deleteDocument(id: string) {
 
 export function reparseDocument(id: string) {
   return client.post(`/documents/${id}/reparse`)
+}
+
+export function autoTagDocument(id: string) {
+  return client.post<{ document_id: string; created: number }>(`/documents/${id}/auto-tag`)
 }
 
 export function getDocumentChunks(id: string) {

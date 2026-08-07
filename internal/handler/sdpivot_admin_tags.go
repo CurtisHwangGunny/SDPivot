@@ -35,13 +35,43 @@ func (h *SDPivotAdminHandler) RegisterRoutes(rg *gin.RouterGroup) {
 // ListTagDictionary returns the shared platform classification dictionary.
 func (h *SDPivotAdminHandler) ListTagDictionary(c *gin.Context) {
 	db := middleware.TenantDB(c, h.db)
-	dimensions, tags, err := repository.NewDocumentTagRepository(db).ListClassificationDictionary(c.Request.Context())
-	if err != nil {
+	tenantID := middleware.GetTenantID(c)
+	if tenantID == 0 {
+		dimensions, tags, err := repository.NewDocumentTagRepository(db).ListClassificationDictionary(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list tag dictionary"})
+			return
+		}
+		if dimensions == nil {
+			dimensions = make([]*types.TagDimension, 0)
+		}
+		if tags == nil {
+			tags = make([]*types.TagDictionary, 0)
+		}
+		c.JSON(http.StatusOK, gin.H{"dimensions": dimensions, "tags": tags})
+		return
+	}
+	var dimensions []*types.SDPivotTagDimension
+	if err := db.WithContext(c.Request.Context()).
+		Where("deleted_at IS NULL AND (tenant_id IS NULL OR tenant_id = ?)", tenantID).
+		Order("sort_order ASC, code ASC").Find(&dimensions).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list tag dictionary"})
 		return
 	}
+	dimensionIDs := make([]string, 0, len(dimensions))
+	for _, dimension := range dimensions {
+		dimensionIDs = append(dimensionIDs, dimension.ID)
+	}
+	var tags []*types.TagDictionary
+	if len(dimensionIDs) > 0 {
+		if err := db.WithContext(c.Request.Context()).Where("dimension_id IN ?", dimensionIDs).
+			Order("dimension_id ASC, sort_order ASC, name ASC").Find(&tags).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list tag dictionary"})
+			return
+		}
+	}
 	if dimensions == nil {
-		dimensions = make([]*types.TagDimension, 0)
+		dimensions = make([]*types.SDPivotTagDimension, 0)
 	}
 	if tags == nil {
 		tags = make([]*types.TagDictionary, 0)

@@ -89,7 +89,19 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 	opsHandler := handler.NewSDPivotOpsHandler(sr.db, sr.jwtManager, sr.product.OPMode)
 	opsAdminHandler := handler.NewSDPivotOpsAdminHandler(sr.db, sr.product.OPMode)
 	adminHandler := handler.NewSDPivotAdminHandler(sr.db)
+	tagDimensionHandler := handler.NewSDPivotTagDimensionHandler(sr.db)
+	tagAutoHandler := handler.NewSDPivotTagAutoHandler(sr.db)
+	tagFeedbackHandler := handler.NewSDPivotTagFeedbackHandler(sr.db)
 	departmentHandler := handler.NewSDPivotDepartmentHandler(sr.db)
+	apiTokenHandler := handler.NewSDPivotAPITokenHandler(sr.db)
+	configHandler := handler.NewSDPivotConfigHandler(sr.db)
+	securityHandler := handler.NewSDPivotSecurityHandler(sr.db)
+	auditHandler := handler.NewSDPivotAuditHandler(sr.db)
+	adminUsersHandler := handler.NewSDPivotAdminUsersHandler(sr.db)
+	writingManagementHandler := handler.NewSDPivotWritingManagementHandler(sr.db)
+	searchHandler := handler.NewSDPivotSearchHandler(sr.db)
+	integrationHandler := handler.NewSDPivotIntegrationHandler(sr.db)
+	toolingHandler := handler.NewSDPivotToolingHandler(sr.db)
 
 	// Public routes (no auth required)
 	public := sk.Group("")
@@ -113,9 +125,11 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 
 	// Protected routes (require JWT)
 	protected := sk.Group("")
+	protected.Use(middleware.RequireAPIToken(sr.db))
 	protected.Use(middleware.SDPivotAuth(sr.jwtManager))
 	protected.Use(middleware.SDPivotTenantContext(sr.db))
 	protected.Use(middleware.TokenMeteringMiddleware(sr.db))
+	toolingHandler.RegisterRoutes(public, protected)
 	{
 		// User profile
 		authHandler.RegisterProtectedRoutes(protected)
@@ -143,6 +157,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 		// Document management
 		docHandler := handler.NewSDPivotDocumentHandler(sr.db)
 		docHandler.RegisterRoutes(protected)
+		searchHandler.RegisterRoutes(protected)
 
 		// Space-scoped document routes (compatibility alias for /spaces/:id/documents)
 		spaceDocs := protected.Group("/spaces/:id/documents")
@@ -155,15 +170,29 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 		qaHandler := handler.NewSDPivotQAHandler(sr.db)
 		qaHandler.RegisterRoutes(protected)
 		adminHandler.RegisterRoutes(protected)
+		tagDimensionHandler.RegisterRoutes(protected)
+		tagAutoHandler.RegisterRoutes(protected)
+		tagFeedbackHandler.RegisterRoutes(protected)
 		departmentHandler.RegisterRoutes(protected)
+		apiTokenHandler.RegisterRoutes(protected)
+		configHandler.RegisterRoutes(protected)
+		securityHandler.RegisterRoutes(protected)
+		auditHandler.RegisterRoutes(protected)
+		adminUsersHandler.RegisterRoutes(protected)
 
-		// Admin model list (read-only, maps to ops handler)
-		adminModelAlias := protected.Group("/admin")
-		adminModelAlias.GET("/models", opsAdminHandler.ListModels)
+		// Tenant model configuration.
+		adminModels := protected.Group("/admin/models", middleware.RequirePermission(middleware.PermissionDepartmentManage))
+		adminModels.GET("", opsAdminHandler.ListModels)
+		adminModels.POST("", opsAdminHandler.CreateModel)
+		adminModels.PUT("/:id", opsAdminHandler.UpdateModel)
+		adminModels.POST("/:id/test", opsAdminHandler.TestModel)
+		adminModels.POST("/:id/set-default", opsAdminHandler.SetDefaultModel)
+		integrationHandler.RegisterRoutes(protected)
 
 		// AI Writing + Operations
 		writingHandler := handler.NewSDPivotWritingHandler(sr.db)
 		writingHandler.RegisterRoutes(protected)
+		writingManagementHandler.RegisterRoutes(protected)
 
 		// Ops admin protected routes
 		opsHandler.RegisterProtectedRoutes(protected)
