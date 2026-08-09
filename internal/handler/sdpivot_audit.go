@@ -54,6 +54,14 @@ func (h *SDPivotAuditHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		admin.GET("/audit/export", h.ExportAuditLogs)
 		admin.GET("/dashboard", h.GetDashboard)
 	}
+	auditToplevel := rg.Group("/audit", middleware.RequirePermission(middleware.PermissionDepartmentManage))
+	{
+		auditToplevel.GET("/logs", h.ListAuditLogs)
+		auditToplevel.GET("", h.ListAuditLogs)
+		auditToplevel.GET("/login", h.ListLoginLogs)
+		auditToplevel.GET("/knowledge", h.ListKnowledgeLogs)
+		auditToplevel.GET("/export", h.ExportAuditLogs)
+	}
 }
 
 type sdpivotAuditRow struct {

@@ -1,7 +1,7 @@
 DROP POLICY IF EXISTS sdpivot_op_bootstrap_000014_security_settings ON security_settings;
 DROP TABLE IF EXISTS security_settings;
-DROP POLICY IF EXISTS sdpivot_op_bootstrap_000014_system_settings ON system_settings;
-DROP TABLE IF EXISTS system_settings;
+DROP POLICY IF EXISTS sdpivot_op_bootstrap_000014_system_settings ON sdpivot_system_settings;
+DROP TABLE IF EXISTS sdpivot_system_settings;
 
 DROP INDEX IF EXISTS idx_api_tokens_prefix;
 DROP INDEX IF EXISTS idx_api_tokens_tenant_active;

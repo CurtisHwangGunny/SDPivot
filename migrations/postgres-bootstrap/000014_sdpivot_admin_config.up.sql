@@ -24,7 +24,7 @@ UPDATE api_tokens SET created_by = user_id WHERE created_by IS NULL;
 CREATE INDEX IF NOT EXISTS idx_api_tokens_tenant_active ON api_tokens (tenant_id, revoked_at, expires_at);
 CREATE INDEX IF NOT EXISTS idx_api_tokens_prefix ON api_tokens (tenant_id, prefix);
 
-CREATE TABLE IF NOT EXISTS system_settings (
+CREATE TABLE IF NOT EXISTS sdpivot_system_settings (
     id         VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     tenant_id  BIGINT NOT NULL,
     section    VARCHAR(32) NOT NULL CHECK (section IN ('storage', 'sms', 'wechat', 'search', 'cli_mcp', 'global')),
@@ -46,9 +46,9 @@ CREATE TABLE IF NOT EXISTS security_settings (
     UNIQUE (tenant_id, section, key)
 );
 
-ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS sdpivot_op_bootstrap_000014_system_settings ON system_settings;
-CREATE POLICY sdpivot_op_bootstrap_000014_system_settings ON system_settings
+ALTER TABLE sdpivot_system_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS sdpivot_op_bootstrap_000014_system_settings ON sdpivot_system_settings;
+CREATE POLICY sdpivot_op_bootstrap_000014_system_settings ON sdpivot_system_settings
     FOR ALL USING (tenant_id = get_current_tenant_id())
     WITH CHECK (tenant_id = get_current_tenant_id());
 

@@ -28,7 +28,7 @@ type sdpivotSystemSetting struct {
 	UpdatedAt time.Time
 }
 
-func (sdpivotSystemSetting) TableName() string { return "system_settings" }
+func (sdpivotSystemSetting) TableName() string { return "sdpivot_system_settings" }
 
 type SDPivotConfigHandler struct{ db *gorm.DB }
 
