@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/mail"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +47,14 @@ type adminUserBatchError struct {
 	Message string `json:"message"`
 }
 
+type adminUserBatchSuccess struct {
+	Row             int    `json:"row"`
+	ID              string `json:"id"`
+	Username        string `json:"username"`
+	Email           string `json:"email"`
+	InitialPassword string `json:"initial_password,omitempty"`
+}
+
 func NewSDPivotAdminUsersHandler(db *gorm.DB) *SDPivotAdminUsersHandler {
 	return &SDPivotAdminUsersHandler{db: db}
 }
@@ -55,11 +64,71 @@ func (h *SDPivotAdminUsersHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	adminRead.GET("/roles", h.ListRoles)
 
 	adminManage := rg.Group("/admin", middleware.RequirePermission(middleware.PermissionDepartmentManage))
+	adminManage.GET("/users", h.ListUsers)
 	adminManage.POST("/users", h.CreateUser)
 	adminManage.POST("/users/batch", h.BatchCreateUsers)
 
 	adminRole := rg.Group("/admin", middleware.RequirePermission(middleware.PermissionUserRoleAssign))
 	adminRole.PUT("/users/:id/role", h.UpdateUserRole)
+}
+
+func (h *SDPivotAdminUsersHandler) ListUsers(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	tenantID := middleware.GetTenantID(c)
+	db := middleware.TenantDB(c, h.db).Table("users u").
+		Joins("LEFT JOIN departments d ON d.id = u.department_id AND d.tenant_id = u.tenant_id AND d.deleted_at IS NULL").
+		Joins("LEFT JOIN smartknora_user_profiles p ON p.user_id = u.id").
+		Where("u.tenant_id = ? AND u.deleted_at IS NULL", tenantID)
+	if types.NormalizeAccessRole(middleware.GetRole(c)) == types.AccessRoleDepartmentAdmin {
+		ids, err := departmentScopeIDs(h.db, tenantID, middleware.GetDepartmentID(c))
+		if err != nil || len(ids) == 0 {
+			db = db.Where("1 = 0")
+		} else {
+			db = db.Where("u.department_id IN ?", ids)
+		}
+	}
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	if keyword == "" {
+		keyword = strings.TrimSpace(c.Query("search"))
+	}
+	if keyword != "" {
+		like := "%" + escapeILike(keyword) + "%"
+		db = db.Where("u.username ILIKE ? OR u.email ILIKE ? OR COALESCE(p.nickname, '') ILIKE ? OR COALESCE(p.phone, '') ILIKE ?", like, like, like, like)
+	}
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count users"})
+		return
+	}
+	type adminUserListItem struct {
+		ID             string           `json:"id"`
+		Name           string           `json:"name"`
+		Username       string           `json:"username"`
+		Email          string           `json:"email"`
+		Phone          string           `json:"phone"`
+		DepartmentID   *string          `json:"department_id"`
+		DepartmentName string           `json:"department_name"`
+		AccessRole     types.AccessRole `json:"role"`
+		IsActive       bool             `json:"is_active"`
+		Status         string           `json:"status"`
+		CreatedAt      time.Time        `json:"created_at"`
+	}
+	users := make([]adminUserListItem, 0)
+	if err := db.Select(`u.id, COALESCE(NULLIF(p.nickname, ''), u.username) AS name, u.username, u.email,
+		COALESCE(p.phone, '') AS phone, u.department_id, COALESCE(d.name, '') AS department_name,
+		u.access_role, u.is_active, CASE WHEN u.is_active THEN 'active' ELSE 'disabled' END AS status, u.created_at`).
+		Order("u.created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list users"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"users": users, "total": total, "page": page, "page_size": pageSize})
 }
 
 func (h *SDPivotAdminUsersHandler) ListRoles(c *gin.Context) {
@@ -85,24 +154,36 @@ func (h *SDPivotAdminUsersHandler) BatchCreateUsers(c *gin.Context) {
 	db := middleware.TenantDB(c, h.db)
 	tenantID := middleware.GetTenantID(c)
 	result := struct {
-		Total    int                   `json:"total"`
-		Imported int                   `json:"imported"`
-		Failed   int                   `json:"failed"`
-		Errors   []adminUserBatchError `json:"errors"`
-	}{Total: len(rows), Errors: make([]adminUserBatchError, 0)}
+		Total    int                     `json:"total"`
+		Imported int                     `json:"imported"`
+		Failed   int                     `json:"failed"`
+		Created  []adminUserBatchSuccess `json:"created"`
+		Errors   []adminUserBatchError   `json:"errors"`
+	}{Total: len(rows), Created: make([]adminUserBatchSuccess, 0), Errors: make([]adminUserBatchError, 0)}
 
 	for index, row := range rows {
-		if _, batchErr := h.createTenantUser(c, db, tenantID, index+1, row); batchErr != nil {
+		generatedPassword := ""
+		if strings.TrimSpace(row.Password) == "" {
+			generatedPassword, err = generateInitialPassword()
+			if err != nil {
+				result.Errors = append(result.Errors, adminUserBatchError{Row: index + 1, Field: "password", Message: "failed to generate initial password"})
+				continue
+			}
+			row.Password = generatedPassword
+		}
+		user, batchErr := h.createTenantUser(c, db, tenantID, index+1, row)
+		if batchErr != nil {
 			result.Errors = append(result.Errors, *batchErr)
 			continue
 		}
 		result.Imported++
+		result.Created = append(result.Created, adminUserBatchSuccess{Row: index + 1, ID: user.ID, Username: user.Username, Email: user.Email, InitialPassword: generatedPassword})
 	}
 	result.Failed = result.Total - result.Imported
 	writeSDPivotAuditLog(db, c, auditActionUserImported, auditModuleUser, "user", "", map[string]interface{}{
 		"total": result.Total, "imported": result.Imported, "failed": result.Failed,
 	})
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusCreated, result)
 }
 
 func (h *SDPivotAdminUsersHandler) CreateUser(c *gin.Context) {
@@ -155,10 +236,17 @@ func decodeAdminUserBatch(body io.Reader) ([]adminUserBatchRow, error) {
 		return rows, nil
 	}
 	var payload struct {
-		CSVBase64 string `json:"csv_base64"`
+		CSVBase64 string              `json:"csv_base64"`
+		Users     []adminUserBatchRow `json:"users"`
 	}
-	if err := json.Unmarshal(data, &payload); err != nil || strings.TrimSpace(payload.CSVBase64) == "" {
-		return nil, errors.New("body must be a JSON array or contain csv_base64")
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, errors.New("body must be a JSON array, contain users, or contain csv_base64")
+	}
+	if len(payload.Users) > 0 {
+		return payload.Users, nil
+	}
+	if strings.TrimSpace(payload.CSVBase64) == "" {
+		return nil, errors.New("body must be a JSON array, contain users, or contain csv_base64")
 	}
 	csvData, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload.CSVBase64))
 	if err != nil {
@@ -191,6 +279,7 @@ func parseAdminUserCSV(data []byte) ([]adminUserBatchRow, error) {
 			Phone:        importRecordValue(record, adminUserHeaderIndex(headers, "phone")),
 			Password:     importRecordValue(record, adminUserHeaderIndex(headers, "password")),
 			DepartmentID: importRecordValue(record, adminUserHeaderIndex(headers, "department_id")),
+			AccessRole:   types.AccessRole(importRecordValue(record, adminUserHeaderIndex(headers, "access_role"))),
 		})
 	}
 	return rows, nil
@@ -219,6 +308,8 @@ func normalizeAdminUserHeader(value string) string {
 		return "password"
 	case "department_id", "部门id", "部门_id":
 		return "department_id"
+	case "access_role", "role", "角色":
+		return "access_role"
 	default:
 		return "_"
 	}

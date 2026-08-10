@@ -60,6 +60,35 @@ func (h *SDPivotIntegrationHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	integrations.PUT("/:id", h.Update)
 	integrations.DELETE("/:id", h.Delete)
 	integrations.POST("/:id/sync/:resource", h.Sync)
+	sync := rg.Group("/sdpivot", middleware.RequirePermission(middleware.PermissionDepartmentManage))
+	sync.GET("/users/sync", h.SyncUsers)
+	sync.GET("/departments/sync", h.SyncDepartments)
+}
+
+func (h *SDPivotIntegrationHandler) SyncUsers(c *gin.Context) {
+	h.syncConfiguration(c, "users")
+}
+
+func (h *SDPivotIntegrationHandler) SyncDepartments(c *gin.Context) {
+	h.syncConfiguration(c, "departments")
+}
+
+func (h *SDPivotIntegrationHandler) syncConfiguration(c *gin.Context, resource string) {
+	var connector thirdPartyConnector
+	err := middleware.TenantDB(c, h.db).Where("tenant_id = ? AND type = ? AND enabled = TRUE", middleware.GetTenantID(c), resource).
+		Order("updated_at DESC").First(&connector).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusOK, gin.H{"resource": resource, "configured": false, "status": "not_configured", "message": "未配置可用的同步连接器"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load sync configuration"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"resource": resource, "configured": true, "status": "configured", "message": "同步连接器已配置",
+		"integration": thirdPartyConnectorResponse{thirdPartyConnector: connector, AuthConfigured: connector.AuthToken != ""},
+	})
 }
 
 func (h *SDPivotIntegrationHandler) List(c *gin.Context) {

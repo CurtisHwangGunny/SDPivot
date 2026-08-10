@@ -49,6 +49,7 @@ func (h *SDPivotSearchHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	read.GET("/search/history", h.GetHistory)
 	read.POST("/search/history", h.AddHistory)
 	read.GET("/knowledge/search", h.Search)
+	read.GET("/sdpivot/knowledge/search", h.Search)
 
 	write := rg.Group("", middleware.RequirePermission(middleware.PermissionKnowledgeWrite))
 	write.POST("/search/reindex", h.Reindex)

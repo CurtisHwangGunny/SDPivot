@@ -96,13 +96,12 @@ func (h *SDPivotAuditHandler) auditQuery(c *gin.Context, fixedModule string) *go
 	query := db.Table("audit_logs al").
 		Select(fmt.Sprintf(`al.id, al.tenant_id,
 			COALESCE(NULLIF(al.user_id, ''), al.actor_user_id) AS user_id,
-			COALESCE(u.username, '') AS username,
+			al.username AS username,
 			al.actor_role, %s AS module, al.action,
 			COALESCE(NULLIF(al.resource_type, ''), al.target_type) AS resource_type,
 			COALESCE(NULLIF(al.resource_id, ''), al.target_id) AS resource_id,
 			al.request_path, al.request_method, al.outcome, al.details,
 			al.ip_address, al.created_at`, moduleExpression)).
-		Joins("LEFT JOIN users u ON u.id = COALESCE(NULLIF(al.user_id, ''), al.actor_user_id)").
 		Where("al.tenant_id = ?", tenantID)
 
 	module := strings.TrimSpace(fixedModule)

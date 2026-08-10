@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -57,6 +58,11 @@ func (h *SDPivotDocumentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		docs.DELETE("/:id", h.DeleteDocument)
 		docs.POST("/:id/reparse", h.ReparseDocument)
 	}
+	thirdPartyDocs := rg.Group("/sdpivot/documents")
+	thirdPartyDocs.GET("/:id/tags", h.GetDocumentTags)
+	thirdPartyDocumentWrites := thirdPartyDocs.Group("", middleware.RequirePermission(middleware.PermissionKnowledgeWrite))
+	thirdPartyDocumentWrites.POST("/import", h.ImportDocument)
+	thirdPartyDocumentWrites.POST("/batch", h.BatchImportDocuments)
 
 	chunks := rg.Group("/chunks")
 	{
@@ -719,77 +725,21 @@ func createSDPivotDocumentWithVersion(tenantDB *gorm.DB, doc *types.SDPivotDocum
 
 // UploadManualDocument handles manual text/markdown input.
 func (h *SDPivotDocumentHandler) UploadManualDocument(c *gin.Context) {
-	tenantDB := middleware.TenantDB(c, h.db)
 	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionKnowledgeWrite) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": "knowledge.write"})
 		return
 	}
-	userID := middleware.GetUserID(c)
-	tenantID := middleware.GetTenantID(c)
-
-	var req struct {
-		SpaceID string `json:"space_id"`
-		Title   string `json:"title"`
-		Content string `json:"content"`
-		Tags    string `json:"tags"`
-	}
+	var req sdpivotManualDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	req.SpaceID = strings.TrimSpace(req.SpaceID)
-	req.Title = strings.TrimSpace(req.Title)
-	if req.SpaceID == "" || req.Title == "" || strings.TrimSpace(req.Content) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "space_id, title and content are required"})
-		return
-	}
-	if _, ok := authorizeSpace(c, tenantDB, req.SpaceID, spaceAccessEdit); !ok {
-		return
-	}
-
-	docID := uuid.New().String()
-	now := time.Now()
-
-	// Calculate content hash
-	hasher := sha256.New()
-	hasher.Write([]byte(req.Content))
-	contentHash := hex.EncodeToString(hasher.Sum(nil))
-
-	doc := types.SDPivotDocument{
-		ID:              docID,
-		TenantID:        tenantID,
-		SpaceID:         req.SpaceID,
-		UploaderID:      userID,
-		Title:           req.Title,
-		FileName:        req.Title + ".md",
-		FileType:        ".md",
-		FileSize:        int64(len(req.Content)),
-		FilePath:        "",
-		ContentHash:     contentHash,
-		ParseStatus:     "completed",
-		EmbeddingStatus: "pending",
-		Version:         1,
-		Tags:            req.Tags,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}
-
-	version := types.SDPivotDocumentVersion{
-		ID:         uuid.New().String(),
-		DocumentID: docID,
-		TenantID:   tenantID,
-		Version:    1,
-		FileSize:   int64(len(req.Content)),
-		CreatedAt:  now,
-		CreatedBy:  userID,
-	}
-	if err := createSDPivotDocumentWithVersion(tenantDB, &doc, &version); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create document and version", "detail": err.Error()})
-		return
-	}
-
-	if err := h.parseAndStoreDocument(tenantDB, &doc, []byte(req.Content)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse manual document", "detail": err.Error()})
+	doc, status, err := h.createManualDocument(c, req)
+	if err != nil {
+		if status == 0 {
+			return
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -797,6 +747,123 @@ func (h *SDPivotDocumentHandler) UploadManualDocument(c *gin.Context) {
 		"document": doc,
 		"message":  "manual document created and parsed",
 	})
+}
+
+func (h *SDPivotDocumentHandler) ImportDocument(c *gin.Context) {
+	var req sdpivotManualDocumentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	doc, status, err := h.createManualDocument(c, req)
+	if err != nil {
+		if status == 0 {
+			return
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"document": doc, "status": "completed", "message": "document imported and parsed"})
+}
+
+type sdpivotManualDocumentRequest struct {
+	SpaceID string `json:"space_id"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
+	Tags    string `json:"tags"`
+}
+
+func (h *SDPivotDocumentHandler) createManualDocument(c *gin.Context, req sdpivotManualDocumentRequest) (*types.SDPivotDocument, int, error) {
+	tenantDB := middleware.TenantDB(c, h.db)
+	req.SpaceID = strings.TrimSpace(req.SpaceID)
+	req.Title = strings.TrimSpace(req.Title)
+	if req.SpaceID == "" || req.Title == "" || strings.TrimSpace(req.Content) == "" {
+		return nil, http.StatusBadRequest, fmt.Errorf("space_id, title and content are required")
+	}
+	if _, ok := authorizeSpace(c, tenantDB, req.SpaceID, spaceAccessEdit); !ok {
+		return nil, 0, fmt.Errorf("space access denied")
+	}
+	hasher := sha256.Sum256([]byte(req.Content))
+	now := time.Now()
+	doc := &types.SDPivotDocument{
+		ID: uuid.NewString(), TenantID: middleware.GetTenantID(c), SpaceID: req.SpaceID, UploaderID: middleware.GetUserID(c),
+		Title: req.Title, FileName: req.Title + ".md", FileType: ".md", FileSize: int64(len(req.Content)),
+		ContentHash: hex.EncodeToString(hasher[:]), ParseStatus: "completed", EmbeddingStatus: "pending",
+		Version: 1, Tags: req.Tags, CreatedAt: now, UpdatedAt: now,
+	}
+	version := types.SDPivotDocumentVersion{ID: uuid.NewString(), DocumentID: doc.ID, TenantID: doc.TenantID, Version: 1, FileSize: doc.FileSize, CreatedAt: now, CreatedBy: doc.UploaderID}
+	if err := createSDPivotDocumentWithVersion(tenantDB, doc, &version); err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("failed to create document and version: %w", err)
+	}
+	if err := h.parseAndStoreDocument(tenantDB, doc, []byte(req.Content)); err != nil {
+		return nil, http.StatusInternalServerError, fmt.Errorf("failed to parse manual document: %w", err)
+	}
+	return doc, http.StatusCreated, nil
+}
+
+func (h *SDPivotDocumentHandler) BatchImportDocuments(c *gin.Context) {
+	var raw json.RawMessage
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document batch"})
+		return
+	}
+	var documents []sdpivotManualDocumentRequest
+	if err := json.Unmarshal(raw, &documents); err != nil {
+		var payload struct {
+			Documents []sdpivotManualDocumentRequest `json:"documents"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "body must be a document array or contain documents"})
+			return
+		}
+		documents = payload.Documents
+	}
+	if len(documents) == 0 || len(documents) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "batch must contain 1 to 100 documents"})
+		return
+	}
+	created := make([]*types.SDPivotDocument, 0, len(documents))
+	failed := make([]gin.H, 0)
+	for index, req := range documents {
+		doc, _, err := h.createManualDocument(c, req)
+		if err != nil {
+			if c.Writer.Written() {
+				return
+			}
+			failed = append(failed, gin.H{"index": index, "title": req.Title, "error": err.Error()})
+			continue
+		}
+		created = append(created, doc)
+	}
+	c.JSON(http.StatusOK, gin.H{"total": len(documents), "imported": len(created), "failed": len(failed), "documents": created, "errors": failed})
+}
+
+func (h *SDPivotDocumentHandler) GetDocumentTags(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
+	doc, ok := h.authorizeDocument(c, tenantDB, c.Param("id"), spaceAccessView)
+	if !ok {
+		return
+	}
+	type tagRow struct {
+		ID          string  `json:"id"`
+		DimensionID string  `json:"dimension_id"`
+		Name        string  `json:"name"`
+		Color       string  `json:"color"`
+		Source      string  `json:"source"`
+		Confidence  float64 `json:"confidence"`
+	}
+	var tags []tagRow
+	if err := tenantDB.Table("document_tags dt").
+		Joins("JOIN tag_dictionary td ON td.id = dt.tag_id AND td.dimension_id = dt.dimension_id").
+		Where("dt.tenant_id = ? AND dt.document_id = ? AND dt.deleted_at IS NULL", doc.TenantID, doc.ID).
+		Select("td.id, td.dimension_id, td.name, td.color, dt.source, dt.confidence").Order("td.sort_order, td.name").Scan(&tags).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load document tags"})
+		return
+	}
+	if tags == nil {
+		tags = make([]tagRow, 0)
+	}
+	c.JSON(http.StatusOK, gin.H{"document_id": doc.ID, "raw_tags": doc.Tags, "tags": tags})
 }
 
 // UploadFromURL handles web page URL import.

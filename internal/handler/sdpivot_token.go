@@ -31,11 +31,87 @@ func (h *SDPivotTokenHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		usage.GET("/summary", h.GetUsageSummary)
 		usage.GET("/history", h.GetUsageHistory)
 		usage.GET("/by-model", h.GetUsageByModel)
+		usage.GET("/active-users", h.GetActiveUsers)
+		usage.GET("/documents", h.GetDocumentUsage)
+		usage.GET("/qa", h.GetQAUsage)
 		report := usage.Group("/report", middleware.RequirePermission(middleware.PermissionDepartmentManage))
 		report.GET("/by-user", h.GetUsageReportByUser)
 		report.GET("/by-department", h.GetUsageReportByDepartment)
 		report.GET("/export", h.ExportUsageReport)
 	}
+}
+
+func (h *SDPivotTokenHandler) GetActiveUsers(c *gin.Context) {
+	cutoff := time.Now().AddDate(0, 0, -30)
+	var result struct {
+		ActiveUsers int64 `json:"active_users"`
+		Requests    int64 `json:"request_count"`
+		TotalTokens int64 `json:"total_tokens"`
+	}
+	if err := middleware.TenantDB(c, h.db).Table("token_usage").
+		Where("tenant_id = ? AND created_at >= ?", middleware.GetTenantID(c), cutoff).
+		Select("COUNT(DISTINCT user_id) AS active_users, COUNT(*) AS request_count, COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens").
+		Scan(&result).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load active user usage"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"period_days": 30, "active_users": result.ActiveUsers, "request_count": result.Requests, "total_tokens": result.TotalTokens})
+}
+
+func (h *SDPivotTokenHandler) GetDocumentUsage(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	var result struct {
+		TotalDocuments      int64 `json:"total_documents"`
+		ParsedDocuments     int64 `json:"parsed_documents"`
+		VectorizedDocuments int64 `json:"vectorized_documents"`
+		TotalChunks         int64 `json:"total_chunks"`
+		TotalBytes          int64 `json:"total_bytes"`
+	}
+	if err := middleware.TenantDB(c, h.db).Table("documents").
+		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
+		Select(`COUNT(*) AS total_documents,
+			COUNT(*) FILTER (WHERE parse_status = 'completed') AS parsed_documents,
+			COUNT(*) FILTER (WHERE embedding_status = 'completed') AS vectorized_documents,
+			COALESCE(SUM(chunk_count), 0) AS total_chunks,
+			COALESCE(SUM(file_size), 0) AS total_bytes`).Scan(&result).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load document usage"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *SDPivotTokenHandler) GetQAUsage(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+	var qa struct {
+		QuestionCount int64 `json:"question_count"`
+		AnswerCount   int64 `json:"answer_count"`
+		SessionCount  int64 `json:"session_count"`
+	}
+	if err := middleware.TenantDB(c, h.db).Table("qa_messages qm").
+		Joins("JOIN qa_sessions qs ON qs.id = qm.session_id AND qs.tenant_id = qm.tenant_id").
+		Where("qm.tenant_id = ?", tenantID).
+		Select(`COUNT(*) FILTER (WHERE qm.role = 'user') AS question_count,
+			COUNT(*) FILTER (WHERE qm.role = 'assistant') AS answer_count,
+			COUNT(DISTINCT qm.session_id) AS session_count`).Scan(&qa).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load QA usage"})
+		return
+	}
+	var tokens struct {
+		PromptTokens     int64 `json:"prompt_tokens"`
+		CompletionTokens int64 `json:"completion_tokens"`
+		TotalTokens      int64 `json:"total_tokens"`
+	}
+	if err := middleware.TenantDB(c, h.db).Table("token_usage").Where("tenant_id = ? AND action ILIKE ?", tenantID, "%qa%").
+		Select("COALESCE(SUM(input_tokens), 0) AS prompt_tokens, COALESCE(SUM(output_tokens), 0) AS completion_tokens, COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens").
+		Scan(&tokens).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load QA token usage"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"question_count": qa.QuestionCount, "answer_count": qa.AnswerCount, "qa_count": qa.QuestionCount,
+		"session_count": qa.SessionCount, "prompt_tokens": tokens.PromptTokens,
+		"completion_tokens": tokens.CompletionTokens, "total_tokens": tokens.TotalTokens,
+	})
 }
 
 // GetUsageSummary returns aggregated token usage.
