@@ -380,7 +380,7 @@ func (h *SDPivotOperationsHandler) modelServiceHealth(c *gin.Context, ctx contex
 	}
 	started := time.Now()
 	var count int64
-	err := middleware.TenantDB(c, h.db).WithContext(ctx).Model(&types.Model{}).Where("is_active = ?", true).Count(&count).Error
+	err := middleware.TenantDB(c, h.db).WithContext(ctx).Model(&types.Model{}).Where("status = ?", types.ModelStatusActive).Count(&count).Error
 	latency := time.Since(started).Milliseconds()
 	if err != nil {
 		return serviceHealth("down", latency, "model configuration probe failed")
