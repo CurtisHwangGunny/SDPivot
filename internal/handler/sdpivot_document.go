@@ -22,16 +22,18 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // SDPivotDocumentHandler handles document upload, parsing, and management.
 type SDPivotDocumentHandler struct {
-	db        *gorm.DB
-	uploadDir string
+	db             *gorm.DB
+	uploadDir      string
+	documentReader interfaces.DocReader
 }
 
 // NewSDPivotDocumentHandler creates a new document handler.
-func NewSDPivotDocumentHandler(db *gorm.DB) *SDPivotDocumentHandler {
+func NewSDPivotDocumentHandler(db *gorm.DB, documentReader interfaces.DocReader) *SDPivotDocumentHandler {
 	uploadDir := os.Getenv("SDP_UPLOAD_DIR")
 	if uploadDir == "" {
 		uploadDir = os.Getenv("UPLOAD_DIR")
@@ -40,7 +42,7 @@ func NewSDPivotDocumentHandler(db *gorm.DB) *SDPivotDocumentHandler {
 		uploadDir = "/tmp/sdpivot-uploads"
 	}
 	os.MkdirAll(uploadDir, 0755)
-	return &SDPivotDocumentHandler{db: db, uploadDir: uploadDir}
+	return &SDPivotDocumentHandler{db: db, uploadDir: uploadDir, documentReader: documentReader}
 }
 
 // RegisterRoutes registers document management routes.
@@ -213,7 +215,7 @@ func (h *SDPivotDocumentHandler) UploadDocument(c *gin.Context) {
 
 	fileSaved = false
 	parseMessage := "document uploaded and parsed"
-	if err := h.parseAndStoreDocument(tenantDB, &doc, content); err != nil {
+	if err := h.parseAndStoreDocument(c.Request.Context(), tenantDB, &doc, content); err != nil {
 		parseMessage = "document uploaded, parsing failed: " + err.Error()
 	}
 	writeSDPivotAuditLog(h.db, c, auditActionDocumentUpload, auditModuleDocument, "document", doc.ID, map[string]interface{}{
@@ -454,7 +456,7 @@ func (h *SDPivotDocumentHandler) ReparseDocument(c *gin.Context) {
 		return
 	}
 
-	if err := h.parseAndStoreDocument(tenantDB, doc, content); err != nil {
+	if err := h.parseAndStoreDocument(c.Request.Context(), tenantDB, doc, content); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -651,11 +653,11 @@ func (h *SDPivotDocumentHandler) loadDocumentContent(ctx context.Context, doc *t
 	return os.ReadFile(doc.FilePath)
 }
 
-func (h *SDPivotDocumentHandler) parseAndStoreDocument(tenantDB *gorm.DB, doc *types.SDPivotDocument, content []byte) error {
+func (h *SDPivotDocumentHandler) parseAndStoreDocument(ctx context.Context, tenantDB *gorm.DB, doc *types.SDPivotDocument, content []byte) error {
 	now := time.Now()
 	tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "parsing", "updated_at": now})
 
-	text, err := normalizeDocumentContent(doc.FileType, content)
+	text, err := h.parseDocumentContent(ctx, doc, content)
 	if err != nil {
 		tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "chunk_count": 0, "updated_at": time.Now()})
 		return err
@@ -683,6 +685,39 @@ func (h *SDPivotDocumentHandler) parseAndStoreDocument(tenantDB *gorm.DB, doc *t
 		return fmt.Errorf("failed to store chunks")
 	}
 	return nil
+}
+
+func (h *SDPivotDocumentHandler) parseDocumentContent(ctx context.Context, doc *types.SDPivotDocument, content []byte) (string, error) {
+	ext := strings.ToLower(strings.TrimPrefix(doc.FileType, "."))
+	switch ext {
+	case "doc", "docx", "ppt", "pptx", "xls", "xlsx", "pdf":
+		if h.documentReader == nil {
+			return "", fmt.Errorf("document parser is unavailable for file type: %s", doc.FileType)
+		}
+		result, err := h.documentReader.Read(ctx, &types.ReadRequest{
+			FileContent: content,
+			FileName:    doc.FileName,
+			FileType:    ext,
+			Title:       doc.Title,
+			RequestID:   doc.ID,
+		})
+		if err != nil {
+			return "", fmt.Errorf("document parser failed for %s: %w", doc.FileType, err)
+		}
+		if result == nil {
+			return "", fmt.Errorf("document parser returned no result for file type: %s", doc.FileType)
+		}
+		if result.Error != "" {
+			return "", fmt.Errorf("document parser failed for %s: %s", doc.FileType, result.Error)
+		}
+		text := strings.TrimSpace(result.MarkdownContent)
+		if text == "" {
+			return "", fmt.Errorf("document parser returned empty content for file type: %s", doc.FileType)
+		}
+		return text, nil
+	default:
+		return normalizeDocumentContent(doc.FileType, content)
+	}
 }
 
 func normalizeDocumentContent(fileType string, content []byte) (string, error) {
@@ -839,7 +874,7 @@ func (h *SDPivotDocumentHandler) createManualDocument(c *gin.Context, req sdpivo
 	if err := createSDPivotDocumentWithVersion(tenantDB, doc, &version); err != nil {
 		return nil, http.StatusInternalServerError, fmt.Errorf("failed to create document and version: %w", err)
 	}
-	if err := h.parseAndStoreDocument(tenantDB, doc, []byte(req.Content)); err != nil {
+	if err := h.parseAndStoreDocument(c.Request.Context(), tenantDB, doc, []byte(req.Content)); err != nil {
 		return nil, http.StatusInternalServerError, fmt.Errorf("failed to parse manual document: %w", err)
 	}
 	return doc, http.StatusCreated, nil
@@ -1034,7 +1069,7 @@ func (h *SDPivotDocumentHandler) UploadFromURL(c *gin.Context) {
 		return
 	}
 
-	if err := h.parseAndStoreDocument(tenantDB, &doc, []byte(content)); err != nil {
+	if err := h.parseAndStoreDocument(c.Request.Context(), tenantDB, &doc, []byte(content)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse URL content"})
 		return
 	}

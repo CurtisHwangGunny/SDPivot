@@ -22,19 +22,21 @@ import (
 type SDPivotRouterParams struct {
 	dig.In
 
-	DB            *gorm.DB
-	RedisClient   *redis.Client
-	Config        *config.Config
-	BackupService interfaces.BackupService `optional:"true"`
+	DB             *gorm.DB
+	RedisClient    *redis.Client
+	Config         *config.Config
+	DocumentReader interfaces.DocumentReader
+	BackupService  interfaces.BackupService `optional:"true"`
 }
 
 // SDPivotRouter holds all SDPivot-specific route handlers.
 type SDPivotRouter struct {
-	db            *gorm.DB
-	redis         *redis.Client
-	jwtManager    *auth.JWTManager
-	product       *config.ProductConfig
-	backupService interfaces.BackupService
+	db             *gorm.DB
+	redis          *redis.Client
+	jwtManager     *auth.JWTManager
+	product        *config.ProductConfig
+	documentReader interfaces.DocumentReader
+	backupService  interfaces.BackupService
 }
 
 // NewSDPivotRouter creates a new SDPivot router via DI.
@@ -61,11 +63,12 @@ func NewSDPivotRouter(params SDPivotRouterParams) *SDPivotRouter {
 	}
 
 	return &SDPivotRouter{
-		db:            params.DB,
-		redis:         params.RedisClient,
-		jwtManager:    jwtManager,
-		product:       product,
-		backupService: params.BackupService,
+		db:             params.DB,
+		redis:          params.RedisClient,
+		jwtManager:     jwtManager,
+		product:        product,
+		documentReader: params.DocumentReader,
+		backupService:  params.BackupService,
 	}
 }
 
@@ -160,7 +163,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 		tokenHandler.RegisterRoutes(protected)
 
 		// Document management
-		docHandler := handler.NewSDPivotDocumentHandler(sr.db)
+		docHandler := handler.NewSDPivotDocumentHandler(sr.db, sr.documentReader)
 		docHandler.RegisterRoutes(protected)
 		searchHandler.RegisterRoutes(protected)
 

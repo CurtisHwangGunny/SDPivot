@@ -2,13 +2,16 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +21,14 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
+
+type stubSDPivotDocReader struct {
+	read func(context.Context, *types.ReadRequest) (*types.ReadResult, error)
+}
+
+func (s *stubSDPivotDocReader) Read(ctx context.Context, req *types.ReadRequest) (*types.ReadResult, error) {
+	return s.read(ctx, req)
+}
 
 func newSDPivotDocumentTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -234,5 +245,107 @@ func TestUploadDocumentVersionInsertFailureRollsBackAndRemovesFile(t *testing.T)
 	}
 	if _, err := os.Stat(filepath.Join(uploadDir, "73")); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("stat tenant upload directory: %v", err)
+	}
+}
+
+func TestParseAndStoreDocumentUsesDocReaderForOfficeAndPDF(t *testing.T) {
+	fileTypes := []string{".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf"}
+	for _, fileType := range fileTypes {
+		t.Run(fileType, func(t *testing.T) {
+			db := newSDPivotDocumentTestDB(t)
+			doc := types.SDPivotDocument{
+				ID:          "document-" + fileType[1:],
+				TenantID:    91,
+				SpaceID:     "space-1",
+				Title:       "Quarterly report",
+				FileName:    "report" + fileType,
+				FileType:    fileType,
+				ParseStatus: "pending",
+			}
+			if err := db.Create(&doc).Error; err != nil {
+				t.Fatalf("create document: %v", err)
+			}
+
+			var received *types.ReadRequest
+			h := &SDPivotDocumentHandler{
+				db: db,
+				documentReader: &stubSDPivotDocReader{read: func(_ context.Context, req *types.ReadRequest) (*types.ReadResult, error) {
+					received = req
+					return &types.ReadResult{MarkdownContent: "# Parsed report\n\nOffice content"}, nil
+				}},
+			}
+			content := []byte("binary office content")
+			if err := h.parseAndStoreDocument(context.Background(), db, &doc, content); err != nil {
+				t.Fatalf("parse document: %v", err)
+			}
+			if received == nil {
+				t.Fatal("expected document reader to be called")
+			}
+			if received.FileName != doc.FileName || received.FileType != fileType[1:] || received.Title != doc.Title || received.RequestID != doc.ID {
+				t.Fatalf("unexpected read request: %#v", received)
+			}
+			if !bytes.Equal(received.FileContent, content) {
+				t.Fatalf("unexpected file content: %q", received.FileContent)
+			}
+
+			var stored types.SDPivotDocument
+			if err := db.First(&stored, "id = ?", doc.ID).Error; err != nil {
+				t.Fatalf("load document: %v", err)
+			}
+			if stored.ParseStatus != "completed" || stored.ChunkCount != 1 {
+				t.Fatalf("unexpected parse result: status=%s chunks=%d", stored.ParseStatus, stored.ChunkCount)
+			}
+			var chunk types.SDPivotDocumentChunk
+			if err := db.First(&chunk, "document_id = ?", doc.ID).Error; err != nil {
+				t.Fatalf("load chunk: %v", err)
+			}
+			if chunk.Content != "# Parsed report\n\nOffice content" {
+				t.Fatalf("unexpected chunk content: %q", chunk.Content)
+			}
+		})
+	}
+}
+
+func TestParseAndStoreDocumentKeepsTextFallback(t *testing.T) {
+	db := newSDPivotDocumentTestDB(t)
+	doc := types.SDPivotDocument{ID: "markdown-document", TenantID: 92, SpaceID: "space-1", FileName: "notes.md", FileType: ".md", ParseStatus: "pending"}
+	if err := db.Create(&doc).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	h := &SDPivotDocumentHandler{db: db}
+	if err := h.parseAndStoreDocument(context.Background(), db, &doc, []byte("first\n\nsecond")); err != nil {
+		t.Fatalf("parse markdown fallback: %v", err)
+	}
+	var chunk types.SDPivotDocumentChunk
+	if err := db.First(&chunk, "document_id = ?", doc.ID).Error; err != nil {
+		t.Fatalf("load chunk: %v", err)
+	}
+	if chunk.Content != "first second" {
+		t.Fatalf("unexpected fallback content: %q", chunk.Content)
+	}
+}
+
+func TestParseAndStoreDocumentMarksDocReaderFailure(t *testing.T) {
+	db := newSDPivotDocumentTestDB(t)
+	doc := types.SDPivotDocument{ID: "failed-document", TenantID: 93, SpaceID: "space-1", FileName: "report.pdf", FileType: ".pdf", ParseStatus: "pending"}
+	if err := db.Create(&doc).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	h := &SDPivotDocumentHandler{
+		db: db,
+		documentReader: &stubSDPivotDocReader{read: func(context.Context, *types.ReadRequest) (*types.ReadResult, error) {
+			return nil, errors.New("docreader unavailable")
+		}},
+	}
+	err := h.parseAndStoreDocument(context.Background(), db, &doc, []byte("pdf content"))
+	if err == nil || !strings.Contains(err.Error(), "docreader unavailable") {
+		t.Fatalf("expected clear document reader error, got %v", err)
+	}
+	var stored types.SDPivotDocument
+	if err := db.First(&stored, "id = ?", doc.ID).Error; err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	if stored.ParseStatus != "failed" || stored.ChunkCount != 0 {
+		t.Fatalf("unexpected failed parse state: status=%s chunks=%d", stored.ParseStatus, stored.ChunkCount)
 	}
 }
