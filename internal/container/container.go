@@ -1229,7 +1229,12 @@ func initDocReaderClient(cfg *config.Config) (interfaces.DocumentReader, error) 
 		transport = "grpc"
 	}
 	if addr == "" {
-		logger.Infof(context.Background(), "[DocConverter] No DOCREADER_ADDR configured, starting disconnected")
+		if cfg != nil && cfg.Product != nil && cfg.Product.OPMode {
+			err := fmt.Errorf("[DocConverter] DOCREADER_ADDR is required in OP edition but not configured; docreader is a mandatory component, refusing to start disconnected")
+			logger.Errorf(context.Background(), "%v", err)
+			return interfaces.DocumentReader(nil), err
+		}
+		logger.Errorf(context.Background(), "[DocConverter] No DOCREADER_ADDR configured; docreader is a mandatory component, starting disconnected outside OP edition")
 	}
 	transport = strings.ToLower(transport)
 	switch transport {
