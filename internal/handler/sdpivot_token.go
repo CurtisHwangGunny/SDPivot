@@ -38,6 +38,10 @@ func (h *SDPivotTokenHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		report.GET("/by-user", h.GetUsageReportByUser)
 		report.GET("/by-department", h.GetUsageReportByDepartment)
 		report.GET("/export", h.ExportUsageReport)
+		token := usage.Group("/token", middleware.RequirePermission(middleware.PermissionDepartmentManage))
+		token.GET("/by-person", h.GetUsageTokenByPerson)
+		token.GET("/by-department", h.GetUsageTokenByDepartment)
+		token.GET("/export", h.ExportUsageTokenDetails)
 	}
 }
 
@@ -261,7 +265,7 @@ func applySDPivotUsageRange(c *gin.Context, db *gorm.DB) *gorm.DB {
 
 func (h *SDPivotTokenHandler) usageReportBase(c *gin.Context) *gorm.DB {
 	db := middleware.TenantDB(c, h.db).Table("token_usage tu").
-		Joins("LEFT JOIN users u ON u.id = tu.user_id AND u.deleted_at IS NULL").
+		Joins("LEFT JOIN users u ON u.id::text = tu.user_id::text AND u.tenant_id = tu.tenant_id AND u.deleted_at IS NULL").
 		Joins("LEFT JOIN departments d ON d.id = u.department_id AND d.tenant_id = tu.tenant_id AND d.deleted_at IS NULL").
 		Where("tu.tenant_id = ?", middleware.GetTenantID(c))
 	if strings.EqualFold(middleware.GetRole(c), "department_admin") {
@@ -272,6 +276,62 @@ func (h *SDPivotTokenHandler) usageReportBase(c *gin.Context) *gorm.DB {
 		db = db.Where("u.department_id IN ?", departmentIDs)
 	}
 	return applySDPivotUsageRange(c, db)
+}
+
+func (h *SDPivotTokenHandler) GetUsageTokenByPerson(c *gin.Context) {
+	rows, err := h.usageByUser(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load token usage by person"})
+		return
+	}
+	items := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, gin.H{"user_id": row.ID, "username": row.Name, "total_input_tokens": row.PromptTokens, "total_output_tokens": row.CompletionTokens, "total_tokens": row.TotalTokens, "request_count": row.RequestCount})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h *SDPivotTokenHandler) GetUsageTokenByDepartment(c *gin.Context) {
+	rows, err := h.usageByDepartment(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load token usage by department"})
+		return
+	}
+	items := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, gin.H{"department_id": row.ID, "department_name": row.Name, "total_tokens": row.TotalTokens, "request_count": row.RequestCount})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+func (h *SDPivotTokenHandler) ExportUsageTokenDetails(c *gin.Context) {
+	type detailRow struct {
+		Date         time.Time
+		User         string
+		Department   string
+		InputTokens  int64
+		OutputTokens int64
+		Total        int64
+	}
+	rows := make([]detailRow, 0)
+	err := h.usageReportBase(c).Select(`tu.created_at AS date,
+		COALESCE(NULLIF(u.username, ''), NULLIF(u.email, ''), tu.user_id, '未知用户') AS user,
+		COALESCE(NULLIF(d.name, ''), '未分配部门') AS department,
+		tu.input_tokens, tu.output_tokens, tu.input_tokens + tu.output_tokens AS total`).
+		Order("tu.created_at ASC").Scan(&rows).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to export token usage"})
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=token_usage.csv")
+	_, _ = c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write([]string{"date", "user", "department", "input_tokens", "output_tokens", "total"})
+	for _, row := range rows {
+		_ = writer.Write([]string{row.Date.Format(time.RFC3339), row.User, row.Department, strconv.FormatInt(row.InputTokens, 10), strconv.FormatInt(row.OutputTokens, 10), strconv.FormatInt(row.Total, 10)})
+	}
+	writer.Flush()
 }
 
 func (h *SDPivotTokenHandler) usageByUser(c *gin.Context) ([]sdpivotUsageReportRow, error) {

@@ -27,9 +27,39 @@ func NewSDPivotDepartmentHandler(db *gorm.DB) *SDPivotDepartmentHandler {
 func (h *SDPivotDepartmentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	departments := rg.Group("/admin/departments", middleware.RequirePermission(middleware.PermissionDepartmentManage))
 	departments.GET("", h.Tree)
+	departments.GET("/tree", h.SelectionTree)
 	departments.POST("", h.Create)
 	departments.PUT("/:id", h.Update)
 	departments.DELETE("/:id", h.Delete)
+}
+
+type departmentSelectionNode struct {
+	ID       string                     `json:"id"`
+	Name     string                     `json:"name"`
+	ParentID string                     `json:"parent_id"`
+	Children []*departmentSelectionNode `json:"children"`
+}
+
+func (h *SDPivotDepartmentHandler) SelectionTree(c *gin.Context) {
+	tree, err := h.service.Tree(c.Request.Context(), middleware.GetTenantID(c))
+	if err != nil {
+		h.writeError(c, err, "failed to load department tree")
+		return
+	}
+	if types.NormalizeAccessRole(middleware.GetRole(c)) == types.AccessRoleDepartmentAdmin {
+		tree = filterDepartmentTreeScope(tree, middleware.GetDepartmentID(c))
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": toDepartmentSelectionTree(tree)})
+}
+
+func toDepartmentSelectionTree(tree []*types.DepartmentTreeNode) []*departmentSelectionNode {
+	result := make([]*departmentSelectionNode, 0, len(tree))
+	for _, node := range tree {
+		result = append(result, &departmentSelectionNode{
+			ID: node.ID, Name: node.Name, ParentID: node.ParentID, Children: toDepartmentSelectionTree(node.Children),
+		})
+	}
+	return result
 }
 
 func (h *SDPivotDepartmentHandler) Tree(c *gin.Context) {

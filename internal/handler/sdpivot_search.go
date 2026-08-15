@@ -59,7 +59,7 @@ func (h *SDPivotSearchHandler) RegisterRoutes(rg *gin.RouterGroup) {
 func (h *SDPivotSearchHandler) Search(c *gin.Context) {
 	query := strings.TrimSpace(c.Query("q"))
 	if query == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "q is required"})
+		c.JSON(http.StatusOK, gin.H{"query": query, "results": []sdpivotSearchResult{}, "total": 0})
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *SDPivotSearchHandler) Search(c *gin.Context) {
 		Joins("JOIN knowledge_spaces ON knowledge_spaces.id = documents.space_id AND knowledge_spaces.tenant_id = documents.tenant_id").
 		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND knowledge_spaces.deleted_at IS NULL AND documents.parse_status = ?", tenantID, "completed").
 		Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, middleware.GetUserID(c))).
-		Where("document_chunks.content ILIKE ?", search)
+		Where("document_chunks.content ILIKE ? OR documents.title ILIKE ?", search, search)
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
@@ -87,7 +87,7 @@ func (h *SDPivotSearchHandler) Search(c *gin.Context) {
 		return
 	}
 
-	var results []sdpivotSearchResult
+	results := make([]sdpivotSearchResult, 0)
 	if err := base.Select(`
 		document_chunks.id AS chunk_id,
 		document_chunks.chunk_index,

@@ -53,6 +53,7 @@ func (h *SDPivotDocumentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		docs.POST("/url", h.UploadFromURL)
 		docs.GET("", h.ListDocuments)
 		docs.GET("/:id", h.GetDocument)
+		docs.GET("/:id/parse-status", h.GetDocumentParseStatus)
 		docs.GET("/:id/chunks", h.GetDocumentChunks)
 		docs.GET("/:id/versions", h.GetDocumentVersions)
 		docs.DELETE("/:id", h.DeleteDocument)
@@ -60,6 +61,7 @@ func (h *SDPivotDocumentHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	}
 	thirdPartyDocs := rg.Group("/sdpivot/documents")
 	thirdPartyDocs.GET("/:id/tags", h.GetDocumentTags)
+	thirdPartyDocs.PUT("/:id/tags", middleware.RequirePermission(middleware.PermissionDepartmentManage), h.SyncDocumentTags)
 	thirdPartyDocumentWrites := thirdPartyDocs.Group("", middleware.RequirePermission(middleware.PermissionKnowledgeWrite))
 	thirdPartyDocumentWrites.POST("/import", h.ImportDocument)
 	thirdPartyDocumentWrites.POST("/batch", h.BatchImportDocuments)
@@ -299,6 +301,48 @@ func (h *SDPivotDocumentHandler) GetDocument(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"document": doc})
+}
+
+// GetDocumentParseStatus returns a stable parsing progress projection.
+func (h *SDPivotDocumentHandler) GetDocumentParseStatus(c *gin.Context) {
+	tenantDB := middleware.TenantDB(c, h.db)
+	doc, ok := h.authorizeDocument(c, tenantDB, c.Param("id"), spaceAccessView)
+	if !ok {
+		return
+	}
+
+	var storedChunks int64
+	if err := tenantDB.Model(&types.SDPivotDocumentChunk{}).
+		Where("tenant_id = ? AND document_id = ?", doc.TenantID, doc.ID).
+		Count(&storedChunks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load document parse status"})
+		return
+	}
+
+	status := strings.ToLower(strings.TrimSpace(doc.ParseStatus))
+	progress := 0
+	errorMessage := ""
+	switch status {
+	case "completed":
+		progress = 100
+	case "parsing", "processing":
+		status = "parsing"
+		progress = 10
+		if doc.ChunkCount > 0 {
+			progress = 10 + int(storedChunks*80/int64(doc.ChunkCount))
+			if progress > 90 {
+				progress = 90
+			}
+		}
+	case "failed":
+		errorMessage = "document parsing failed"
+	case "pending", "":
+		status = "pending"
+	default:
+		status = "pending"
+	}
+
+	c.JSON(http.StatusOK, gin.H{"progress": progress, "status": status, "error": errorMessage})
 }
 
 // GetDocumentChunks gets chunks of a document.
@@ -864,6 +908,44 @@ func (h *SDPivotDocumentHandler) GetDocumentTags(c *gin.Context) {
 		tags = make([]tagRow, 0)
 	}
 	c.JSON(http.StatusOK, gin.H{"document_id": doc.ID, "raw_tags": doc.Tags, "tags": tags})
+}
+
+// SyncDocumentTags replaces a document's dictionary tags for third-party callers.
+func (h *SDPivotDocumentHandler) SyncDocumentTags(c *gin.Context) {
+	var req struct {
+		Tags []string `json:"tags" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	db := middleware.TenantDB(c, h.db)
+	doc, ok := authorizeTagDocument(c, db, c.Param("id"), spaceAccessEdit)
+	if !ok {
+		return
+	}
+	values := uniqueStrings(req.Tags)
+	refs, err := loadTagDictionaryRefs(db, doc.TenantID, values)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate document tags"})
+		return
+	}
+	if len(refs) != len(values) {
+		var byName []tagDictionaryRef
+		if err := db.Table("tag_dictionary AS dict").Select("dict.id, dict.dimension_id").
+			Joins("JOIN tag_dimensions AS dim ON dim.id = dict.dimension_id").
+			Where("dict.name IN ? AND dim.deleted_at IS NULL AND dim.enabled = TRUE AND (dim.tenant_id IS NULL OR dim.tenant_id = ?)", values, doc.TenantID).
+			Scan(&byName).Error; err != nil || len(byName) != len(values) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "one or more tags are invalid or ambiguous"})
+			return
+		}
+		refs = byName
+	}
+	if err := replaceSDPivotDocumentTags(db, doc, refs, middleware.GetUserID(c), "third-party synchronization"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to synchronize document tags"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"document_id": doc.ID, "tag_count": len(refs), "status": "updated"})
 }
 
 // UploadFromURL handles web page URL import.

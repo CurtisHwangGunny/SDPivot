@@ -138,7 +138,7 @@
             </fieldset>
           </div>
 
-          <form v-else class="sdp-personal-settings__section" @submit.prevent="saveNotifications">
+          <form v-else-if="currentTab === 'notifications'" class="sdp-personal-settings__section" @submit.prevent="saveNotifications">
             <div class="sdp-personal-settings__section-head">
               <div>
                 <p class="sdp-personal-settings__kicker">Notifications</p>
@@ -162,6 +162,20 @@
               <SdpButton :loading="savingNotifications" aria-label="保存通知偏好" @click="saveNotifications">保存通知偏好</SdpButton>
             </div>
           </form>
+
+          <section v-else class="sdp-personal-settings__section">
+            <div class="sdp-personal-settings__section-head">
+              <div>
+                <p class="sdp-personal-settings__kicker">Writing Templates</p>
+                <h2>个人写作模板</h2>
+                <p>在 AI 写作工作台维护可复用的个人模板，并设置生成优先级。</p>
+              </div>
+            </div>
+
+            <div class="sdp-personal-settings__actions">
+              <RouterLink class="sdp-personal-settings__link" to="/writing">进入写作模板管理</RouterLink>
+            </div>
+          </section>
         </section>
       </section>
     </div>
@@ -171,13 +185,14 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import client from '@/api/client'
 import { SdpButton, SdpNotice } from '@/components/design'
 import { type ThemeMode, useTheme } from '@/composables/useTheme'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 
-type TabKey = 'profile' | 'appearance' | 'notifications'
+type TabKey = 'profile' | 'appearance' | 'notifications' | 'writing'
 type NoticeType = 'success' | 'info' | 'warning' | 'danger'
 type UserProfile = {
   id?: string
@@ -195,6 +210,7 @@ const tabs: Array<{ key: TabKey; label: string; description: string }> = [
   { key: 'profile', label: '个人资料', description: '账号信息与密码安全' },
   { key: 'appearance', label: '外观主题', description: '浅色、深色或跟随系统' },
   { key: 'notifications', label: '通知偏好', description: '任务与安全提醒' },
+  { key: 'writing', label: '写作模板', description: '个人模板与生成优先级' },
 ]
 const themeOptions: Array<{ value: ThemeMode; label: string; description: string }> = [
   { value: 'light', label: '浅色模式', description: '适合明亮环境下使用' },
@@ -529,6 +545,19 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: var(--space-5);
+}
+
+.sdp-personal-settings__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-10);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--brand-600);
+  border-radius: var(--radius-sm);
+  color: var(--ink-950);
+  background: var(--brand-500);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
 }
 
 .sdp-personal-settings__choice-grid,

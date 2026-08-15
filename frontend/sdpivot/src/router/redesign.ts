@@ -20,6 +20,8 @@ const redesignRoutes: RouteRecordRaw[] = [
     },
   }] : []),
   { path: '/settings', component: () => import('@/views/design/PersonalSettingsPage.vue') },
+  { path: '/profile', redirect: '/settings' },
+  { path: '/account', redirect: '/settings' },
   { path: '/spaces', name: 'spaces', component: () => import('@/views/design/SpaceHomePage.vue') },
   { path: '/spaces/:id', name: 'spaceDetail', component: () => import('@/views/design/SpaceDetailPage.vue') },
   { path: '/spaces/:id/documents', name: 'spaceDocuments', component: () => import('@/views/design/DocumentsListPage.vue') },

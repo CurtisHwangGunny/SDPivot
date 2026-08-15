@@ -189,19 +189,21 @@ func (h *SDPivotQAHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	if session.SpaceID != "" {
-		if _, ok := authorizeSpace(c, tenantDB, session.SpaceID, spaceAccessView); !ok {
-			return
-		}
-	}
-
 	var req struct {
-		Content string `json:"content" binding:"required"`
-		ModelID string `json:"model_id" binding:"omitempty,max=64"`
+		Content  string   `json:"content" binding:"required"`
+		ModelID  string   `json:"model_id" binding:"omitempty,max=64"`
+		SpaceID  string   `json:"space_id"`
+		SpaceIDs []string `json:"space_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	useSessionSpace := req.SpaceIDs == nil && strings.TrimSpace(req.SpaceID) == "" && session.SpaceID != ""
+	if useSessionSpace {
+		if _, ok := authorizeSpace(c, tenantDB, session.SpaceID, spaceAccessView); !ok {
+			return
+		}
 	}
 	now := time.Now()
 	userMsg := types.QAMessage{ID: uuid.New().String(), SessionID: sessionID, TenantID: tenantID, Role: "user", Content: req.Content, Sources: "[]", CreatedAt: now}
@@ -210,7 +212,8 @@ func (h *SDPivotQAHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	chunks, err := h.searchRelevantChunks(tenantDB, tenantID, userID, session.SpaceID, req.Content, 5)
+	spaceIDs := resolveQASpaceIDs(req.SpaceIDs, req.SpaceID, session.SpaceID)
+	chunks, err := h.searchRelevantChunks(tenantDB, tenantID, userID, spaceIDs, req.Content, 5)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to search knowledge base"})
 		return
@@ -255,12 +258,39 @@ func (h *SDPivotQAHandler) SendMessage(c *gin.Context) {
 	})
 }
 
-func buildSDPivotQASources(chunks []types.SDPivotDocumentChunk) (string, string) {
+type sdpivotQAChunk struct {
+	types.SDPivotDocumentChunk
+	DocumentTitle string `json:"document_title"`
+	SpaceID       string `json:"space_id"`
+	SpaceName     string `json:"space_name"`
+}
+
+type sdpivotQASource struct {
+	DocumentID    string `json:"document_id"`
+	DocumentTitle string `json:"document_title"`
+	SpaceID       string `json:"space_id"`
+	SpaceName     string `json:"space_name"`
+}
+
+func resolveQASpaceIDs(spaceIDs []string, spaceID, sessionSpaceID string) []string {
+	if spaceIDs != nil {
+		return uniqueStrings(spaceIDs)
+	}
+	if spaceID = strings.TrimSpace(spaceID); spaceID != "" {
+		return []string{spaceID}
+	}
+	if sessionSpaceID = strings.TrimSpace(sessionSpaceID); sessionSpaceID != "" {
+		return []string{sessionSpaceID}
+	}
+	return nil
+}
+
+func buildSDPivotQASources(chunks []sdpivotQAChunk) (string, string) {
 	if len(chunks) == 0 {
 		return "[]", "no_match"
 	}
 	sourceSet := make(map[string]struct{}, len(chunks))
-	sourceList := make([]string, 0, len(chunks))
+	sourceList := make([]sdpivotQASource, 0, len(chunks))
 	for _, chunk := range chunks {
 		if chunk.DocumentID == "" {
 			continue
@@ -269,7 +299,12 @@ func buildSDPivotQASources(chunks []types.SDPivotDocumentChunk) (string, string)
 			continue
 		}
 		sourceSet[chunk.DocumentID] = struct{}{}
-		sourceList = append(sourceList, chunk.DocumentID)
+		sourceList = append(sourceList, sdpivotQASource{
+			DocumentID:    chunk.DocumentID,
+			DocumentTitle: chunk.DocumentTitle,
+			SpaceID:       chunk.SpaceID,
+			SpaceName:     chunk.SpaceName,
+		})
 	}
 	if len(sourceList) == 0 {
 		return "[]", "no_match"
@@ -281,7 +316,7 @@ func buildSDPivotQASources(chunks []types.SDPivotDocumentChunk) (string, string)
 	return string(sources), "matched"
 }
 
-func (h *SDPivotQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint64, userID string, spaceID string, query string, topK int) ([]types.SDPivotDocumentChunk, error) {
+func (h *SDPivotQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint64, userID string, spaceIDs []string, query string, topK int) ([]sdpivotQAChunk, error) {
 	if topK <= 0 || topK > 20 {
 		topK = 5
 	}
@@ -291,7 +326,9 @@ func (h *SDPivotQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint
 	}
 	db := tenantDB.Model(&types.SDPivotDocumentChunk{}).
 		Joins("JOIN documents ON documents.id = document_chunks.document_id AND documents.tenant_id = document_chunks.tenant_id").
-		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND documents.parse_status = ?", tenantID, "completed")
+		Joins("JOIN knowledge_spaces ON knowledge_spaces.id = documents.space_id AND knowledge_spaces.tenant_id = documents.tenant_id").
+		Where("document_chunks.tenant_id = ? AND documents.deleted_at IS NULL AND knowledge_spaces.deleted_at IS NULL AND documents.parse_status = ?", tenantID, "completed").
+		Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, userID))
 	orConditions := make([]string, 0, len(keywords))
 	orArgs := make([]interface{}, 0, len(keywords))
 	for _, keyword := range keywords {
@@ -299,13 +336,15 @@ func (h *SDPivotQAHandler) searchRelevantChunks(tenantDB *gorm.DB, tenantID uint
 		orArgs = append(orArgs, "%"+escapeQAQuery(keyword)+"%")
 	}
 	db = db.Where("("+strings.Join(orConditions, " OR ")+")", orArgs...)
-	if spaceID != "" {
-		db = db.Where("documents.space_id = ?", spaceID)
-	} else {
-		db = db.Where("documents.space_id IN (?)", visibleSpaceIDsQuery(tenantDB, tenantID, userID))
+	if len(spaceIDs) > 0 {
+		db = db.Where("documents.space_id IN ?", spaceIDs)
 	}
-	var chunks []types.SDPivotDocumentChunk
-	err := db.Order("document_chunks.created_at DESC").Limit(topK).Find(&chunks).Error
+	var chunks []sdpivotQAChunk
+	err := db.Select(`document_chunks.*,
+		documents.title AS document_title,
+		knowledge_spaces.id AS space_id,
+		knowledge_spaces.name AS space_name`).
+		Order("document_chunks.created_at DESC").Limit(topK).Scan(&chunks).Error
 	return chunks, err
 }
 
@@ -373,7 +412,7 @@ func escapeQAQuery(input string) string {
 	return value
 }
 
-func buildSDPivotQAPrompt(question string, chunks []types.SDPivotDocumentChunk) string {
+func buildSDPivotQAPrompt(question string, chunks []sdpivotQAChunk) string {
 	var b strings.Builder
 	b.WriteString("用户问题:\n")
 	b.WriteString(question)
@@ -382,7 +421,7 @@ func buildSDPivotQAPrompt(question string, chunks []types.SDPivotDocumentChunk) 
 		b.WriteString("（未检索到相关知识库内容）\n")
 	} else {
 		for i, chunk := range chunks {
-			b.WriteString(fmt.Sprintf("[%d] 文档ID:%s\n%s\n\n", i+1, chunk.DocumentID, chunk.Content))
+			b.WriteString(fmt.Sprintf("[%d] 空间:%s（%s） 文档:%s（%s）\n%s\n\n", i+1, chunk.SpaceName, chunk.SpaceID, chunk.DocumentTitle, chunk.DocumentID, chunk.Content))
 		}
 	}
 	b.WriteString("请输出最终回答，并在必要时说明依据来自哪些参考资料编号。")

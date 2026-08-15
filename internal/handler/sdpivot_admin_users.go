@@ -82,19 +82,26 @@ func (h *SDPivotAdminUsersHandler) ListUsers(c *gin.Context) {
 		pageSize = 20
 	}
 	tenantID := middleware.GetTenantID(c)
-	db := middleware.TenantDB(c, h.db).Table("users u").
+	tenantDB := middleware.TenantDB(c, h.db)
+	db := tenantDB.Table("users u").
 		Joins("LEFT JOIN departments d ON d.id = u.department_id AND d.tenant_id = u.tenant_id AND d.deleted_at IS NULL").
 		Joins("LEFT JOIN smartknora_user_profiles p ON p.user_id = u.id").
 		Where("u.tenant_id = ? AND u.deleted_at IS NULL", tenantID)
 	if types.NormalizeAccessRole(middleware.GetRole(c)) == types.AccessRoleDepartmentAdmin {
-		ids, err := departmentScopeIDs(h.db, tenantID, middleware.GetDepartmentID(c))
+		ids, err := departmentScopeIDs(tenantDB, tenantID, middleware.GetDepartmentID(c))
 		if err != nil || len(ids) == 0 {
 			db = db.Where("1 = 0")
 		} else {
 			db = db.Where("u.department_id IN ?", ids)
 		}
 	}
-	keyword := strings.TrimSpace(c.Query("keyword"))
+	if departmentID := strings.TrimSpace(c.Query("department_id")); departmentID != "" {
+		db = db.Where("u.department_id = ?", departmentID)
+	}
+	keyword := strings.TrimSpace(c.Query("q"))
+	if keyword == "" {
+		keyword = strings.TrimSpace(c.Query("keyword"))
+	}
 	if keyword == "" {
 		keyword = strings.TrimSpace(c.Query("search"))
 	}
@@ -111,22 +118,27 @@ func (h *SDPivotAdminUsersHandler) ListUsers(c *gin.Context) {
 		ID             string           `json:"id"`
 		Name           string           `json:"name"`
 		Username       string           `json:"username"`
+		Account        string           `json:"account"`
 		Email          string           `json:"email"`
 		Phone          string           `json:"phone"`
 		DepartmentID   *string          `json:"department_id"`
 		DepartmentName string           `json:"department_name"`
-		AccessRole     types.AccessRole `json:"role"`
+		AccessRole     types.AccessRole `json:"access_role"`
+		Role           types.AccessRole `json:"role"`
 		IsActive       bool             `json:"is_active"`
 		Status         string           `json:"status"`
 		CreatedAt      time.Time        `json:"created_at"`
 	}
 	users := make([]adminUserListItem, 0)
-	if err := db.Select(`u.id, COALESCE(NULLIF(p.nickname, ''), u.username) AS name, u.username, u.email,
+	if err := db.Select(`u.id, COALESCE(NULLIF(p.nickname, ''), u.username) AS name, u.username, u.username AS account, u.email,
 		COALESCE(p.phone, '') AS phone, u.department_id, COALESCE(d.name, '') AS department_name,
 		u.access_role, u.is_active, CASE WHEN u.is_active THEN 'active' ELSE 'disabled' END AS status, u.created_at`).
 		Order("u.created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list users"})
 		return
+	}
+	for index := range users {
+		users[index].Role = users[index].AccessRole
 	}
 	c.JSON(http.StatusOK, gin.H{"users": users, "total": total, "page": page, "page_size": pageSize})
 }

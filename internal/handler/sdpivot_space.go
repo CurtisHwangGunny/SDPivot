@@ -33,7 +33,8 @@ func (h *SDPivotSpaceHandler) RegisterRoutes(rg *gin.RouterGroup) {
 		spaces.PUT("/:id", h.UpdateSpace)
 		spaces.DELETE("/:id", h.DeleteSpace)
 		spaces.GET("/:id/members", middleware.RequirePermission(middleware.PermissionKnowledgeRead), h.ListSpaceMembers)
-		spaces.POST("/:id/members", middleware.RequirePermission(middleware.PermissionDepartmentManage), h.AddSpaceMember)
+		spaces.GET("/:id/members/candidates", h.ListSpaceMemberCandidates)
+		spaces.POST("/:id/members", h.AddSpaceMembers)
 		spaces.DELETE("/:id/members/:userId", middleware.RequirePermission(middleware.PermissionDepartmentManage), h.RemoveSpaceMember)
 		spaces.PUT("/:id/members/:userId", middleware.RequirePermission(middleware.PermissionDepartmentManage), h.UpdateSpaceMemberRole)
 	}

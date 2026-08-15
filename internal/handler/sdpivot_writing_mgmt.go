@@ -60,6 +60,8 @@ func (h *SDPivotWritingManagementHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	write.POST("/templates", h.CreateTemplate)
 	write.PUT("/templates/:id", h.UpdateTemplate)
 	write.DELETE("/templates/:id", h.DeleteTemplate)
+
+	h.registerTieredTemplateRoutes(rg)
 }
 
 func (h *SDPivotWritingManagementHandler) ListCategories(c *gin.Context) {

@@ -39,32 +39,56 @@ func TestExtractQAKeywordsEscapesAndBoundsTerms(t *testing.T) {
 }
 
 func TestBuildSDPivotQASourcesMatched(t *testing.T) {
-	sources, status := buildSDPivotQASources([]types.SDPivotDocumentChunk{
-		{DocumentID: "doc-1"},
-		{DocumentID: "doc-1"},
-		{DocumentID: "doc-2"},
+	sources, status := buildSDPivotQASources([]sdpivotQAChunk{
+		{SDPivotDocumentChunk: types.SDPivotDocumentChunk{DocumentID: "doc-1"}, DocumentTitle: "文档一", SpaceID: "space-1", SpaceName: "空间一"},
+		{SDPivotDocumentChunk: types.SDPivotDocumentChunk{DocumentID: "doc-1"}, DocumentTitle: "文档一", SpaceID: "space-1", SpaceName: "空间一"},
+		{SDPivotDocumentChunk: types.SDPivotDocumentChunk{DocumentID: "doc-2"}, DocumentTitle: "文档二", SpaceID: "space-2", SpaceName: "空间二"},
 	})
 	if status != "matched" {
 		t.Fatalf("status = %q, want matched", status)
 	}
-	var ids []string
-	if err := json.Unmarshal([]byte(sources), &ids); err != nil {
+	var decoded []sdpivotQASource
+	if err := json.Unmarshal([]byte(sources), &decoded); err != nil {
 		t.Fatalf("decode sources: %v", err)
 	}
-	if len(ids) != 2 || ids[0] != "doc-1" || ids[1] != "doc-2" {
-		t.Fatalf("sources = %#v, want stable unique document IDs", ids)
+	if len(decoded) != 2 || decoded[0].DocumentID != "doc-1" || decoded[0].SpaceID != "space-1" || decoded[0].SpaceName != "空间一" || decoded[1].DocumentID != "doc-2" || decoded[1].SpaceID != "space-2" || decoded[1].SpaceName != "空间二" {
+		t.Fatalf("sources = %#v, want stable unique documents with space metadata", decoded)
 	}
 }
 
 func TestBuildSDPivotQASourcesNoMatch(t *testing.T) {
-	for _, chunks := range [][]types.SDPivotDocumentChunk{
+	for _, chunks := range [][]sdpivotQAChunk{
 		nil,
 		{},
-		{{DocumentID: ""}},
+		{{SDPivotDocumentChunk: types.SDPivotDocumentChunk{DocumentID: ""}}},
 	} {
 		sources, status := buildSDPivotQASources(chunks)
 		if sources != "[]" || status != "no_match" {
 			t.Fatalf("sources = %q status = %q, want [] and no_match", sources, status)
 		}
+	}
+}
+
+func TestResolveQASpaceIDs(t *testing.T) {
+	tests := []struct {
+		name           string
+		spaceIDs       []string
+		spaceID        string
+		sessionSpaceID string
+		want           []string
+	}{
+		{name: "new field wins", spaceIDs: []string{" space-1 ", "space-2", "space-1"}, spaceID: "legacy", sessionSpaceID: "session", want: []string{"space-1", "space-2"}},
+		{name: "explicit empty means all", spaceIDs: []string{}, spaceID: "legacy", sessionSpaceID: "session", want: []string{}},
+		{name: "legacy request field", spaceID: "legacy", sessionSpaceID: "session", want: []string{"legacy"}},
+		{name: "session fallback", sessionSpaceID: "session", want: []string{"session"}},
+		{name: "no scope means all", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveQASpaceIDs(tt.spaceIDs, tt.spaceID, tt.sessionSpaceID)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("resolveQASpaceIDs() = %#v, want %#v", got, tt.want)
+			}
+		})
 	}
 }
