@@ -34,12 +34,13 @@ export function listDocuments(params: { space_id?: string; parse_status?: string
   return client.get<{ documents: Document[]; total: number; page: number; page_size: number }>('/documents', { params })
 }
 
-export function uploadDocument(data: { space_id: string; file: File; tags?: string }, onProgress?: (percent: number) => void) {
+export function uploadDocument(data: { space_id: string; file: File; tags?: string }, onProgress?: (percent: number) => void, signal?: AbortSignal) {
   const form = new FormData()
   form.append('space_id', data.space_id)
   form.append('file', data.file)
   if (data.tags) form.append('tags', data.tags)
   return client.post<{ document: Document; message: string }>('/documents/upload', form, {
+    signal,
     onUploadProgress: event => {
       if (event.total) onProgress?.(Math.round((event.loaded * 100) / event.total))
     },
