@@ -24,6 +24,12 @@ export interface DocumentChunk {
   token_count: number
 }
 
+export interface DocumentParseStatus {
+  progress: number
+  status: 'pending' | 'parsing' | 'completed' | 'failed' | string
+  error?: string
+}
+
 export function listDocuments(params: { space_id?: string; parse_status?: string; search?: string; page?: number; page_size?: number }) {
   return client.get<{ documents: Document[]; total: number; page: number; page_size: number }>('/documents', { params })
 }
@@ -42,6 +48,10 @@ export function uploadDocument(data: { space_id: string; file: File; tags?: stri
 
 export function getDocument(id: string) {
   return client.get<{ document: Document }>(`/documents/${id}`)
+}
+
+export function getDocumentParseStatus(id: string) {
+  return client.get<DocumentParseStatus>(`/documents/${id}/parse-status`)
 }
 
 export function deleteDocument(id: string) {

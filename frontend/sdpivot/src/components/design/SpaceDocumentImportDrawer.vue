@@ -53,17 +53,27 @@
               <button class="btn ghost" type="button" @click="clearCompleted">清空完成项</button>
             </div>
             <div class="panel-body file-list">
-              <div v-for="(file, index) in fileQueue" :key="file.name" class="file-row">
+              <div v-for="(file, index) in fileQueue" :key="file.key" class="file-row">
                 <div class="file-icon">{{ fileTypeIcon(file.name) }}</div>
-                <div>
+                <div class="file-copy">
                   <strong>{{ file.name }}</strong>
                   <div class="subtle">{{ file.meta }}</div>
+                  <div v-if="file.started" class="file-progress" :aria-label="`${file.name} 解析进度 ${file.progress}%`">
+                    <div class="progress"><span :style="{ width: file.progress + '%' }"></span></div>
+                    <strong>{{ file.progress }}%</strong>
+                  </div>
                 </div>
-                <div class="progress"><span :style="{ width: file.progress + '%' }"></span></div>
-                <span class="badge" :class="file.variant">{{ file.status }}</span>
-                <button class="close row-action" type="button" aria-label="移除文件" @click="removeFile(index)">×</button>
+                <span class="badge" :class="file.variant">{{ statusText(file) }}</span>
+                <div class="file-actions">
+                  <button v-if="file.state === 'failed' && !file.oversized" class="retry" type="button" :disabled="file.retrying" @click="retryFile(file)">{{ file.retrying ? '重试中' : '重试' }}</button>
+                  <button class="close row-action" type="button" aria-label="移除文件" :disabled="file.state === 'uploading'" @click="removeFile(index)">×</button>
+                </div>
               </div>
               <SdpEmptyState v-if="!fileQueue.length" variant="compact" title="队列为空" description="选择或拖入文件后，将在此显示导入进度。" />
+            </div>
+            <div v-if="batchSummary" class="import-summary" role="status">
+              <strong>本次导入完成</strong>
+              <span>{{ batchSummary.success }} 成功 / {{ batchSummary.failed }} 失败</span>
             </div>
           </section>
 
@@ -76,7 +86,7 @@
           <span class="subtle">预计 {{ fileQueue.length }} 个文件将在 {{ estimatedMinutes }} 分钟内完成解析</span>
           <div class="actions">
             <button class="btn secondary" type="button" @click="close">稍后处理</button>
-            <button class="btn primary" type="button" :disabled="!hasPendingFiles || uploading" @click="startImport">{{ uploading ? '导入中...' : '开始导入' }}</button>
+            <button class="btn primary" type="button" :disabled="!hasPendingFiles || uploading" @click="startImport">{{ uploading ? '上传中...' : '开始导入' }}</button>
           </div>
         </footer>
       </aside>
@@ -86,7 +96,8 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onUnmounted, watch } from 'vue';
-import { uploadDocument } from '@/api/documents';
+import { MessagePlugin } from 'tdesign-vue-next';
+import { getDocumentParseStatus, reparseDocument, uploadDocument } from '@/api/documents';
 import SdpEmptyState from './SdpEmptyState.vue';
 
 const props = defineProps<{
@@ -100,8 +111,25 @@ const emit = defineEmits<{
 }>();
 
 const fileInput = ref<HTMLInputElement | null>(null);
-const fileQueue = reactive<Array<{ name: string; meta: string; progress: number; status: string; variant: string; file: File }>>([]);
+type QueueState = 'waiting' | 'uploading' | 'parsing' | 'completed' | 'failed';
+interface QueueItem {
+  key: string;
+  name: string;
+  meta: string;
+  progress: number;
+  state: QueueState;
+  variant: string;
+  file: File;
+  documentId?: string;
+  started: boolean;
+  retrying: boolean;
+  oversized?: boolean;
+  notified?: boolean;
+}
+
+const fileQueue = reactive<QueueItem[]>([]);
 const uploading = ref(false);
+const pollTimers = new Map<string, number>();
 
 const steps = [
   { title: '1 上传', description: '选择文件或批量拖入', active: true },
@@ -118,7 +146,15 @@ const rules = reactive([
 ]);
 
 const estimatedMinutes = computed(() => Math.max(1, Math.ceil(fileQueue.length * 0.8)));
-const hasPendingFiles = computed(() => fileQueue.some(file => file.status === '待上传' || file.status === '失败'));
+const hasPendingFiles = computed(() => fileQueue.some(file => file.state === 'waiting' || (file.state === 'failed' && !file.oversized)));
+const batchSummary = computed(() => {
+  const processed = fileQueue.filter(file => file.started && file.state !== 'waiting');
+  if (!processed.length || processed.some(file => !['completed', 'failed'].includes(file.state))) return null;
+  return {
+    success: processed.filter(file => file.state === 'completed').length,
+    failed: processed.filter(file => file.state === 'failed').length,
+  };
+});
 
 function fileTypeIcon(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -127,24 +163,40 @@ function fileTypeIcon(name: string): string {
 }
 
 function addFiles(files: FileList | File[]) {
-  for (const file of Array.from(files)) {
+  const available = Math.max(0, 20 - fileQueue.length);
+  const selected = Array.from(files);
+  if (selected.length > available) MessagePlugin.warning(`一次最多导入 20 个文件，已保留前 ${available} 个`);
+  for (const file of selected.slice(0, available)) {
     if (fileQueue.some(f => f.file.name === file.name && f.file.size === file.size)) continue;
     if (file.size > 50 * 1024 * 1024) {
-      fileQueue.push({ name: file.name, meta: '文件超过 50MB 限制', progress: 0, status: '失败', variant: 'yellow', file });
+      fileQueue.push({ key: fileKey(file), name: file.name, meta: '文件超过 50MB 限制', progress: 0, state: 'failed', variant: 'red', file, started: true, retrying: false, oversized: true });
       continue;
     }
     const size = file.size > 1024 * 1024
       ? `${(file.size / (1024 * 1024)).toFixed(1)}MB`
       : `${(file.size / 1024).toFixed(0)}KB`;
     fileQueue.push({
+      key: fileKey(file),
       name: file.name,
       meta: `${size} · 等待上传`,
       progress: 0,
-      status: '待上传',
+      state: 'waiting',
       variant: 'gray',
       file,
+      started: false,
+      retrying: false,
     });
   }
+}
+
+function fileKey(file: File) { return `${file.name}-${file.size}-${file.lastModified}`; }
+
+function statusText(item: QueueItem) {
+  if (item.state === 'waiting') return '等待中';
+  if (item.state === 'uploading') return `上传中(${item.progress}%)`;
+  if (item.state === 'parsing') return `解析中(${item.progress}%)`;
+  if (item.state === 'completed') return '已完成';
+  return '失败';
 }
 
 function handleFileSelect(event: Event) {
@@ -162,41 +214,122 @@ function triggerFileInput() {
 }
 
 function removeFile(index: number) {
-  if (uploading.value && fileQueue[index]?.status === '上传中') return;
+  if (fileQueue[index]?.state === 'uploading') return;
+  stopPolling(fileQueue[index]?.key);
   fileQueue.splice(index, 1);
 }
 
 function clearCompleted() {
   for (let i = fileQueue.length - 1; i >= 0; i--) {
-    if (fileQueue[i].status === '已完成') fileQueue.splice(i, 1);
+    if (fileQueue[i].state === 'completed') {
+      stopPolling(fileQueue[i].key);
+      fileQueue.splice(i, 1);
+    }
   }
 }
 
 async function startImport() {
   if (!props.spaceId || uploading.value) return;
   uploading.value = true;
-  let completed = 0;
   for (const item of fileQueue) {
-    if (item.status !== '待上传' && item.status !== '失败') continue;
-    item.status = '上传中';
-    item.variant = 'blue';
-    item.meta = '正在上传';
-    item.progress = 0;
-    try {
-      const response = await uploadDocument({ space_id: props.spaceId, file: item.file }, percent => { item.progress = percent; });
-      item.progress = 100;
-      item.status = '已完成';
-      item.variant = 'green';
-      item.meta = response.data.message || '上传完成';
-      completed++;
-    } catch (error: unknown) {
-      item.status = '失败';
-      item.variant = 'yellow';
-      item.meta = errorMessage(error, '上传失败，请重试');
-    }
+    if (item.state !== 'waiting') continue;
+    await uploadFile(item);
   }
   uploading.value = false;
-  if (completed > 0) emit('imported');
+}
+
+async function uploadFile(item: QueueItem) {
+  if (!props.spaceId) return;
+  stopPolling(item.key);
+  item.started = true;
+  item.state = 'uploading';
+  item.variant = 'blue';
+  item.meta = '正在上传';
+  item.progress = 0;
+  try {
+    const response = await uploadDocument({ space_id: props.spaceId, file: item.file }, percent => { item.progress = percent; });
+    item.documentId = response.data.document.id;
+    item.state = 'parsing';
+    item.progress = 0;
+    item.meta = '上传完成，等待解析';
+    schedulePoll(item, 0);
+  } catch (error: unknown) {
+    markFailed(item, errorMessage(error, '上传失败，请重试'));
+  }
+}
+
+async function retryFile(item: QueueItem) {
+  if (item.retrying || item.oversized) return;
+  item.retrying = true;
+  item.notified = false;
+  try {
+    if (item.documentId) {
+      await reparseDocument(item.documentId);
+      item.started = true;
+      item.state = 'parsing';
+      item.variant = 'blue';
+      item.progress = 0;
+      item.meta = '已重新提交解析';
+      schedulePoll(item, 0);
+    } else {
+      await uploadFile(item);
+    }
+  } catch (error: unknown) {
+    markFailed(item, errorMessage(error, '重试失败，请稍后再试'));
+  } finally {
+    item.retrying = false;
+  }
+}
+
+function schedulePoll(item: QueueItem, delay = 1200) {
+  stopPolling(item.key);
+  pollTimers.set(item.key, window.setTimeout(() => pollParseStatus(item), delay));
+}
+
+async function pollParseStatus(item: QueueItem) {
+  if (!item.documentId || !fileQueue.includes(item)) return;
+  try {
+    const response = await getDocumentParseStatus(item.documentId);
+    const status = String(response.data.status || '').toLowerCase();
+    item.progress = Math.min(100, Math.max(0, Math.round(response.data.progress || 0)));
+    if (status === 'completed') {
+      item.state = 'completed';
+      item.variant = 'green';
+      item.progress = 100;
+      item.meta = '解析完成，已进入知识库';
+      stopPolling(item.key);
+      if (!item.notified) {
+        item.notified = true;
+        MessagePlugin.success(`${item.name}：文档已入库，可检索`);
+        emit('imported');
+      }
+      return;
+    }
+    if (status === 'failed') {
+      markFailed(item, response.data.error || '文档解析失败，请重试');
+      return;
+    }
+    item.state = 'parsing';
+    item.variant = 'blue';
+    item.meta = status === 'pending' ? '等待解析任务' : '正在解析文档内容';
+    schedulePoll(item);
+  } catch (error: unknown) {
+    markFailed(item, errorMessage(error, '解析状态获取失败，请重试'));
+  }
+}
+
+function markFailed(item: QueueItem, reason: string) {
+  stopPolling(item.key);
+  item.state = 'failed';
+  item.variant = 'red';
+  item.meta = reason;
+}
+
+function stopPolling(key?: string) {
+  if (!key) return;
+  const timer = pollTimers.get(key);
+  if (timer !== undefined) window.clearTimeout(timer);
+  pollTimers.delete(key);
 }
 
 function close() { emit('update:open', false); }
@@ -204,7 +337,11 @@ function close() { emit('update:open', false); }
 watch(() => props.open, (value) => {
   document.body.style.overflow = value ? 'hidden' : '';
 });
-onUnmounted(() => { document.body.style.overflow = ''; });
+onUnmounted(() => {
+  document.body.style.overflow = '';
+  pollTimers.forEach(timer => window.clearTimeout(timer));
+  pollTimers.clear();
+});
 
 function errorMessage(error: unknown, fallback: string) {
   if (typeof error !== 'object' || !error) return fallback;
@@ -228,9 +365,18 @@ function errorMessage(error: unknown, fallback: string) {
 .check-card strong { display: block; font-size: var(--text-sm); }
 .check-card span span { display: block; color: var(--ink-500); font-size: var(--text-xs); margin-top: var(--space-1); }
 .file-list { display: grid; gap: var(--space-3); }
-.file-row { display: grid; grid-template-columns: 44px 1fr 88px 90px 36px; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--ink-200); border-radius: var(--radius-md); background: white; }
+.file-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 112px auto; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--ink-200); border-radius: var(--radius-md); background: white; }
 .file-icon { width: 44px; height: 44px; border-radius: var(--radius-md); display: grid; place-items: center; background: var(--ink-100); color: var(--ink-700); font-size: var(--text-xs); font-weight: var(--font-weight-bold); }
+.file-copy { min-width: 0; }
+.file-copy > strong, .file-copy .subtle { overflow-wrap: anywhere; }
+.file-progress { display: grid; grid-template-columns: minmax(80px, 1fr) 38px; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
+.file-progress strong { color: var(--brand-800); font-size: var(--text-xs); text-align: right; }
+.file-actions { display: flex; align-items: center; gap: var(--space-2); }
+.retry { min-height: 30px; padding: 4px 10px; border: 1px solid var(--brand-300); border-radius: var(--radius-sm); color: var(--brand-900); background: var(--brand-50); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); cursor: pointer; }
+.retry:disabled, .row-action:disabled { cursor: not-allowed; opacity: .55; }
 .row-action { width: 32px; height: 32px; cursor: pointer; }
+.import-summary { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-5); border-top: 1px solid var(--ink-200); color: var(--ink-700); background: var(--brand-50); font-size: var(--text-sm); }
+.import-summary strong { color: var(--brand-900); }
 .warning-mark { background: var(--warning-500); }
 @media (max-width: 760px) { .import-stepper, .rule-grid, .file-row { grid-template-columns: 1fr; } }
 </style>
@@ -264,6 +410,7 @@ function errorMessage(error: unknown, fallback: string) {
 .badge { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: var(--radius-pill); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); }
 .badge.green { background: var(--success-50); color: oklch(0.42 0.12 155); }
 .badge.yellow { background: var(--warning-50); color: oklch(0.48 0.14 70); }
+.badge.red { background: var(--danger-50, #fff1f0); color: var(--danger-700, #b42318); }
 .badge.blue { background: var(--info-50); color: oklch(0.43 0.13 230); }
 .badge.gray { background: var(--ink-100); color: var(--ink-600); }
 @keyframes drawer-in { from { transform: translateX(36px); opacity: .8; } to { transform: translateX(0); opacity: 1; } }

@@ -28,9 +28,37 @@ export interface WritingTemplate {
   name: string
   content: string
   is_builtin: boolean
+  is_default?: boolean
+  source?: WritingTemplateSource
   sort: number
   created_at: string
   updated_at: string
+}
+
+export type WritingTemplateSource = 'personal' | 'admin' | 'builtin' | 'system'
+
+export interface PersonalWritingTemplate {
+  id: string
+  category_id: string
+  name: string
+  content: string
+  sort: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface WritingTemplatePreferences {
+  default_template_id?: string | null
+  category_order?: string[]
+  templates: PersonalWritingTemplate[]
+}
+
+export interface ResolvedWritingTemplate {
+  id: string
+  category_id: string
+  name: string
+  content: string
+  source: Exclude<WritingTemplateSource, 'system'>
 }
 
 export const CATEGORIES = [
@@ -64,6 +92,7 @@ export function generateContent(data: {
   space_id?: string
   source_type?: WritingSourceType
   web_search_enabled?: boolean
+  custom_template?: string
 }) {
   return client.post<GenerateContentResponse>('/writing/generate', data)
 }
@@ -122,6 +151,38 @@ export function updateWritingTemplate(id: string, data: Partial<Pick<WritingTemp
 
 export function deleteWritingTemplate(id: string) {
   return client.delete(`/writing/templates/${id}`)
+}
+
+export function getMyWritingTemplates(resolved = false) {
+  return client.get<{ preferences: WritingTemplatePreferences; resolved_templates?: ResolvedWritingTemplate[] }>('/my/writing/templates', { params: resolved ? { resolved: 1 } : undefined })
+}
+
+export function createMyWritingTemplate(data: { category_id: string; name: string; content: string; sort?: number; set_default?: boolean }) {
+  return client.post<{ template: PersonalWritingTemplate; preferences: WritingTemplatePreferences }>('/my/writing/templates', data)
+}
+
+export function updateMyWritingTemplate(id: string, data: Partial<{ category_id: string; name: string; content: string; sort: number; set_default: boolean }>) {
+  return client.put<{ template: PersonalWritingTemplate; preferences: WritingTemplatePreferences }>(`/my/writing/templates/${id}`, data)
+}
+
+export function deleteMyWritingTemplate(id: string) {
+  return client.delete(`/my/writing/templates/${id}`)
+}
+
+export function listAdminWritingTemplates(categoryId?: string) {
+  return client.get<{ templates: WritingTemplate[] }>('/admin/writing/templates', { params: categoryId ? { category_id: categoryId } : undefined })
+}
+
+export function createAdminWritingTemplate(data: { category_id: string; name: string; content: string; sort?: number; is_default?: boolean; is_builtin?: boolean }) {
+  return client.post<{ template: WritingTemplate }>('/admin/writing/templates', data)
+}
+
+export function updateAdminWritingTemplate(id: string, data: Partial<{ category_id: string; name: string; content: string; sort: number; is_default: boolean; is_builtin: boolean }>) {
+  return client.put(`/admin/writing/templates/${id}`, data)
+}
+
+export function deleteAdminWritingTemplate(id: string) {
+  return client.delete(`/admin/writing/templates/${id}`)
 }
 
 export function getOpsDashboard() {

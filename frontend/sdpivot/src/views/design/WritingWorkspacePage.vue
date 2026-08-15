@@ -2,411 +2,331 @@
   <SdpSidebarLayout>
     <div class="sdp-writing-workspace">
       <aside class="sdp-writing-workspace__drafts" aria-labelledby="draft-list-title">
-        <header>
-          <div>
-            <p>AI Writing</p>
-            <h1 id="draft-list-title">写作草稿</h1>
-          </div>
-          <button type="button" aria-label="新建写作草稿" :disabled="creating" @click="createNewDraft">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-            {{ creating ? '创建中' : '新建' }}
-          </button>
-        </header>
-
+        <header><div><p>AI Writing</p><h1 id="draft-list-title">写作草稿</h1></div><button type="button" :disabled="creating" @click="createNewDraft"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>{{ creating ? '创建中' : '新建' }}</button></header>
         <p v-if="loadError" class="sdp-writing-workspace__error" role="alert">{{ loadError }}</p>
-        <div v-if="loading" class="sdp-writing-workspace__loading" role="status">正在加载草稿...</div>
+        <div v-if="loading" class="sdp-writing-workspace__loading">正在加载草稿...</div>
         <div v-else-if="groupedDrafts.length" class="sdp-writing-workspace__draft-scroll" @keydown="handleDraftKeydown">
           <section v-for="group in groupedDrafts" :key="group.status">
-            <div class="sdp-writing-workspace__group-heading">
-              <h2>{{ statusLabel(group.status) }}</h2>
-              <span>{{ group.items.length }}</span>
-            </div>
-            <div role="list" :aria-label="`${statusLabel(group.status)}草稿`">
-              <button
-                v-for="draft in group.items"
-                :key="draft.id"
-                class="sdp-writing-workspace__draft-item"
-                :class="{ 'sdp-writing-workspace__draft-item--active': currentDraft?.id === draft.id }"
-                type="button"
-                :aria-current="currentDraft?.id === draft.id ? 'true' : undefined"
-                :aria-label="`打开草稿 ${draft.title || '未命名草稿'}`"
-                @click="selectDraft(draft.id)"
-              >
-                <span class="sdp-writing-workspace__draft-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10a2.12 2.12 0 0 0-3-3l-10 10L4 20Zm10-12 3 3M4 20h16" /></svg>
-                </span>
-                <span class="sdp-writing-workspace__draft-copy">
-                  <strong>{{ draft.title || '未命名草稿' }}</strong>
-                  <small>{{ categoryLabel(draft.category) }} · {{ formatDate(draft.updated_at) }}</small>
-                </span>
+            <div class="sdp-writing-workspace__group-heading"><h2>{{ statusLabel(group.status) }}</h2><span>{{ group.items.length }}</span></div>
+            <div role="list">
+              <button v-for="draft in group.items" :key="draft.id" class="sdp-writing-workspace__draft-item" :class="{ 'sdp-writing-workspace__draft-item--active': currentDraft?.id === draft.id }" type="button" @click="selectDraft(draft.id)">
+                <span class="sdp-writing-workspace__draft-icon"><svg viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10a2.12 2.12 0 0 0-3-3l-10 10L4 20Zm10-12 3 3M4 20h16" /></svg></span>
+                <span class="sdp-writing-workspace__draft-copy"><strong>{{ draft.title || '未命名草稿' }}</strong><small>{{ categoryLabel(draft.category) }} · {{ formatDate(draft.updated_at) }}</small></span>
                 <span class="sdp-writing-workspace__state">{{ statusLabel(draft.status) }}</span>
               </button>
             </div>
           </section>
         </div>
-        <div v-else class="sdp-writing-workspace__empty">
-          <strong>还没有写作草稿</strong>
-          <span>创建第一篇内容，开始组织你的写作链路。</span>
-        </div>
+        <div v-else class="sdp-writing-workspace__empty"><strong>还没有写作草稿</strong><span>创建第一篇内容，开始组织写作链路。</span></div>
       </aside>
 
       <main class="sdp-writing-workspace__editor" aria-labelledby="writing-editor-title">
         <header class="sdp-writing-workspace__topbar">
-          <div>
-            <p>Writing Studio</p>
-            <h2 id="writing-editor-title">{{ currentDraft?.title || 'AI 写作工作台' }}</h2>
-          </div>
-          <div class="sdp-writing-workspace__tools" role="toolbar" aria-label="写作工具">
-            <label for="writing-template">
-              <span>模板</span>
-              <select id="writing-template" v-model="selectedTemplate" aria-label="选择写作模板">
-                <option v-for="template in templates" :key="template.value" :value="template.value">{{ template.label }}</option>
-              </select>
-            </label>
-            <label for="writing-source">
-              <span>知识来源</span>
-              <select id="writing-source" v-model="knowledgeSource" aria-label="选择写作知识来源">
-                <option value="knowledge_base">企业知识库</option>
-                <option value="knowledge_plus_web">知识库 + 互联网</option>
-              </select>
-            </label>
-            <button type="button" aria-label="导出当前草稿为文本文件" :disabled="!currentDraft" @click="exportCurrentDraft">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 20h14" /></svg>
-              导出
-            </button>
-            <button type="button" aria-label="管理写作模板和优先级" @click="managementVisible = true">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
-              模板/优先级
-            </button>
+          <div><p>Writing Studio</p><h2 id="writing-editor-title">{{ currentDraft?.title || 'AI 写作工作台' }}</h2></div>
+          <div class="sdp-writing-workspace__tools">
+            <label for="writing-source"><span>知识来源</span><select id="writing-source" v-model="knowledgeSource"><option value="knowledge_base">企业知识库</option><option value="knowledge_plus_web">知识库 + 互联网</option></select></label>
+            <button type="button" @click="openManagement('personal')">管理我的模板</button>
+            <button v-if="isAdmin" type="button" @click="openManagement('admin')">写作模板库</button>
           </div>
         </header>
 
-        <div v-if="!currentDraft" class="sdp-writing-workspace__welcome">
-          <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10a2.12 2.12 0 0 0-3-3l-10 10L4 20Zm10-12 3 3M4 20h16" /></svg></span>
-          <h3>让写作从清晰的优先级开始</h3>
-          <p>模板约束结构，自学习补充语气，自定义要求完成最后校准。</p>
-          <button type="button" aria-label="创建第一篇写作草稿" @click="createNewDraft">创建草稿</button>
-        </div>
+        <div v-if="!currentDraft" class="sdp-writing-workspace__welcome"><span><svg viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10a2.12 2.12 0 0 0-3-3l-10 10L4 20Zm10-12 3 3M4 20h16" /></svg></span><h3>从类型开始，四步完成一篇文稿</h3><p>先确定内容骨架，再选择格式风格，补充关键事实后生成。</p><button type="button" @click="createNewDraft">创建草稿</button></div>
 
         <div v-else class="sdp-writing-workspace__canvas">
-          <section class="sdp-writing-workspace__priority" aria-labelledby="priority-chain-title">
-            <div>
-              <p>Generation Priority</p>
-              <h3 id="priority-chain-title">生成优先级链</h3>
-            </div>
-            <ol>
-              <li><span>P1</span><strong>模板规则</strong><small>{{ templateLabel }}</small></li>
-              <li aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg></li>
-              <li><span>P2</span><strong>自学习风格</strong><small>团队表达偏好</small></li>
-              <li aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg></li>
-              <li><span>P3</span><strong>自定义要求</strong><small>当前草稿指令</small></li>
-            </ol>
+          <ol class="writing-steps" aria-label="AI 写作步骤">
+            <li v-for="(step, index) in writingSteps" :key="step" :class="{ active: currentStep === index + 1, done: currentStep > index + 1 }"><span>{{ index + 1 }}</span><strong>{{ step }}</strong></li>
+          </ol>
+
+          <section v-if="showGuide" class="writing-guide" aria-labelledby="writing-guide-title">
+            <div><p>FIRST RUN GUIDE</p><h3 id="writing-guide-title">如何开始写作</h3><span>先选文档类型和模板，再用一行一个要点提供事实。信息越具体，结果越可用。</span></div>
+            <pre>客户：华东区重点客户
+目标：本季度续约率提升至 85%
+数据：已触达 120 家，意向 76 家
+要求：先结论后数据，列出下周行动</pre>
+            <button type="button" aria-label="关闭新手指引" @click="dismissGuide">关闭</button>
           </section>
 
-          <section class="sdp-writing-workspace__paper" aria-label="草稿编辑器">
-            <div class="sdp-writing-workspace__metadata">
-              <label for="draft-category">
-                <span>文档类型</span>
-                <select id="draft-category" v-model="currentDraft.category" aria-label="选择文档类型">
-                  <option v-for="category in CATEGORIES" :key="category.value" :value="category.value">{{ category.label }}</option>
-                </select>
-              </label>
-              <label for="draft-status">
-                <span>草稿状态</span>
-                <select id="draft-status" v-model="currentDraft.status" aria-label="选择草稿状态" @change="saveDraft">
-                  <option value="draft">草稿</option>
-                  <option value="review">待审核</option>
-                  <option value="completed">已完成</option>
-                </select>
-              </label>
-              <div>
-                <span>保存状态</span>
-                <strong role="status">{{ saving ? '正在保存...' : saveState }}</strong>
-              </div>
+          <section class="writing-config" aria-labelledby="writing-type-title">
+            <div class="writing-section-head"><div><span>STEP 01</span><h3 id="writing-type-title">选择文档类型</h3><p>类型决定生成内容的顶层骨架。</p></div></div>
+            <div class="writing-type-grid">
+              <button v-for="category in displayCategories" :key="category.id" type="button" :class="{ active: selectedCategoryId === category.id }" @click="selectCategory(category)"><strong>{{ category.name }}</strong><span>{{ category.description || categoryHint(category.name) }}</span></button>
             </div>
+          </section>
 
-            <label class="sdp-writing-workspace__title" for="draft-title">
-              <span class="sr-only">草稿标题</span>
-              <input id="draft-title" v-model="currentDraft.title" type="text" placeholder="输入文档标题" aria-label="草稿标题" @blur="saveDraft">
-            </label>
+          <section class="writing-config" aria-labelledby="writing-template-title">
+            <div class="writing-section-head"><div><span>STEP 02</span><h3 id="writing-template-title">选择模板 <small>可选</small></h3><p>仅展示“{{ selectedCategory?.name || '当前类型' }}”下可用的格式与风格。</p></div><button v-if="selectedTemplateId" type="button" @click="selectedTemplateId = ''">不使用模板</button></div>
+            <div v-if="filteredTemplates.length" class="writing-template-grid">
+              <button v-for="template in filteredTemplates" :key="`${template.source}-${template.id}`" type="button" :class="{ active: selectedTemplateId === template.id }" @click="selectedTemplateId = template.id"><span class="template-source" :class="`source-${template.source}`">{{ sourceLabel(template.source) }}</span><strong>{{ template.name }}</strong><p>{{ template.content }}</p></button>
+            </div>
+            <div v-else class="writing-inline-empty">该类型暂无模板，可直接写要点生成，或前往“管理我的模板”新增。</div>
+          </section>
+
+          <section class="writing-config writing-points" aria-labelledby="writing-points-title">
+            <div class="writing-section-head"><div><span>STEP 03</span><h3 id="writing-points-title">写下关键要点</h3><p>提供客户、目标、事实数据、约束与期望输出。</p></div></div>
+            <label><span class="sr-only">写作要点</span><textarea v-model="writingPoints" rows="7" placeholder="例如：&#10;客户：华东区重点客户&#10;目标：输出季度复盘并提出下季度行动&#10;数据：营收同比增长 18%，新增客户 32 家" /></label>
+            <div class="writing-generate-row"><span>{{ selectedTemplate ? `将采用「${selectedTemplate.name}」模板` : '将采用所选类型的系统骨架' }}</span><button class="generate-button" type="button" :disabled="generating || !writingPoints.trim()" @click="generateDraft"><svg viewBox="0 0 24 24"><path d="M12 3 9.8 8.8 4 11l5.8 2.2L12 19l2.2-5.8L20 11l-5.8-2.2L12 3Z" /></svg>{{ generating ? '正在生成...' : '生成' }}</button></div>
+          </section>
+
+          <section v-if="hasResult" class="sdp-writing-workspace__paper writing-result" aria-labelledby="writing-result-title">
+            <div class="writing-result-head"><div><span>STEP 04</span><h3 id="writing-result-title">生成结果</h3></div><div><button type="button" :disabled="saving" @click="saveDraft(true)">保存到空间</button><button type="button" :disabled="exporting" @click="downloadWord">{{ exporting ? '下载中' : '下载 Word' }}</button></div></div>
+            <label class="sdp-writing-workspace__title" for="draft-title"><span class="sr-only">草稿标题</span><input id="draft-title" v-model="currentDraft.title" type="text" placeholder="输入文档标题" @blur="saveDraft()"></label>
             <div class="sdp-writing-workspace__rule" />
-            <label class="sdp-writing-workspace__content" for="draft-content">
-              <span class="sr-only">草稿正文</span>
-              <textarea id="draft-content" v-model="currentDraft.content" placeholder="从这里开始写作..." aria-label="草稿正文" @blur="saveDraft" />
-            </label>
+            <label class="sdp-writing-workspace__content" for="draft-content"><span class="sr-only">生成正文</span><textarea id="draft-content" v-model="currentDraft.content" aria-label="生成结果，可继续编辑" @blur="saveDraft()" /></label>
+            <footer><span role="status">{{ saving ? '正在保存...' : saveState }}</span><span v-if="generationMeta">引用知识 {{ generationMeta.knowledge }} 条<span v-if="generationMeta.web"> · 互联网 {{ generationMeta.web }} 条</span> · {{ generationMeta.model }}</span></footer>
           </section>
-
-          <div class="sdp-writing-workspace__ai-bar" role="status" aria-label="AI 写作建议占位区">
-            <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 9.8 8.8 4 11l5.8 2.2L12 19l2.2-5.8L20 11l-5.8-2.2L12 3Z" /></svg></span>
-            <div><strong>AI 建议</strong><small>选中文本后，可在此获得续写、润色与改写建议。</small></div>
-            <button type="button" aria-label="查看 AI 写作建议" disabled>即将开放</button>
-          </div>
           <p v-if="saveError" class="sdp-writing-workspace__save-error" role="alert">{{ saveError }}</p>
         </div>
       </main>
 
       <div v-if="managementVisible" class="sdp-writing-workspace__management-backdrop" role="presentation" @click.self="managementVisible = false">
         <aside class="sdp-writing-workspace__management" role="dialog" aria-modal="true" aria-labelledby="writing-management-title">
-          <header>
-            <div><p>Template Governance</p><h2 id="writing-management-title">模板 / 优先级管理</h2></div>
-            <button type="button" aria-label="关闭模板管理" @click="managementVisible = false">关闭</button>
-          </header>
-
-          <section class="sdp-writing-workspace__priority-guide">
-            <strong>固定生成链</strong>
-            <ol><li><span>P1</span>标准 / 自定义模板结构</li><li><span>P2</span>同类型标签文档自学习</li><li><span>P3</span>当前草稿补充要求</li></ol>
-          </section>
-
-          <section v-if="isAdmin" class="sdp-writing-workspace__management-section">
-            <div class="sdp-writing-workspace__section-title"><div><span>Categories</span><h3>写作类别</h3></div><button type="button" @click="editCategory()">新增类别</button></div>
-            <div class="sdp-writing-workspace__management-list">
-              <article v-for="category in managedCategories" :key="category.id"><div><strong>{{ category.name }}</strong><small>{{ category.description || '暂无说明' }} · 排序 {{ category.sort }}</small></div><div><button type="button" @click="editCategory(category)">编辑</button><button type="button" @click="removeCategory(category)">删除</button></div></article>
-              <p v-if="!managedCategories.length">暂无自定义写作类别。</p>
-            </div>
-          </section>
-
+          <header><div><p>Template Library</p><h2 id="writing-management-title">{{ managementMode === 'admin' ? '写作模板库' : '管理我的模板' }}</h2></div><button type="button" @click="managementVisible = false">关闭</button></header>
           <section class="sdp-writing-workspace__management-section">
-            <div class="sdp-writing-workspace__section-title"><div><span>Templates</span><h3>模板库</h3></div><button v-if="canManageTemplates" type="button" :disabled="!managedCategories.length" @click="editTemplate()">新增模板</button></div>
+            <div class="sdp-writing-workspace__section-title"><div><span>{{ managementMode }}</span><h3>{{ managementMode === 'admin' ? '管理员默认模板' : '个人模板库' }}</h3></div><button type="button" :disabled="!managedCategories.length" @click="editManagedTemplate()">新增模板</button></div>
             <div class="sdp-writing-workspace__management-list">
-              <article v-for="template in managedTemplates" :key="template.id"><div><strong>{{ template.name }} <i v-if="template.is_builtin">内置</i></strong><small>{{ categoryName(template.category_id) }} · 排序 {{ template.sort }}</small><p>{{ template.content }}</p></div><div v-if="canEditTemplate(template)"><button type="button" @click="editTemplate(template)">编辑</button><button type="button" @click="removeTemplate(template)">删除</button></div></article>
-              <p v-if="!managedTemplates.length">暂无可用模板。管理员先创建类别后，编辑者即可维护自定义模板。</p>
+              <article v-for="template in managementTemplates" :key="template.id"><div><strong>{{ template.name }}</strong><small>{{ categoryName(template.category_id) }} · {{ managementMode === 'admin' ? (isDefaultTemplate(template) ? '管理员默认' : '管理员模板') : '个人模板' }}</small><p>{{ template.content }}</p></div><div><button type="button" @click="editManagedTemplate(template)">编辑</button><button type="button" @click="removeManagedTemplate(template)">删除</button></div></article>
+              <p v-if="!managementTemplates.length">暂无模板，点击“新增模板”创建。</p>
             </div>
           </section>
-
-          <form v-if="categoryEditing" class="sdp-writing-workspace__management-form" @submit.prevent="saveCategory">
-            <h3>{{ categoryForm.id ? '编辑类别' : '新增类别' }}</h3>
-            <label>名称<input v-model="categoryForm.name" required maxlength="100"></label>
-            <label>说明<textarea v-model="categoryForm.description" rows="3" /></label>
-            <label>排序<input v-model.number="categoryForm.sort" type="number"></label>
-            <footer><button type="button" @click="categoryEditing = false">取消</button><button type="submit" :disabled="managementSaving">保存</button></footer>
-          </form>
-
-          <form v-if="templateEditing" class="sdp-writing-workspace__management-form" @submit.prevent="saveTemplate">
-            <h3>{{ templateForm.id ? '编辑模板' : '新增模板' }}</h3>
-            <label>类别<select v-model="templateForm.category_id" required><option v-for="category in managedCategories" :key="category.id" :value="category.id">{{ category.name }}</option></select></label>
-            <label>名称<input v-model="templateForm.name" required maxlength="100"></label>
-            <label>模板内容<textarea v-model="templateForm.content" required rows="8" /></label>
-            <label>排序<input v-model.number="templateForm.sort" type="number"></label>
-            <label v-if="isAdmin" class="sdp-writing-workspace__builtin"><input v-model="templateForm.is_builtin" type="checkbox">设为内置标准模板</label>
-            <footer><button type="button" @click="templateEditing = false">取消</button><button type="submit" :disabled="managementSaving">保存</button></footer>
-          </form>
           <p v-if="managementError" class="sdp-writing-workspace__save-error" role="alert">{{ managementError }}</p>
         </aside>
+      </div>
+
+      <div v-if="templateEditing" class="template-modal-backdrop" role="presentation" @click.self="templateEditing = false">
+        <form class="template-modal" role="dialog" aria-modal="true" aria-labelledby="template-editor-title" @submit.prevent="saveManagedTemplate">
+          <header><div><p>{{ managementMode === 'admin' ? 'ADMIN TEMPLATE' : 'PERSONAL TEMPLATE' }}</p><h2 id="template-editor-title">{{ templateForm.id ? '编辑模板' : '新增模板' }}</h2></div><button type="button" @click="templateEditing = false">关闭</button></header>
+          <label>模板名称 <strong>*</strong><input v-model.trim="templateForm.name" required maxlength="100" placeholder="例如：季度经营复盘"></label>
+          <label>文档类型 <strong>*</strong><select v-model="templateForm.category_id" required><option value="" disabled>请选择类型</option><option v-for="category in managedCategories" :key="category.id" :value="category.id">{{ category.name }}</option></select></label>
+          <label>模板内容 <strong>*</strong><textarea v-model.trim="templateForm.content" required rows="9" placeholder="描述章节结构、语气、格式和必须包含的信息"></textarea></label>
+          <label v-if="managementMode === 'admin'" class="template-checkbox"><input v-model="templateForm.is_default" type="checkbox">设为该类型的管理员默认模板</label>
+          <p v-if="templateFormError" class="sdp-writing-workspace__save-error">{{ templateFormError }}</p>
+          <footer><button type="button" @click="templateEditing = false">取消</button><button class="primary" type="submit" :disabled="managementSaving">{{ managementSaving ? '保存中...' : '保存模板' }}</button></footer>
+        </form>
       </div>
     </div>
   </SdpSidebarLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { CATEGORIES, createDraft, getDraft, listDrafts, updateDraft, listWritingCategories, createWritingCategory, updateWritingCategory, deleteWritingCategory, listWritingTemplates, createWritingTemplate, updateWritingTemplate, deleteWritingTemplate, type WritingCategory, type WritingDraft, type WritingTemplate } from '@/api/writing'
+import { computed, onMounted, ref, watch } from 'vue'
+import { MessagePlugin } from 'tdesign-vue-next'
+import { CATEGORIES, createAdminWritingTemplate, createDraft, createMyWritingTemplate, deleteAdminWritingTemplate, deleteMyWritingTemplate, exportDraft, generateContent, getDraft, getMyWritingTemplates, listAdminWritingTemplates, listDrafts, listWritingCategories, listWritingTemplates, updateAdminWritingTemplate, updateDraft, updateMyWritingTemplate, type PersonalWritingTemplate, type ResolvedWritingTemplate, type WritingCategory, type WritingDraft, type WritingTemplate, type WritingTemplateSource } from '@/api/writing'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
 import { getRoleFromToken } from '@/utils/jwt'
 
-const templates = [
-  { value: 'business-report', label: '商务报告' },
-  { value: 'project-brief', label: '项目简报' },
-  { value: 'meeting-notes', label: '会议纪要' },
-]
+type DisplayCategory = WritingCategory & { code: string }
+type DisplayTemplate = { id: string; category_id: string; name: string; content: string; source: WritingTemplateSource }
+type ManagedTemplate = PersonalWritingTemplate | WritingTemplate
 
+const GUIDE_KEY = 'sdpivot.writing.guide.dismissed'
 const drafts = ref<WritingDraft[]>([])
 const currentDraft = ref<WritingDraft | null>(null)
-const selectedTemplate = ref('business-report')
-const knowledgeSource = ref('knowledge_base')
+const managedCategories = ref<WritingCategory[]>([])
+const baseTemplates = ref<WritingTemplate[]>([])
+const resolvedTemplates = ref<ResolvedWritingTemplate[]>([])
+const personalTemplates = ref<PersonalWritingTemplate[]>([])
+const adminTemplates = ref<WritingTemplate[]>([])
+const selectedCategoryId = ref('')
+const selectedTemplateId = ref('')
+const writingPoints = ref('')
+const knowledgeSource = ref<'knowledge_base' | 'knowledge_plus_web'>('knowledge_base')
+const generationMeta = ref<{ knowledge: number; web: number; model: string } | null>(null)
+const generated = ref(false)
 const loading = ref(true)
 const creating = ref(false)
 const saving = ref(false)
+const generating = ref(false)
+const exporting = ref(false)
 const loadError = ref('')
 const saveError = ref('')
 const saveState = ref('已同步')
+const showGuide = ref(localStorage.getItem(GUIDE_KEY) !== '1')
 const managementVisible = ref(false)
+const managementMode = ref<'personal' | 'admin'>('personal')
 const managementSaving = ref(false)
 const managementError = ref('')
-const managedCategories = ref<WritingCategory[]>([])
-const managedTemplates = ref<WritingTemplate[]>([])
-const categoryEditing = ref(false)
 const templateEditing = ref(false)
-const categoryForm = ref({ id: '', name: '', description: '', sort: 0 })
-const templateForm = ref({ id: '', category_id: '', name: '', content: '', is_builtin: false, sort: 0 })
-const currentRole = getRoleFromToken()
-const isAdmin = ['super_admin', 'department_admin'].includes(currentRole)
-const canManageTemplates = ['super_admin', 'department_admin', 'knowledge_editor'].includes(currentRole)
+const templateFormError = ref('')
+const templateForm = ref({ id: '', category_id: '', name: '', content: '', sort: 0, is_default: false })
+const isAdmin = ['super_admin', 'department_admin'].includes(getRoleFromToken())
+const writingSteps = ['选类型', '选模板', '写要点', '生成']
 
-const groupedDrafts = computed(() => {
-  const order = ['draft', 'review', 'completed']
-  return order.map(status => ({ status, items: drafts.value.filter(draft => normalizedStatus(draft.status) === status) })).filter(group => group.items.length)
+const displayCategories = computed<DisplayCategory[]>(() => {
+  if (managedCategories.value.length) return managedCategories.value.map((item, index) => ({ ...item, code: categoryCode(item, index) }))
+  return CATEGORIES.map((item, index) => ({ id: item.value, name: item.label, description: categoryHint(item.label), sort: index * 10, created_at: '', updated_at: '', code: item.value }))
 })
-const templateLabel = computed(() => templates.find(template => template.value === selectedTemplate.value)?.label || '商务报告')
+const selectedCategory = computed(() => displayCategories.value.find(item => item.id === selectedCategoryId.value))
+const allTemplates = computed<DisplayTemplate[]>(() => {
+  const values: DisplayTemplate[] = [
+    ...baseTemplates.value.map(item => ({ id: item.id, category_id: item.category_id, name: item.name, content: item.content, source: item.is_builtin ? 'builtin' as const : 'system' as const })),
+    ...resolvedTemplates.value.map(item => ({ ...item })),
+    ...personalTemplates.value.map(item => ({ id: item.id, category_id: item.category_id, name: item.name, content: item.content, source: 'personal' as const })),
+  ]
+  const unique = new Map<string, DisplayTemplate>()
+  values.forEach(item => unique.set(item.id, item))
+  return [...unique.values()]
+})
+const filteredTemplates = computed(() => allTemplates.value.filter(item => item.category_id === selectedCategoryId.value))
+const selectedTemplate = computed(() => filteredTemplates.value.find(item => item.id === selectedTemplateId.value))
+const currentStep = computed(() => generated.value || Boolean(currentDraft.value?.content) ? 4 : writingPoints.value.trim() ? 3 : selectedTemplateId.value ? 2 : 1)
+const hasResult = computed(() => generated.value || Boolean(currentDraft.value?.content))
+const managementTemplates = computed<ManagedTemplate[]>(() => managementMode.value === 'admin' ? adminTemplates.value : personalTemplates.value)
+const groupedDrafts = computed(() => ['draft', 'review', 'completed'].map(status => ({ status, items: drafts.value.filter(draft => normalizedStatus(draft.status) === status) })).filter(group => group.items.length))
 
-function normalizedStatus(status: string) {
-  if (['review', 'pending', 'pending_review'].includes(status)) return 'review'
-  if (['completed', 'published', 'done'].includes(status)) return 'completed'
-  return 'draft'
-}
+watch(selectedCategoryId, () => {
+  if (!filteredTemplates.value.some(item => item.id === selectedTemplateId.value)) selectedTemplateId.value = filteredTemplates.value[0]?.id || ''
+  if (currentDraft.value && selectedCategory.value) currentDraft.value.category = selectedCategory.value.code
+})
 
-function statusLabel(status: string) {
-  const normalized = normalizedStatus(status)
-  if (normalized === 'review') return '待审核'
-  if (normalized === 'completed') return '已完成'
-  return '草稿'
+function normalizedStatus(status: string) { return ['review', 'pending', 'pending_review'].includes(status) ? 'review' : ['completed', 'published', 'done'].includes(status) ? 'completed' : 'draft' }
+function statusLabel(status: string) { return normalizedStatus(status) === 'review' ? '待审核' : normalizedStatus(status) === 'completed' ? '已完成' : '草稿' }
+function categoryLabel(category: string) { return CATEGORIES.find(item => item.value === category)?.label || displayCategories.value.find(item => item.code === category)?.name || '文档' }
+function formatDate(value: string) { return new Date(value).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) }
+function categoryName(id: string) { return managedCategories.value.find(item => item.id === id)?.name || '未分类' }
+function isDefaultTemplate(template: ManagedTemplate) { return 'is_default' in template && Boolean(template.is_default) }
+function categoryCode(category: WritingCategory, index: number) {
+  const normalized = category.name.replace(/\s+/g, '')
+  const byLabel = CATEGORIES.find(item => item.label === normalized)
+  return byLabel?.value || CATEGORIES[index]?.value || 'report'
 }
-
-function categoryLabel(category: string) {
-  return CATEGORIES.find(item => item.value === category)?.label || '文档'
-}
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  if (typeof error !== 'object' || error === null) return fallback
-  const requestError = error as { message?: string; response?: { data?: { error?: string; message?: string } } }
-  return requestError.response?.data?.error || requestError.response?.data?.message || requestError.message || fallback
-}
+function categoryHint(name: string) { return ({ 通知: '事项、对象、时间与执行要求', 公告: '公开发布、范围与正式说明', 技术文档: '背景、方案、接口与验证', 会议纪要: '议题、决议、负责人和期限', 制度解读: '制度背景、条款与执行口径', 报告: '事实数据、分析、结论与建议', 工作总结: '成果、问题、经验和计划', 研究报告: '课题、方法、发现与洞察' } as Record<string, string>)[name] || '确定文章结构与核心表达目标' }
+function sourceLabel(source: WritingTemplateSource) { return ({ personal: '个人', admin: '管理员默认', builtin: '系统内置', system: '系统模板' } as Record<WritingTemplateSource, string>)[source] }
+function errorMessage(error: unknown, fallback: string) { if (typeof error !== 'object' || !error) return fallback; const value = error as { message?: string; response?: { data?: { error?: string; message?: string } } }; return value.response?.data?.error || value.response?.data?.message || value.message || fallback }
 
 async function loadDrafts() {
   loading.value = true
-  loadError.value = ''
-  try {
-    const response = await listDrafts()
-    drafts.value = response.data.drafts || []
-    if (!currentDraft.value && drafts.value[0]) await selectDraft(drafts.value[0].id)
-  } catch (error: unknown) {
-    loadError.value = errorMessage(error, '草稿列表加载失败，请稍后重试。')
-  } finally {
-    loading.value = false
-  }
+  try { const response = await listDrafts(); drafts.value = response.data.drafts || []; if (!currentDraft.value && drafts.value[0]) await selectDraft(drafts.value[0].id) }
+  catch (error: unknown) { loadError.value = errorMessage(error, '草稿列表加载失败，请稍后重试。') }
+  finally { loading.value = false }
 }
-
+async function loadWritingData() {
+  managementError.value = ''
+  try {
+    const [categoriesResponse, templatesResponse, myResponse] = await Promise.all([listWritingCategories(), listWritingTemplates(), getMyWritingTemplates(true)])
+    managedCategories.value = categoriesResponse.data.categories || []
+    baseTemplates.value = templatesResponse.data.templates || []
+    personalTemplates.value = myResponse.data.preferences?.templates || []
+    resolvedTemplates.value = myResponse.data.resolved_templates || []
+    if (!selectedCategoryId.value) selectedCategoryId.value = displayCategories.value[0]?.id || ''
+  } catch (error: unknown) { managementError.value = errorMessage(error, '写作类型与模板加载失败。') }
+}
 async function selectDraft(id: string) {
-  loadError.value = ''
   try {
     const response = await getDraft(id)
     currentDraft.value = response.data.draft
     currentDraft.value.status = normalizedStatus(currentDraft.value.status)
     knowledgeSource.value = currentDraft.value.source_type === 'knowledge_plus_web' ? 'knowledge_plus_web' : 'knowledge_base'
+    selectedCategoryId.value = displayCategories.value.find(item => item.code === currentDraft.value?.category)?.id || displayCategories.value[0]?.id || ''
+    writingPoints.value = ''
+    generated.value = Boolean(currentDraft.value.content)
+    generationMeta.value = null
     saveState.value = '已同步'
-  } catch (error: unknown) {
-    loadError.value = errorMessage(error, '草稿读取失败，请重试。')
-  }
+  } catch (error: unknown) { loadError.value = errorMessage(error, '草稿读取失败，请重试。') }
 }
-
 async function createNewDraft() {
   if (creating.value) return
   creating.value = true
-  loadError.value = ''
   try {
-    const response = await createDraft({
-      title: '未命名草稿',
-      category: 'report',
-      source_type: knowledgeSource.value,
-      web_search_enabled: knowledgeSource.value === 'knowledge_plus_web',
-    })
-    const draft = response.data.draft
-    drafts.value = [draft, ...drafts.value.filter(item => item.id !== draft.id)]
-    await selectDraft(draft.id)
-  } catch (error: unknown) {
-    loadError.value = errorMessage(error, '新建草稿失败，请稍后重试。')
-  } finally {
-    creating.value = false
-  }
+    const category = selectedCategory.value?.code || 'report'
+    const response = await createDraft({ title: '未命名草稿', category, source_type: knowledgeSource.value, web_search_enabled: knowledgeSource.value === 'knowledge_plus_web' })
+    drafts.value = [response.data.draft, ...drafts.value.filter(item => item.id !== response.data.draft.id)]
+    await selectDraft(response.data.draft.id)
+  } catch (error: unknown) { loadError.value = errorMessage(error, '新建草稿失败，请稍后重试。') }
+  finally { creating.value = false }
 }
+function selectCategory(category: DisplayCategory) { selectedCategoryId.value = category.id; generated.value = false }
+function dismissGuide() { showGuide.value = false; localStorage.setItem(GUIDE_KEY, '1') }
 
-async function saveDraft() {
-  if (!currentDraft.value || saving.value) return
-  saving.value = true
+async function generateDraft() {
+  if (!currentDraft.value || !writingPoints.value.trim() || generating.value) return
+  generating.value = true
   saveError.value = ''
   try {
-    await updateDraft(currentDraft.value.id, {
-      title: currentDraft.value.title,
-      content: currentDraft.value.content,
-      status: currentDraft.value.status,
-    })
-    const index = drafts.value.findIndex(draft => draft.id === currentDraft.value?.id)
+    const response = await generateContent({ category: selectedCategory.value?.code || currentDraft.value.category || 'report', prompt: writingPoints.value.trim(), space_id: currentDraft.value.space_id || undefined, source_type: knowledgeSource.value, web_search_enabled: knowledgeSource.value === 'knowledge_plus_web', custom_template: selectedTemplate.value?.content })
+    currentDraft.value.category = response.data.category
+    currentDraft.value.content = response.data.content
+    currentDraft.value.source_type = response.data.source_type
+    currentDraft.value.web_search_enabled = response.data.web_search_enabled
+    generationMeta.value = { knowledge: response.data.knowledge_sources_count, web: response.data.web_sources_count, model: response.data.model }
+    generated.value = true
+    await saveDraft()
+    MessagePlugin.success('内容已生成，可继续编辑')
+  } catch (error: unknown) { saveError.value = errorMessage(error, '生成失败，请检查模型配置后重试。'); MessagePlugin.error(saveError.value) }
+  finally { generating.value = false }
+}
+async function saveDraft(notify = false) {
+  if (!currentDraft.value || saving.value) return
+  saving.value = true
+  try {
+    await updateDraft(currentDraft.value.id, { title: currentDraft.value.title, content: currentDraft.value.content, status: currentDraft.value.status })
+    const index = drafts.value.findIndex(item => item.id === currentDraft.value?.id)
     if (index >= 0) drafts.value[index] = { ...drafts.value[index], ...currentDraft.value, updated_at: new Date().toISOString() }
     saveState.value = '刚刚保存'
-  } catch (error: unknown) {
-    saveState.value = '保存失败'
-    saveError.value = errorMessage(error, '草稿保存失败，请重试。')
-  } finally {
-    saving.value = false
+    if (notify) MessagePlugin.success('草稿已保存到空间')
+  } catch (error: unknown) { saveState.value = '保存失败'; saveError.value = errorMessage(error, '草稿保存失败，请重试。') }
+  finally { saving.value = false }
+}
+async function downloadWord() {
+  if (!currentDraft.value || exporting.value) return
+  exporting.value = true
+  try {
+    await saveDraft()
+    const response = await exportDraft(currentDraft.value.id, 'docx')
+    const url = URL.createObjectURL(new Blob([response.data as BlobPart]))
+    const link = document.createElement('a'); link.href = url; link.download = `${currentDraft.value.title || 'draft'}.docx`; link.click(); URL.revokeObjectURL(url)
+  } catch (error: unknown) { MessagePlugin.error(errorMessage(error, 'Word 下载失败')) }
+  finally { exporting.value = false }
+}
+
+async function openManagement(mode: 'personal' | 'admin') {
+  managementMode.value = mode
+  managementVisible.value = true
+  managementError.value = ''
+  if (mode === 'admin') {
+    try { const response = await listAdminWritingTemplates(); adminTemplates.value = response.data.templates || [] }
+    catch (error: unknown) { managementError.value = errorMessage(error, '管理员模板加载失败。') }
   }
 }
-
-function exportCurrentDraft() {
-  if (!currentDraft.value) return
-  const blob = new Blob([`${currentDraft.value.title}\n\n${currentDraft.value.content || ''}`], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${currentDraft.value.title || 'draft'}.txt`
-  link.click()
-  URL.revokeObjectURL(url)
+function editManagedTemplate(template?: ManagedTemplate) {
+  templateForm.value = template ? { id: template.id, category_id: template.category_id, name: template.name, content: template.content, sort: template.sort, is_default: 'is_default' in template ? Boolean(template.is_default) : false } : { id: '', category_id: selectedCategoryId.value || managedCategories.value[0]?.id || '', name: '', content: '', sort: managementTemplates.value.length * 10, is_default: false }
+  templateFormError.value = ''
+  templateEditing.value = true
 }
-
+async function saveManagedTemplate() {
+  if (!templateForm.value.name.trim() || !templateForm.value.category_id || !templateForm.value.content.trim()) { templateFormError.value = '模板名称、文档类型和模板内容均为必填项。'; return }
+  managementSaving.value = true
+  templateFormError.value = ''
+  try {
+    const payload = { category_id: templateForm.value.category_id, name: templateForm.value.name.trim(), content: templateForm.value.content.trim(), sort: templateForm.value.sort }
+    if (managementMode.value === 'admin') {
+      const adminPayload = { ...payload, is_default: templateForm.value.is_default }
+      if (templateForm.value.id) await updateAdminWritingTemplate(templateForm.value.id, adminPayload); else await createAdminWritingTemplate(adminPayload)
+      const response = await listAdminWritingTemplates(); adminTemplates.value = response.data.templates || []
+    } else {
+      if (templateForm.value.id) await updateMyWritingTemplate(templateForm.value.id, payload); else await createMyWritingTemplate(payload)
+    }
+    templateEditing.value = false
+    await loadWritingData()
+    MessagePlugin.success('模板已保存')
+  } catch (error: unknown) { templateFormError.value = errorMessage(error, '模板保存失败。') }
+  finally { managementSaving.value = false }
+}
+async function removeManagedTemplate(template: ManagedTemplate) {
+  if (!window.confirm(`确认删除模板“${template.name}”？`)) return
+  try {
+    if (managementMode.value === 'admin') { await deleteAdminWritingTemplate(template.id); adminTemplates.value = adminTemplates.value.filter(item => item.id !== template.id) }
+    else { await deleteMyWritingTemplate(template.id); personalTemplates.value = personalTemplates.value.filter(item => item.id !== template.id) }
+    await loadWritingData()
+  } catch (error: unknown) { managementError.value = errorMessage(error, '模板删除失败。') }
+}
 function handleDraftKeydown(event: KeyboardEvent) {
   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.sdp-writing-workspace__draft-item'))
-  const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement)
-  if (currentIndex < 0 || !buttons.length) return
-  event.preventDefault()
-  let nextIndex = currentIndex
-  if (event.key === 'Home') nextIndex = 0
-  if (event.key === 'End') nextIndex = buttons.length - 1
-  if (event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % buttons.length
-  if (event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + buttons.length) % buttons.length
-  buttons[nextIndex]?.focus()
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('.sdp-writing-workspace__draft-item')); const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  if (index < 0 || !buttons.length) return
+  event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : event.key === 'ArrowDown' ? (index + 1) % buttons.length : (index - 1 + buttons.length) % buttons.length; buttons[next]?.focus()
 }
 
-function categoryName(id: string) { return managedCategories.value.find(item => item.id === id)?.name || '未分类' }
-function canEditTemplate(template: WritingTemplate) { return canManageTemplates && (!template.is_builtin || isAdmin) }
-async function loadWritingManagement() {
-  managementError.value = ''
-  try {
-    const [categoriesResponse, templatesResponse] = await Promise.all([listWritingCategories(), listWritingTemplates()])
-    managedCategories.value = categoriesResponse.data.categories || []
-    managedTemplates.value = templatesResponse.data.templates || []
-  } catch (error: unknown) { managementError.value = errorMessage(error, '模板与类别加载失败。') }
-}
-function editCategory(category?: WritingCategory) {
-  categoryForm.value = category ? { id: category.id, name: category.name, description: category.description, sort: category.sort } : { id: '', name: '', description: '', sort: managedCategories.value.length * 10 }
-  categoryEditing.value = true
-  templateEditing.value = false
-}
-async function saveCategory() {
-  managementSaving.value = true
-  try {
-    const payload = { name: categoryForm.value.name.trim(), description: categoryForm.value.description.trim(), sort: categoryForm.value.sort }
-    if (categoryForm.value.id) await updateWritingCategory(categoryForm.value.id, payload); else await createWritingCategory(payload)
-    categoryEditing.value = false
-    await loadWritingManagement()
-  } catch (error: unknown) { managementError.value = errorMessage(error, '写作类别保存失败。') } finally { managementSaving.value = false }
-}
-async function removeCategory(category: WritingCategory) {
-  if (!window.confirm(`确认删除类别“${category.name}”？`)) return
-  try { await deleteWritingCategory(category.id); await loadWritingManagement() } catch (error: unknown) { managementError.value = errorMessage(error, '写作类别删除失败。') }
-}
-function editTemplate(template?: WritingTemplate) {
-  templateForm.value = template ? { id: template.id, category_id: template.category_id, name: template.name, content: template.content, is_builtin: template.is_builtin, sort: template.sort } : { id: '', category_id: managedCategories.value[0]?.id || '', name: '', content: '', is_builtin: false, sort: managedTemplates.value.length * 10 }
-  templateEditing.value = true
-  categoryEditing.value = false
-}
-async function saveTemplate() {
-  managementSaving.value = true
-  try {
-    const payload = { category_id: templateForm.value.category_id, name: templateForm.value.name.trim(), content: templateForm.value.content.trim(), is_builtin: templateForm.value.is_builtin, sort: templateForm.value.sort }
-    if (templateForm.value.id) await updateWritingTemplate(templateForm.value.id, payload); else await createWritingTemplate(payload)
-    templateEditing.value = false
-    await loadWritingManagement()
-  } catch (error: unknown) { managementError.value = errorMessage(error, '写作模板保存失败。') } finally { managementSaving.value = false }
-}
-async function removeTemplate(template: WritingTemplate) {
-  if (!window.confirm(`确认删除模板“${template.name}”？`)) return
-  try { await deleteWritingTemplate(template.id); await loadWritingManagement() } catch (error: unknown) { managementError.value = errorMessage(error, '写作模板删除失败。') }
-}
-
-onMounted(() => { loadDrafts(); loadWritingManagement() })
+onMounted(async () => { await loadWritingData(); await loadDrafts() })
 </script>
 
 <style scoped>
@@ -509,7 +429,61 @@ onMounted(() => { loadDrafts(); loadWritingManagement() })
 .sdp-writing-workspace__management-form textarea { resize: vertical; }
 .sdp-writing-workspace__management-form .sdp-writing-workspace__builtin { display: flex; align-items: center; grid-template-columns: none; }
 .sdp-writing-workspace__management-form footer { justify-content: flex-end; }
+.writing-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); margin: 0 0 var(--space-5); padding: 0; list-style: none; }
+.writing-steps li { position: relative; min-height: 58px; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--ink-200); border-radius: var(--radius-md); color: var(--ink-500); background: var(--ink-50); }
+.writing-steps li:not(:last-child)::after { content: ''; position: absolute; z-index: 2; right: calc(var(--space-3) * -1); width: var(--space-3); height: 1px; background: var(--ink-300); }
+.writing-steps li span { width: var(--space-7); height: var(--space-7); display: grid; place-items: center; flex: 0 0 var(--space-7); border-radius: 50%; color: var(--ink-600); background: var(--ink-100); font: var(--font-weight-bold) var(--text-xs) var(--font-mono); }
+.writing-steps li strong { font-size: var(--text-sm); }
+.writing-steps li.active { border-color: var(--brand-500); color: var(--brand-950); background: var(--brand-50); box-shadow: 0 0 0 2px var(--brand-100); }
+.writing-steps li.active span, .writing-steps li.done span { color: var(--ink-950); background: var(--brand-500); }
+.writing-steps li.done { color: var(--ink-800); border-color: var(--brand-200); }
+.writing-guide { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, .8fr); gap: var(--space-6); margin-bottom: var(--space-5); padding: var(--space-5); border: 1px solid var(--brand-300); border-radius: var(--radius-lg); background: linear-gradient(135deg, var(--brand-50), var(--ink-50) 72%); box-shadow: var(--shadow-sm); }
+.writing-guide p, .writing-section-head > div > span, .writing-result-head > div > span, .template-modal header p { color: var(--brand-700); font: var(--font-weight-semibold) var(--text-xs) var(--font-mono); letter-spacing: .08em; }
+.writing-guide h3, .writing-section-head h3, .writing-result-head h3 { margin-top: var(--space-1); font-family: var(--font-display); font-size: var(--text-xl); }
+.writing-guide div > span, .writing-section-head p { display: block; margin-top: var(--space-2); color: var(--ink-600); font-size: var(--text-sm); line-height: var(--leading-relaxed); }
+.writing-guide pre { margin: 0; padding: var(--space-4); overflow-x: auto; border: 1px solid var(--ink-200); border-radius: var(--radius-sm); color: var(--ink-700); background: var(--ink-100); font: var(--text-xs)/1.8 var(--font-mono); white-space: pre-wrap; }
+.writing-guide > button { position: absolute; top: var(--space-3); right: var(--space-3); border: 0; color: var(--ink-500); background: transparent; font-size: var(--text-xs); cursor: pointer; }
+.writing-config { margin-top: var(--space-5); padding: var(--space-5); border: 1px solid var(--ink-200); border-radius: var(--radius-lg); background: var(--ink-50); box-shadow: var(--shadow-xs); }
+.writing-section-head, .writing-result-head, .writing-generate-row, .writing-result footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.writing-section-head h3 small { color: var(--ink-500); font-family: var(--font-body); font-size: var(--text-xs); font-weight: var(--font-weight-normal); }
+.writing-section-head > button, .writing-result-head button { padding: var(--space-2) var(--space-3); border: 1px solid var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-700); background: var(--ink-50); font: var(--font-weight-semibold) var(--text-xs) var(--font-body); cursor: pointer; }
+.writing-type-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-4); }
+.writing-type-grid button { min-height: 96px; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--ink-200); border-radius: var(--radius-sm); color: var(--ink-800); background: var(--ink-100); text-align: left; cursor: pointer; }
+.writing-type-grid button strong { font-family: var(--font-display); font-size: var(--text-base); }
+.writing-type-grid button span { color: var(--ink-500); font-size: var(--text-xs); line-height: var(--leading-relaxed); }
+.writing-type-grid button.active { border-color: var(--brand-500); color: var(--brand-950); background: var(--brand-50); box-shadow: inset 3px 0 var(--brand-500); }
+.writing-template-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-4); }
+.writing-template-grid > button { min-height: 138px; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-4); overflow: hidden; border: 1px solid var(--ink-200); border-radius: var(--radius-sm); color: var(--ink-800); background: var(--ink-100); text-align: left; cursor: pointer; }
+.writing-template-grid > button.active { border-color: var(--brand-500); background: var(--brand-50); box-shadow: 0 0 0 2px var(--brand-100); }
+.writing-template-grid p { display: -webkit-box; margin-top: var(--space-1); overflow: hidden; color: var(--ink-500); font-size: var(--text-xs); line-height: 1.7; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.template-source { padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); color: var(--ink-700); background: var(--ink-200); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); }
+.template-source.source-personal { color: var(--brand-900); background: var(--brand-100); }
+.template-source.source-admin { color: oklch(0.42 0.12 230); background: var(--info-50); }
+.writing-inline-empty { margin-top: var(--space-4); padding: var(--space-5); border: 1px dashed var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-500); background: var(--ink-100); font-size: var(--text-sm); text-align: center; }
+.writing-points textarea { width: 100%; margin-top: var(--space-4); padding: var(--space-4); resize: vertical; border: 1px solid var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-900); background: white; font: var(--text-sm)/var(--leading-loose) var(--font-body); }
+.writing-generate-row { margin-top: var(--space-4); }
+.writing-generate-row > span { color: var(--ink-500); font-size: var(--text-xs); }
+.generate-button { min-width: 132px; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); border: 1px solid var(--brand-700); border-radius: var(--radius-sm); color: var(--ink-950); background: var(--brand-500); box-shadow: 0 8px 22px color-mix(in srgb, var(--brand-700) 22%, transparent); font: var(--font-weight-bold) var(--text-base) var(--font-body); cursor: pointer; }
+.generate-button:hover { background: var(--brand-400); transform: translateY(-1px); }
+.generate-button:disabled { cursor: not-allowed; opacity: .5; transform: none; }
+.generate-button svg { width: var(--space-5); height: var(--space-5); fill: none; stroke: currentColor; stroke-width: 1.8; }
+.writing-result { border-color: var(--brand-300); }
+.writing-result-head > div:last-child { display: flex; gap: var(--space-2); }
+.writing-result footer { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--ink-200); color: var(--ink-500); font-size: var(--text-xs); }
+.template-modal-backdrop { position: fixed; z-index: 110; inset: 0; display: grid; place-items: center; padding: var(--space-4); background: color-mix(in srgb, var(--ink-950) 62%, transparent); }
+.template-modal { width: min(100%, 38rem); max-height: calc(100dvh - var(--space-8)); display: grid; gap: var(--space-4); padding: var(--space-6); overflow-y: auto; border: 1px solid var(--ink-300); border-radius: var(--radius-lg); background: var(--ink-50); box-shadow: var(--shadow-lg); }
+.template-modal header, .template-modal footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.template-modal header { padding-bottom: var(--space-4); border-bottom: 1px solid var(--ink-200); }
+.template-modal header button, .template-modal footer button { padding: var(--space-2) var(--space-4); border: 1px solid var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-800); background: var(--ink-50); font: var(--font-weight-semibold) var(--text-sm) var(--font-body); cursor: pointer; }
+.template-modal label { display: grid; gap: var(--space-2); color: var(--ink-700); font-size: var(--text-sm); font-weight: var(--font-weight-semibold); }
+.template-modal label strong { color: var(--danger-700, #b42318); }
+.template-modal input:not([type='checkbox']), .template-modal select, .template-modal textarea { width: 100%; padding: var(--space-3); border: 1px solid var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-900); background: white; font: var(--text-sm) var(--font-body); }
+.template-modal textarea { resize: vertical; line-height: var(--leading-relaxed); }
+.template-modal .template-checkbox { display: flex; align-items: center; grid-template-columns: none; }
+.template-modal footer { justify-content: flex-end; padding-top: var(--space-2); }
+.template-modal footer .primary { border-color: var(--brand-700); color: var(--ink-950); background: var(--brand-500); }
 @media (max-width: 72rem) { .sdp-writing-workspace__topbar { align-items: flex-start; flex-direction: column; } .sdp-writing-workspace__tools { justify-content: flex-start; } .sdp-writing-workspace__priority { align-items: flex-start; flex-direction: column; } }
-@media (max-width: 56rem) { .sdp-writing-workspace { min-height: calc(100dvh - var(--header-height)); grid-template-columns: 1fr; } .sdp-writing-workspace__drafts { height: auto; max-height: calc(var(--space-24) * 3); border-right: 0; border-bottom: 1px solid var(--ink-200); } .sdp-writing-workspace__editor { height: auto; min-height: calc(100dvh - var(--header-height)); overflow: visible; } .sdp-writing-workspace__canvas { padding-inline: var(--space-4); } .sdp-writing-workspace__paper { padding: var(--space-6); } .sdp-writing-workspace__priority ol { align-items: stretch; flex-direction: column; } .sdp-writing-workspace__priority li[aria-hidden] { transform: rotate(90deg); align-self: center; } }
-@media (max-width: 40rem) { .sdp-writing-workspace__topbar { padding: var(--space-4); } .sdp-writing-workspace__tools, .sdp-writing-workspace__tools label, .sdp-writing-workspace__tools select, .sdp-writing-workspace__tools button { width: 100%; } .sdp-writing-workspace__tools label { align-items: stretch; flex-direction: column; } .sdp-writing-workspace__tools button { justify-content: center; } .sdp-writing-workspace__paper { padding: var(--space-5); } .sdp-writing-workspace__title input { font-size: var(--text-2xl); } .sdp-writing-workspace__ai-bar { align-items: flex-start; border-radius: var(--radius-md); } .sdp-writing-workspace__ai-bar button { display: none; } }
+@media (max-width: 72rem) { .writing-type-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .writing-template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 56rem) { .sdp-writing-workspace { min-height: calc(100dvh - var(--header-height)); grid-template-columns: 1fr; } .sdp-writing-workspace__drafts { height: auto; max-height: calc(var(--space-24) * 3); border-right: 0; border-bottom: 1px solid var(--ink-200); } .sdp-writing-workspace__editor { height: auto; min-height: calc(100dvh - var(--header-height)); overflow: visible; } .sdp-writing-workspace__canvas { padding-inline: var(--space-4); } .sdp-writing-workspace__paper { padding: var(--space-6); } .writing-guide { grid-template-columns: 1fr; } .writing-steps { grid-template-columns: repeat(2, 1fr); } .writing-steps li::after { display: none; } }
+@media (max-width: 40rem) { .sdp-writing-workspace__topbar { padding: var(--space-4); } .sdp-writing-workspace__tools, .sdp-writing-workspace__tools label, .sdp-writing-workspace__tools select, .sdp-writing-workspace__tools button { width: 100%; } .sdp-writing-workspace__tools label { align-items: stretch; flex-direction: column; } .sdp-writing-workspace__tools button { justify-content: center; } .sdp-writing-workspace__paper { padding: var(--space-5); } .sdp-writing-workspace__title input { font-size: var(--text-2xl); } .writing-steps, .writing-type-grid, .writing-template-grid { grid-template-columns: 1fr; } .writing-section-head, .writing-generate-row, .writing-result-head, .writing-result footer { align-items: stretch; flex-direction: column; } .generate-button { width: 100%; } .writing-result-head > div:last-child { display: grid; } }
 </style>
