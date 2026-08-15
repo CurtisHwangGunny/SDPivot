@@ -132,17 +132,35 @@
         </div>
 
         <form class="sdp-qa-workspace__composer" aria-label="发送问答消息" @submit.prevent="submitMessage">
-          <label for="qa-message-input">向知识库提问</label>
+          <div class="sdp-qa-workspace__scope-row">
+            <label for="qa-message-input">向知识库提问</label>
+            <details ref="scopeMenuRef" class="sdp-qa-workspace__scope">
+              <summary>{{ scopeLabel }}</summary>
+              <div class="sdp-qa-workspace__scope-menu">
+                <label class="sdp-qa-workspace__scope-all">
+                  <input type="checkbox" :checked="!selectedSpaceIds.length" @change="selectAllSpaces">
+                  <span>全部知识库</span>
+                </label>
+                <div v-if="spaces.length" class="sdp-qa-workspace__scope-options">
+                  <label v-for="space in spaces" :key="space.id">
+                    <input v-model="selectedSpaceIds" type="checkbox" :value="space.id">
+                    <span>{{ space.name }}</span>
+                  </label>
+                </div>
+                <p v-else>{{ loadingSpaces ? '正在加载空间...' : '暂无可用空间' }}</p>
+                <button type="button" @click="closeScopeMenu">完成</button>
+              </div>
+            </details>
+          </div>
           <div>
             <textarea
               id="qa-message-input"
               v-model="inputText"
               rows="2"
-              placeholder="输入问题，按 Ctrl + Enter 发送"
+              placeholder="输入问题，按 Enter 发送, Shift+Enter 换行"
               aria-label="问答消息内容"
               :disabled="sending"
-              @keydown.ctrl.enter.prevent="submitMessage"
-              @keydown.meta.enter.prevent="submitMessage"
+              @keydown="handleComposerKeydown"
             />
             <button type="submit" aria-label="发送问答消息" :disabled="!inputText.trim() || sending">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 4 17 8-17 8 3-8-3-8Zm3 8h14" /></svg>
@@ -168,6 +186,7 @@ import {
   type QASession,
 } from '@/api/qa'
 import SdpSidebarLayout from '@/layouts/design/SdpSidebarLayout.vue'
+import { listSpaces, type Space } from '@/api/spaces'
 
 interface Citation {
   title: string
@@ -188,8 +207,17 @@ const sessionError = ref('')
 const sendError = ref('')
 const feedback = ref<Record<string, 'up' | 'down'>>({})
 const messageListRef = ref<HTMLElement | null>(null)
+const scopeMenuRef = ref<HTMLDetailsElement | null>(null)
+const spaces = ref<Space[]>([])
+const loadingSpaces = ref(true)
+const sessionSpaceIds = ref<Record<string, string[]>>({})
 
 const activeSession = computed(() => sessions.value.find(session => session.id === activeSessionId.value))
+const selectedSpaceIds = computed<string[]>({
+  get: () => sessionSpaceIds.value[activeSessionId.value] || [],
+  set: value => { sessionSpaceIds.value[activeSessionId.value] = [...value] },
+})
+const scopeLabel = computed(() => selectedSpaceIds.value.length ? `已选 ${selectedSpaceIds.value.length} 个空间` : '全部知识库')
 const filteredSessions = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase()
   return sessions.value.filter(session => !query || session.title.toLocaleLowerCase().includes(query))
@@ -250,7 +278,7 @@ function errorMessage(error: unknown, fallback: string) {
 async function loadWorkspace() {
   loadingSessions.value = true
   sessionError.value = ''
-  const [modelResult, sessionResult] = await Promise.allSettled([listModels(), listSessions()])
+  const [modelResult, sessionResult, spaceResult] = await Promise.allSettled([listModels(), listSessions(), listSpaces()])
   if (modelResult.status === 'fulfilled') {
     models.value = modelResult.value.data.models || []
     selectedModelId.value = (models.value.find(model => model.is_default) || models.value[0])?.id || ''
@@ -261,6 +289,8 @@ async function loadWorkspace() {
   } else {
     sessionError.value = errorMessage(sessionResult.reason, '会话列表加载失败，请稍后重试。')
   }
+  if (spaceResult.status === 'fulfilled') spaces.value = spaceResult.value.data.spaces || []
+  loadingSpaces.value = false
   loadingSessions.value = false
 }
 
@@ -273,6 +303,7 @@ async function createNewSession() {
     const session = response.data.session
     sessions.value = [session, ...sessions.value.filter(item => item.id !== session.id)]
     activeSessionId.value = session.id
+    sessionSpaceIds.value[session.id] = []
     messages.value = []
   } catch (error: unknown) {
     sessionError.value = errorMessage(error, '新建会话失败，请稍后重试。')
@@ -296,7 +327,7 @@ async function submitMessage() {
   sendError.value = ''
   inputText.value = ''
   try {
-    const response = await sendMessage(activeSessionId.value, content, selectedModelId.value || undefined)
+    const response = await sendMessage(activeSessionId.value, content, selectedModelId.value || undefined, selectedSpaceIds.value)
     messages.value.push(response.data.user_message, response.data.assistant_message)
     if (response.data.model_id) selectedModelId.value = response.data.model_id
     await nextTick()
@@ -307,6 +338,20 @@ async function submitMessage() {
   } finally {
     sending.value = false
   }
+}
+
+function handleComposerKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  void submitMessage()
+}
+
+function selectAllSpaces() {
+  selectedSpaceIds.value = []
+}
+
+function closeScopeMenu() {
+  if (scopeMenuRef.value) scopeMenuRef.value.open = false
 }
 
 function handleListKeydown(event: KeyboardEvent) {
@@ -394,7 +439,20 @@ onMounted(loadWorkspace)
 .sdp-qa-workspace__streaming > span:nth-child(3) { animation-delay: var(--duration-normal); }
 .sdp-qa-workspace__streaming strong { margin-left: var(--space-1); font-size: var(--text-sm); }
 .sdp-qa-workspace__composer { padding: var(--space-4) max(var(--space-8), calc((100% - 52rem) / 2)) var(--space-5); border-top: 1px solid var(--ink-200); background: var(--ink-50); }
-.sdp-qa-workspace__composer > label { display: block; margin-bottom: var(--space-2); color: var(--ink-800); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); }
+.sdp-qa-workspace__scope-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.sdp-qa-workspace__scope-row > label { color: var(--ink-800); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); }
+.sdp-qa-workspace__scope { position: relative; }
+.sdp-qa-workspace__scope summary { min-height: var(--space-9); display: flex; align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-700); background: var(--ink-50); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); cursor: pointer; list-style: none; }
+.sdp-qa-workspace__scope summary::after { margin-left: var(--space-2); content: '▾'; color: var(--brand-700); }
+.sdp-qa-workspace__scope summary::-webkit-details-marker { display: none; }
+.sdp-qa-workspace__scope-menu { position: absolute; right: 0; bottom: calc(100% + var(--space-2)); z-index: 10; width: 280px; max-height: 320px; display: grid; gap: var(--space-2); padding: var(--space-3); overflow: auto; border: 1px solid var(--ink-200); border-radius: var(--radius-md); background: var(--ink-50); box-shadow: var(--shadow-lg); }
+.sdp-qa-workspace__scope-menu label { display: flex; align-items: center; gap: var(--space-2); min-height: var(--space-9); padding: var(--space-2); border-radius: var(--radius-sm); color: var(--ink-800); font-size: var(--text-sm); cursor: pointer; }
+.sdp-qa-workspace__scope-menu label:hover { background: var(--brand-50); }
+.sdp-qa-workspace__scope-menu input { accent-color: var(--brand-700); }
+.sdp-qa-workspace__scope-all { border-bottom: 1px solid var(--ink-200); }
+.sdp-qa-workspace__scope-options { display: grid; }
+.sdp-qa-workspace__scope-menu p { padding: var(--space-3); color: var(--ink-500); font-size: var(--text-xs); text-align: center; }
+.sdp-qa-workspace__scope-menu > button { min-height: var(--space-9); border: 1px solid var(--brand-600); border-radius: var(--radius-sm); color: var(--ink-950); background: var(--brand-500); font-weight: var(--font-weight-semibold); cursor: pointer; }
 .sdp-qa-workspace__composer > div { gap: var(--space-3); padding: var(--space-2); border: 1px solid var(--ink-300); border-radius: var(--radius-md); background: var(--ink-50); }
 .sdp-qa-workspace__composer textarea { min-height: var(--space-12); flex: 1; resize: none; border: 0; outline: 0; color: var(--ink-900); background: transparent; font: var(--text-sm)/var(--leading-normal) var(--font-body); }
 .sdp-qa-workspace__composer button { width: var(--space-12); height: var(--space-12); flex: 0 0 var(--space-12); display: grid; place-items: center; border: 1px solid var(--brand-600); border-radius: var(--radius-sm); color: var(--ink-950); background: var(--brand-500); cursor: pointer; }

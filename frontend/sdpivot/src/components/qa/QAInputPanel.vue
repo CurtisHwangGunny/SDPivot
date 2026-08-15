@@ -4,8 +4,9 @@
       <t-textarea
         :model-value="modelValue"
         :autosize="{ minRows: 3, maxRows: 8 }"
-        placeholder="输入你的问题，系统将结合知识内容进行回答..."
+        placeholder="输入问题，按 Enter 发送, Shift+Enter 换行"
         @update:model-value="emit('update:modelValue', String($event ?? ''))"
+        @keydown="handleKeydown"
       />
       <div class="input-footer">
         <div class="model-control">
@@ -47,6 +48,12 @@ const emit = defineEmits<{
   'update:modelId': [value: string]
   submit: []
 }>()
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  if (props.modelValue.trim() && props.modelId && !props.sending) emit('submit')
+}
 </script>
 
 <style scoped>

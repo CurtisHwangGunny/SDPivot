@@ -171,6 +171,10 @@ export function listAdminDepartments() {
   return client.get<{ success: boolean; data: DepartmentNode[] }>('/admin/departments')
 }
 
+export function listAdminDepartmentTree() {
+  return client.get<{ success: boolean; data: DepartmentNode[] }>('/admin/departments/tree')
+}
+
 export function updateAdminUserRole(id: string, role: AdminRole['code'], departmentId?: string) {
   return client.put(`/admin/users/${id}/role`, { role, department_id: departmentId || undefined })
 }

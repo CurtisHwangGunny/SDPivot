@@ -42,13 +42,13 @@ export function getMessages(sessionId: string) {
   return client.get<{ messages: QAMessage[] }>(`/qa/sessions/${sessionId}/messages`)
 }
 
-export function sendMessage(sessionId: string, content: string, modelId?: string) {
+export function sendMessage(sessionId: string, content: string, modelId?: string, spaceIds: string[] = []) {
   return client.post<{
     user_message: QAMessage
     assistant_message: QAMessage
     model_id: string
     model: string
-  }>(`/qa/sessions/${sessionId}/messages`, { content, model_id: modelId })
+  }>(`/qa/sessions/${sessionId}/messages`, { content, model_id: modelId, space_ids: spaceIds })
 }
 
 export function deleteSession(sessionId: string) {

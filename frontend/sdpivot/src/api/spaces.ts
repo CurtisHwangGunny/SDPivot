@@ -34,8 +34,40 @@ export function listSpaceMembers(id: string) {
   return client.get<{ members: AdminMember[] }>(`/spaces/${id}/members`)
 }
 
-export function addSpaceMember(id: string, data: { user_id: string; role: 'editor' | 'viewer' }) {
+export function addSpaceMember(id: string, data: { user_ids: string[]; department_ids: string[] }) {
   return client.post(`/spaces/${id}/members`, data)
+}
+
+export interface SpaceMemberCandidate {
+  id: string
+  name: string
+  username: string
+  account: string
+  email: string
+  department_id?: string | null
+  department_name: string
+  is_member: boolean
+}
+
+export interface SpaceMemberCandidateDepartment {
+  id: string
+  name: string
+  parent_id: string
+  member_count: number
+  existing_member_count: number
+  is_fully_added: boolean
+}
+
+export function listSpaceMemberCandidates(id: string) {
+  return client.get<{
+    users: SpaceMemberCandidate[]
+    departments: SpaceMemberCandidateDepartment[]
+    total: number
+  }>(`/spaces/${id}/members/candidates`, { params: { page_size: 500 } })
+}
+
+export function removeSpaceMember(id: string, userId: string) {
+  return client.delete(`/spaces/${id}/members/${userId}`)
 }
 
 export interface AdminStats {

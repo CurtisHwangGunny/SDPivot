@@ -22,12 +22,12 @@
             <div>
               <div class="upload-icon">↑</div>
               <h3>拖入文档或选择文件</h3>
-              <p class="subtle">支持 PDF、Word、Excel、Markdown、CSV；单文件建议不超过 50MB。</p>
+              <p class="subtle">支持 PDF、Office、Markdown、CSV 与常见图片；单文件建议不超过 50MB。</p>
               <div class="actions" style="justify-content:center;margin-top:16px">
                 <button class="btn primary" type="button" @click="triggerFileInput">选择文件</button>
                 <button class="btn secondary" type="button">从本地目录导入</button>
               </div>
-              <input ref="fileInput" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.md,.csv,.txt" style="display:none" @change="handleFileSelect" />
+              <input ref="fileInput" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.csv,.txt,.png,.jpg,.jpeg" style="display:none" @change="handleFileSelect" />
             </div>
           </section>
 
@@ -122,7 +122,7 @@ const hasPendingFiles = computed(() => fileQueue.some(file => file.status === '�
 
 function fileTypeIcon(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() || '';
-  const map: Record<string, string> = { pdf: 'PDF', doc: 'DOC', docx: 'DOC', xls: 'XLS', xlsx: 'XLS', md: 'MD', csv: 'CSV', txt: 'TXT' };
+  const map: Record<string, string> = { pdf: 'PDF', doc: 'DOC', docx: 'DOC', xls: 'XLS', xlsx: 'XLS', ppt: 'PPT', pptx: 'PPT', md: 'MD', csv: 'CSV', txt: 'TXT', png: 'IMG', jpg: 'IMG', jpeg: 'IMG' };
   return map[ext] || 'FILE';
 }
 
