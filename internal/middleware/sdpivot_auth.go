@@ -66,6 +66,18 @@ func RequirePermission(permission Permission) gin.HandlerFunc {
 	}
 }
 
+// RequireSuperAdmin restricts sensitive product operations to super admins.
+func RequireSuperAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if types.NormalizeAccessRole(GetRole(c)) == types.AccessRoleSuperAdmin {
+			c.Next()
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{"error": "super admin permission required"})
+		c.Abort()
+	}
+}
+
 // SDPivotAuth creates a middleware that validates JWT access tokens
 // and sets user context for SDPivot routes.
 func SDPivotAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {

@@ -55,6 +55,9 @@ func (backupSystemConfigRow) TableName() string { return "system_configs" }
 
 func NewBackupService(db *gorm.DB) interfaces.BackupService {
 	driver := strings.TrimSpace(os.Getenv("DB_DRIVER"))
+	if driver == "" && db != nil && db.Dialector != nil {
+		driver = db.Dialector.Name()
+	}
 	dir := strings.TrimSpace(os.Getenv("WEKNORA_BACKUP_DIR"))
 	if dir == "" {
 		if driver == "sqlite" {
@@ -187,11 +190,11 @@ func (s *backupService) dump(ctx context.Context, destination string) error {
 		args := []string{
 			"--format=custom", "--no-owner", "--no-privileges",
 			"--exclude-table=backup_records", "--file=" + destination,
-			"--host=" + os.Getenv("DB_HOST"), "--port=" + os.Getenv("DB_PORT"),
-			"--username=" + os.Getenv("DB_USER"), os.Getenv("DB_NAME"),
+			"--host=" + backupEnv("DB_HOST", "SDP_DB_HOST"), "--port=" + backupEnv("DB_PORT", "SDP_DB_PORT"),
+			"--username=" + backupEnv("DB_USER", "SDP_DB_USER"), backupEnv("DB_NAME", "SDP_DB_NAME"),
 		}
 		cmd := exec.CommandContext(ctx, "pg_dump", args...)
-		cmd.Env = append(os.Environ(), "PGPASSWORD="+os.Getenv("DB_PASSWORD"))
+		cmd.Env = append(os.Environ(), "PGPASSWORD="+backupEnv("DB_PASSWORD", "SDP_DB_PASSWORD"))
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("pg_dump: %s: %w", strings.TrimSpace(string(output)), err)
@@ -284,11 +287,11 @@ func (s *backupService) Restore(ctx context.Context, id string) error {
 	case "postgres":
 		args := []string{
 			"--clean", "--if-exists", "--no-owner", "--no-privileges", "--exit-on-error",
-			"--host=" + os.Getenv("DB_HOST"), "--port=" + os.Getenv("DB_PORT"),
-			"--username=" + os.Getenv("DB_USER"), "--dbname=" + os.Getenv("DB_NAME"), record.StoragePath,
+			"--host=" + backupEnv("DB_HOST", "SDP_DB_HOST"), "--port=" + backupEnv("DB_PORT", "SDP_DB_PORT"),
+			"--username=" + backupEnv("DB_USER", "SDP_DB_USER"), "--dbname=" + backupEnv("DB_NAME", "SDP_DB_NAME"), record.StoragePath,
 		}
 		cmd := exec.CommandContext(ctx, "pg_restore", args...)
-		cmd.Env = append(os.Environ(), "PGPASSWORD="+os.Getenv("DB_PASSWORD"))
+		cmd.Env = append(os.Environ(), "PGPASSWORD="+backupEnv("DB_PASSWORD", "SDP_DB_PASSWORD"))
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("pg_restore: %s: %w", strings.TrimSpace(string(output)), err)
@@ -464,7 +467,7 @@ func sanitizeBackupError(err error) string {
 		return ""
 	}
 	message := err.Error()
-	for _, secret := range []string{os.Getenv("DB_PASSWORD"), os.Getenv("DB_USER"), os.Getenv("DB_HOST")} {
+	for _, secret := range []string{backupEnv("DB_PASSWORD", "SDP_DB_PASSWORD"), backupEnv("DB_USER", "SDP_DB_USER"), backupEnv("DB_HOST", "SDP_DB_HOST")} {
 		if secret != "" {
 			message = strings.ReplaceAll(message, secret, "[redacted]")
 		}
@@ -474,4 +477,11 @@ func sanitizeBackupError(err error) string {
 		message = message[:max]
 	}
 	return message
+}
+
+func backupEnv(primary, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(primary)); value != "" {
+		return value
+	}
+	return strings.TrimSpace(os.Getenv(fallback))
 }

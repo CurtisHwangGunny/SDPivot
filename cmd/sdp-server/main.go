@@ -23,6 +23,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/router"
@@ -37,6 +38,7 @@ func main() {
 	dbUser := getEnvFallback("SDP_DB_USER", "SMART_DB_USER", "postgres")
 	dbPass := getEnvFallback("SDP_DB_PASSWORD", "SMART_DB_PASSWORD", "postgres")
 	dbName := getEnvFallback("SDP_DB_NAME", "SMART_DB_NAME", "WeKnora")
+	setBackupDatabaseEnv(dbHost, dbPort, dbUser, dbPass, dbName)
 	redisAddr := getEnvFallback("SDP_REDIS_ADDR", "REDIS_ADDR", "")
 	redisPassword := getEnvFallback("SDP_REDIS_PASSWORD", "REDIS_PASSWORD", "")
 	port := getEnv("PORT", "8081")
@@ -84,6 +86,11 @@ func main() {
 	if err := initializeOPAdminFromEnv(db); err != nil {
 		log.Fatalf("Failed to initialize OP administrator: %v", err)
 	}
+	backupService := service.NewBackupService(db)
+	if err := backupService.Start(context.Background()); err != nil {
+		log.Printf("[Backup] Warning: %v", err)
+	}
+	defer backupService.Stop()
 
 	// ── Redis (optional) ───────────────────────────────────────
 	if redisAddr != "" {
@@ -121,9 +128,10 @@ func main() {
 	))
 
 	router.NewSDPivotRouter(router.SDPivotRouterParams{
-		DB:          db,
-		RedisClient: redisClient,
-		Config:      &config.Config{Product: product},
+		DB:            db,
+		RedisClient:   redisClient,
+		Config:        &config.Config{Product: product},
+		BackupService: backupService,
 	}).RegisterRoutes(r)
 
 	// ── Start Server ───────────────────────────────────────────
@@ -160,6 +168,17 @@ func main() {
 	log.Println("[Server] Stopped")
 }
 
+func setBackupDatabaseEnv(host, port, user, password, name string) {
+	for key, value := range map[string]string{
+		"DB_DRIVER": "postgres", "DB_HOST": host, "DB_PORT": port,
+		"DB_USER": user, "DB_PASSWORD": password, "DB_NAME": name,
+	} {
+		if strings.TrimSpace(os.Getenv(key)) == "" {
+			_ = os.Setenv(key, value)
+		}
+	}
+}
+
 func ensureSDPivotSchema(db *gorm.DB) error {
 	models := []interface{}{
 		&types.Tenant{},
@@ -188,6 +207,8 @@ func ensureSDPivotSchema(db *gorm.DB) error {
 		&types.QAMessage{},
 		&types.WritingDraft{},
 		&types.Announcement{},
+		&types.BackupRecord{},
+		&types.SystemUpdateLog{},
 	}
 	for _, model := range models {
 		if err := db.AutoMigrate(model); err != nil {

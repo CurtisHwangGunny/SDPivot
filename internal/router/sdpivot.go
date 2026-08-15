@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/middleware"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // SDPivotRouterParams holds dependencies for the SDPivot router.
@@ -21,17 +22,19 @@ import (
 type SDPivotRouterParams struct {
 	dig.In
 
-	DB          *gorm.DB
-	RedisClient *redis.Client
-	Config      *config.Config
+	DB            *gorm.DB
+	RedisClient   *redis.Client
+	Config        *config.Config
+	BackupService interfaces.BackupService `optional:"true"`
 }
 
 // SDPivotRouter holds all SDPivot-specific route handlers.
 type SDPivotRouter struct {
-	db         *gorm.DB
-	redis      *redis.Client
-	jwtManager *auth.JWTManager
-	product    *config.ProductConfig
+	db            *gorm.DB
+	redis         *redis.Client
+	jwtManager    *auth.JWTManager
+	product       *config.ProductConfig
+	backupService interfaces.BackupService
 }
 
 // NewSDPivotRouter creates a new SDPivot router via DI.
@@ -58,10 +61,11 @@ func NewSDPivotRouter(params SDPivotRouterParams) *SDPivotRouter {
 	}
 
 	return &SDPivotRouter{
-		db:         params.DB,
-		redis:      params.RedisClient,
-		jwtManager: jwtManager,
-		product:    product,
+		db:            params.DB,
+		redis:         params.RedisClient,
+		jwtManager:    jwtManager,
+		product:       product,
+		backupService: params.BackupService,
 	}
 }
 
@@ -102,6 +106,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 	searchHandler := handler.NewSDPivotSearchHandler(sr.db)
 	integrationHandler := handler.NewSDPivotIntegrationHandler(sr.db)
 	toolingHandler := handler.NewSDPivotToolingHandler(sr.db)
+	operationsHandler := handler.NewSDPivotOperationsHandler(sr.db, sr.redis, sr.backupService, sr.product.OPMode)
 
 	// Public routes (no auth required)
 	public := sk.Group("")
@@ -179,6 +184,7 @@ func (sr *SDPivotRouter) registerRoutes(sk *gin.RouterGroup) {
 		securityHandler.RegisterRoutes(protected)
 		auditHandler.RegisterRoutes(protected)
 		adminUsersHandler.RegisterRoutes(protected)
+		operationsHandler.RegisterRoutes(protected)
 
 		// Tenant model configuration.
 		adminModels := protected.Group("/admin/models", middleware.RequirePermission(middleware.PermissionDepartmentManage))
