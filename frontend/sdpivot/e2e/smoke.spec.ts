@@ -89,3 +89,40 @@ test('failed login stays on the form and shows the backend error', async ({ page
   await expect(page).toHaveURL(/\/login$/)
   await expect(page.getByText('账号或密码错误')).toBeVisible()
 })
+
+test('document import starts an upload request and completes parsing', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('sdp_access_token', 'access-123')
+    localStorage.setItem('sdp_refresh_token', 'refresh-123')
+    localStorage.setItem('sdp_user', JSON.stringify({ id: 'user-1', username: 'operator' }))
+  })
+  await page.route('**/api/v1/sdp/spaces/space-1', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ id: 'space-1', name: '测试空间', description: '', visibility: 'private', owner_id: 'user-1', created_at: '2026-08-15T00:00:00Z', updated_at: '2026-08-15T00:00:00Z' }),
+  }))
+  await page.route('**/api/v1/sdp/spaces/space-1/members', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"members":[]}' }))
+  await page.route('**/api/v1/sdp/documents?**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"documents":[],"total":0,"page":1,"page_size":100}' }))
+  await page.route('**/api/v1/sdp/qa/sessions', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sessions":[]}' }))
+  await page.route('**/api/v1/sdp/documents/doc-1/parse-status', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"completed","progress":100}' }))
+
+  let uploadedBody = ''
+  await page.route('**/api/v1/sdp/documents/upload', async route => {
+    uploadedBody = (await route.request().postDataBuffer())?.toString('utf8') || ''
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({ document: { id: 'doc-1', space_id: 'space-1' }, message: 'created' }),
+    })
+  })
+
+  await page.goto('/spaces/space-1')
+  await page.getByRole('button', { name: '导入文档' }).first().click()
+  await page.locator('input[type="file"]').setInputFiles({ name: 'contract.txt', mimeType: 'text/plain', buffer: Buffer.from('test document') })
+  await expect(page.getByText('等待中')).toBeVisible()
+  await page.getByRole('button', { name: '开始导入' }).click()
+
+  await expect.poll(() => uploadedBody).toContain('name="space_id"\r\n\r\nspace-1')
+  expect(uploadedBody).toContain('filename="contract.txt"')
+  await expect(page.getByText('已完成')).toBeVisible()
+})

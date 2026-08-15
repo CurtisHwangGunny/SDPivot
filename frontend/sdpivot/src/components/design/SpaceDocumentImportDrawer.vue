@@ -83,10 +83,12 @@
           </div>
         </div>
         <footer class="drawer-foot">
-          <span class="subtle">预计 {{ fileQueue.length }} 个文件将在 {{ estimatedMinutes }} 分钟内完成解析</span>
+          <span class="subtle" :class="{ 'import-error': !spaceIdAvailable }">
+            {{ spaceIdAvailable ? `预计 ${fileQueue.length} 个文件将在 ${estimatedMinutes} 分钟内完成解析` : '缺少空间信息，暂时无法导入' }}
+          </span>
           <div class="actions">
             <button class="btn secondary" type="button" @click="close">稍后处理</button>
-            <button class="btn primary" type="button" :disabled="!hasPendingFiles || uploading" @click="startImport">{{ uploading ? '上传中...' : '开始导入' }}</button>
+            <button class="btn primary" type="button" :disabled="!canStartImport" @click="startImport">{{ uploading ? '上传中...' : '开始导入' }}</button>
           </div>
         </footer>
       </aside>
@@ -147,6 +149,8 @@ const rules = reactive([
 
 const estimatedMinutes = computed(() => Math.max(1, Math.ceil(fileQueue.length * 0.8)));
 const hasPendingFiles = computed(() => fileQueue.some(file => file.state === 'waiting' || (file.state === 'failed' && !file.oversized)));
+const spaceIdAvailable = computed(() => Boolean(props.spaceId?.trim()));
+const canStartImport = computed(() => spaceIdAvailable.value && hasPendingFiles.value && !uploading.value);
 const batchSummary = computed(() => {
   const processed = fileQueue.filter(file => file.started && file.state !== 'waiting');
   if (!processed.length || processed.some(file => !['completed', 'failed'].includes(file.state))) return null;
@@ -229,17 +233,30 @@ function clearCompleted() {
 }
 
 async function startImport() {
-  if (!props.spaceId || uploading.value) return;
-  uploading.value = true;
-  for (const item of fileQueue) {
-    if (item.state !== 'waiting') continue;
-    await uploadFile(item);
+  if (uploading.value) return;
+  const spaceId = props.spaceId?.trim();
+  if (!spaceId) {
+    MessagePlugin.warning('缺少空间信息，无法导入文档');
+    return;
   }
-  uploading.value = false;
+  uploading.value = true;
+  try {
+    for (const item of fileQueue) {
+      if (item.state !== 'waiting') continue;
+      await uploadFile(item, spaceId);
+    }
+  } finally {
+    uploading.value = false;
+  }
 }
 
-async function uploadFile(item: QueueItem) {
-  if (!props.spaceId) return;
+async function uploadFile(item: QueueItem, spaceId?: string) {
+  const targetSpaceId = spaceId || props.spaceId?.trim();
+  if (!targetSpaceId) {
+    markFailed(item, '缺少空间信息，无法上传');
+    MessagePlugin.warning('缺少空间信息，无法导入文档');
+    return;
+  }
   stopPolling(item.key);
   item.started = true;
   item.state = 'uploading';
@@ -247,7 +264,7 @@ async function uploadFile(item: QueueItem) {
   item.meta = '正在上传';
   item.progress = 0;
   try {
-    const response = await uploadDocument({ space_id: props.spaceId, file: item.file }, percent => { item.progress = percent; });
+    const response = await uploadDocument({ space_id: targetSpaceId, file: item.file }, percent => { item.progress = percent; });
     item.documentId = response.data.document.id;
     item.state = 'parsing';
     item.progress = 0;
@@ -377,17 +394,18 @@ function errorMessage(error: unknown, fallback: string) {
 .row-action { width: 32px; height: 32px; cursor: pointer; }
 .import-summary { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-5); border-top: 1px solid var(--ink-200); color: var(--ink-700); background: var(--brand-50); font-size: var(--text-sm); }
 .import-summary strong { color: var(--brand-900); }
+.import-error { color: var(--danger-700, #b42318); }
 .warning-mark { background: var(--warning-500); }
 @media (max-width: 760px) { .import-stepper, .rule-grid, .file-row { grid-template-columns: 1fr; } }
 </style>
 
 <style scoped>
-.drawer-overlay { position: fixed; inset: 0; z-index: var(--z-modal, 300); display: grid; justify-items: end; background: rgba(15, 23, 19, .42); backdrop-filter: blur(4px); }
-.drawer { width: 620px; max-width: 100vw; height: 100%; display: grid; grid-template-rows: auto 1fr auto; background: var(--ink-50); border-left: 1px solid rgba(255,255,255,.32); box-shadow: -32px 0 80px rgba(0,0,0,.20); animation: drawer-in .24s var(--ease-out-expo); }
+.drawer-overlay { position: fixed; inset: 0; z-index: var(--z-modal, 300); display: grid; grid-template-rows: minmax(0, 1fr); justify-items: end; background: rgba(15, 23, 19, .42); backdrop-filter: blur(4px); }
+.drawer { width: 620px; max-width: 100vw; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-50); border-left: 1px solid rgba(255,255,255,.32); box-shadow: -32px 0 80px rgba(0,0,0,.20); animation: drawer-in .24s var(--ease-out-expo); }
 .drawer--wide { width: 720px; }
 .drawer-head { padding: 24px 28px 18px; background: white; border-bottom: 1px solid var(--ink-200); display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-5); }
 .drawer-head h2 { margin: var(--space-1) 0 0; font-size: var(--text-2xl); letter-spacing: -.035em; }
-.drawer-body { padding: 22px 28px; overflow: auto; display: grid; gap: var(--space-5); }
+.drawer-body { min-height: 0; padding: 22px 28px; overflow: auto; display: grid; gap: var(--space-5); }
 .drawer-foot { padding: var(--space-4) 28px; border-top: 1px solid var(--ink-200); background: white; display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); }
 .eyebrow { margin: 0 0 var(--space-1); color: var(--brand-700); font-size: var(--text-xs); font-weight: var(--font-weight-bold); letter-spacing: .08em; text-transform: uppercase; }
 .subtle { margin: var(--space-2) 0 0; color: var(--ink-600); font-size: var(--text-sm); }
