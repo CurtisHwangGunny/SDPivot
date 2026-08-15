@@ -24,6 +24,7 @@ services:
       SDP_JWT_SECRET: ${SDP_JWT_SECRET:?SDP_JWT_SECRET is required}
       SDP_ALLOWED_ORIGINS: ${SDP_ALLOWED_ORIGINS:-}
       SYSTEM_AES_KEY: ${SDP_SYSTEM_AES_KEY:-}
+      DOCREADER_ADDR: ${DOCREADER_ADDR:-WeKnora-docreader:50051}
       GIN_MODE: release
     volumes:
       - op-sdp-files:/tmp/sdpivot-uploads
