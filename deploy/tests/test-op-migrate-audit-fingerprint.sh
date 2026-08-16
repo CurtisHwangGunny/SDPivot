@@ -26,19 +26,19 @@ if "/* op-probe:core-audit-m44 */" in sql:
             print("invalid")
             sys.exit(0)
     if baseline_done:
-        print("baseline_exact")
+        print("baseline_current_exact")
     elif core_done:
-        print("migration44_exact")
+        print("core_current_exact")
     else:
         print(os.environ["AUDIT_STATE"])
 elif "to_regclass('public.schema_migrations') IS NOT NULL" in sql:
     print("t")
 elif "FROM public.schema_migrations" in sql:
-    print(("63" if core_done else os.environ["CORE_VERSION"]) + ":f")
+    print(("80" if core_done else os.environ["CORE_VERSION"]) + ":f")
 elif "to_regclass('public.sdpivot_schema_migrations') IS NOT NULL" in sql:
     print("t" if baseline_done else "f")
 elif "FROM public.sdpivot_schema_migrations" in sql:
-    print(("17" if sdp_done else "12") + ":f")
+    print(("24" if baseline_done else "12") + ":f")
 elif "/* op-probe:core-v12-fp */" in sql:
     print("complete")
 elif "/* op-probe:sdpivot-flags */" in sql:
@@ -63,7 +63,6 @@ printf '%s\n' "$path" >> "$TEST_STATE/migrate.log"
 case "$path" in
     /migrations/versioned) touch "$TEST_STATE/core-done" ;;
     /migrations/postgres-bootstrap) touch "$TEST_STATE/baseline-done" ;;
-    /migrations/postgres) touch "$TEST_STATE/sdp-done" ;;
 esac
 SH
 chmod 700 "$FAKE_BIN/migrate"

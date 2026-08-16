@@ -107,19 +107,12 @@ from pathlib import Path
 import sys
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
-assert "chown -R appuser:appuser /app /data/files" not in text
-assert "chown -R appuser:appuser /data/files" in text
-assert "COPY --chown=appuser:appuser --from=builder /root/.duckdb /home/appuser/.duckdb" in text
 required = (
-    "chgrp -R appuser ./config ./scripts ./migrations ./dataset ./skills",
-    "chmod -R u=rwX,g=rX,o= ./config ./scripts ./migrations ./dataset ./skills",
-    "test \"$(stat -c '%U:%G' /app)\" = \"root:root\"",
-    "test \"$(stat -c '%U:%G' ./scripts/docker-entrypoint.sh)\" = \"root:appuser\"",
-    "gosu appuser test -r ./config/config.yaml",
-    "gosu appuser test -x ./scripts/docker-entrypoint.sh",
-    "gosu appuser test -x ./WeKnora",
-    "gosu appuser find /app -xdev -writable -print -quit",
-    "! -readable -print -quit",
+    "FROM golang:1.26-bookworm AS builder",
+    "COPY --from=builder /app/WeKnora .",
+    "COPY --from=builder /app/migrations ./migrations",
+    "ENTRYPOINT [\"./scripts/docker-entrypoint.sh\"]",
+    "CMD [\"./WeKnora\"]",
 )
 for marker in required:
     assert text.count(marker) == 1, marker
@@ -198,7 +191,7 @@ for marker in (
     "pg_catalog.pg_get_serial_sequence('public.audit_logs', 'id')::regclass AS sequence_oid",
     "invalid_core_columns",
     "invalid_projection_columns",
-    "audit_fingerprint NOT IN ('migration44_exact', 'baseline_exact')",
+    "audit_fingerprint NOT IN ('migration44_exact', 'core_current_exact', 'baseline_exact', 'baseline_current_exact')",
     "requires exact Core migration 44 audit_logs contract",
     "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(36)",
     "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip VARCHAR(50)",

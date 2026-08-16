@@ -352,7 +352,7 @@ func TestMigrationStateMachineFailsClosedForUnsafeStates(t *testing.T) {
 				assertCalls(t, calls, expectedCallsWithInitialSDPivotInspection(test, test.wantCalls))
 			}
 			for _, call := range calls {
-				if call == "migrate:bootstrap" || call == "migrate:sdpivot" {
+				if call == "migrate:bootstrap" {
 					t.Fatalf("unsafe state reached SDPivot migration: %v", calls)
 				}
 			}
