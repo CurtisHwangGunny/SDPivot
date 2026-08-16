@@ -19,6 +19,8 @@ const (
 	PermissionKnowledgeRead    Permission = "knowledge.read"
 )
 
+const sdpivotAPITokenScopesKey = "sdpivot_api_token_scopes"
+
 var accessRolePermissions = map[types.AccessRole]map[Permission]struct{}{
 	types.AccessRoleSuperAdmin: {
 		PermissionUserRoleAssign: {}, PermissionDepartmentManage: {},
@@ -41,6 +43,27 @@ func HasPermission(role string, permission Permission) bool {
 	return ok
 }
 
+// HasContextPermission applies the caller role and, for API tokens, the
+// token's narrower scope grant.
+func HasContextPermission(c *gin.Context, permission Permission) bool {
+	if !HasPermission(GetRole(c), permission) {
+		return false
+	}
+	if !IsAPITokenAuthenticated(c) {
+		return true
+	}
+	scopes, ok := c.Get(sdpivotAPITokenScopesKey)
+	if !ok {
+		return true
+	}
+	allowed, ok := scopes.(map[Permission]struct{})
+	if !ok {
+		return false
+	}
+	_, ok = allowed[permission]
+	return ok
+}
+
 // RequireRole aborts with 403 if the caller JWT role is not in allowedRoles.
 func RequireRole(c *gin.Context, allowedRoles ...string) bool {
 	role := c.GetString("role")
@@ -57,7 +80,7 @@ func RequireRole(c *gin.Context, allowedRoles ...string) bool {
 // RequirePermission rejects callers whose JWT role lacks permission.
 func RequirePermission(permission Permission) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if HasPermission(GetRole(c), permission) {
+		if HasContextPermission(c, permission) {
 			c.Next()
 			return
 		}
@@ -69,7 +92,7 @@ func RequirePermission(permission Permission) gin.HandlerFunc {
 // RequireSuperAdmin restricts sensitive product operations to super admins.
 func RequireSuperAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if types.NormalizeAccessRole(GetRole(c)) == types.AccessRoleSuperAdmin {
+		if GetAccessRole(c) == types.AccessRoleSuperAdmin {
 			c.Next()
 			return
 		}
@@ -125,18 +148,10 @@ func SDPivotAuth(jwtManager *auth.JWTManager) gin.HandlerFunc {
 			return
 		}
 
-		// Ops-admin tokens are scoped to /ops APIs only. Normal SaaS APIs must not
-		// accept them, otherwise the operations plane and tenant plane are mixed.
-		if claims.Role == "ops_admin" && !isSDPivotOpsPath(c.Request.URL.Path) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "ops admin token is not allowed on tenant APIs"})
-			c.Abort()
-			return
-		}
-
 		// Set context values for downstream handlers
 		c.Set("user_id", claims.UserID)
 		c.Set("tenant_id", claims.TenantID)
-		c.Set("role", claims.Role)
+		c.Set("role", string(types.NormalizeAccessRole(claims.Role)))
 		if claims.DepartmentID != nil {
 			c.Set("department_id", *claims.DepartmentID)
 		}
@@ -211,6 +226,11 @@ func GetRole(c *gin.Context) string {
 		}
 	}
 	return ""
+}
+
+// GetAccessRole returns the normalized product access role for authorization.
+func GetAccessRole(c *gin.Context) types.AccessRole {
+	return types.NormalizeAccessRole(GetRole(c))
 }
 
 // GetDepartmentID extracts department_id from the authenticated user's JWT.

@@ -27,7 +27,7 @@ func newOpsAdminScopeDB(t *testing.T) *gorm.DB {
 		id text PRIMARY KEY, username text NOT NULL, email text NOT NULL,
 		is_active boolean NOT NULL, is_ops_admin boolean NOT NULL,
 		access_role text NOT NULL, department_id text, tenant_id integer NOT NULL,
-		created_at datetime NOT NULL, deleted_at datetime
+		created_at datetime NOT NULL, updated_at datetime, deleted_at datetime
 	)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE smartknora_user_profiles (
 		user_id text PRIMARY KEY, phone text, nickname text
@@ -86,4 +86,46 @@ func TestDepartmentAdminCannotAssignSuperAdmin(t *testing.T) {
 	h.UpdateUserRole(c)
 
 	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+}
+
+func TestDepartmentAdminCannotUpdateUserStatusOutsideScope(t *testing.T) {
+	db := newOpsAdminScopeDB(t)
+	require.NoError(t, db.Exec(`INSERT INTO departments (id, tenant_id, parent_id, name) VALUES
+		('engineering', 7, '', 'Engineering'),
+		('sales', 7, '', 'Sales'),
+		('other', 8, '', 'Other')`).Error)
+	now := time.Now()
+	require.NoError(t, db.Exec(`INSERT INTO users
+		(id, username, email, is_active, is_ops_admin, access_role, department_id, tenant_id, created_at) VALUES
+		('sales-user', 'sales', 'sales@example.com', true, false, 'knowledge_viewer', 'sales', 7, ?),
+		('other-user', 'other', 'other@example.com', true, false, 'knowledge_viewer', 'other', 8, ?)`, now, now).Error)
+
+	for _, userID := range []string{"sales-user", "other-user"} {
+		c, w := newDepartmentAdminContext(http.MethodPut, "/ops/users/"+userID+"/status", "engineering", []byte(`{"is_active":false}`))
+		c.Params = gin.Params{{Key: "id", Value: userID}}
+		NewSDPivotOpsAdminHandler(db, true).UpdateUserStatus(c)
+		require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+		var active bool
+		require.NoError(t, db.Table("users").Select("is_active").Where("id = ?", userID).Scan(&active).Error)
+		require.True(t, active)
+	}
+}
+
+func TestDepartmentAdminCanUpdateUserStatusInChildDepartment(t *testing.T) {
+	db := newOpsAdminScopeDB(t)
+	require.NoError(t, db.Exec(`INSERT INTO departments (id, tenant_id, parent_id, name) VALUES
+		('engineering', 7, '', 'Engineering'),
+		('platform', 7, 'engineering', 'Platform')`).Error)
+	now := time.Now()
+	require.NoError(t, db.Exec(`INSERT INTO users
+		(id, username, email, is_active, is_ops_admin, access_role, department_id, tenant_id, created_at) VALUES
+		('child-user', 'child', 'child@example.com', true, false, 'knowledge_viewer', 'platform', 7, ?)`, now).Error)
+
+	c, w := newDepartmentAdminContext(http.MethodPut, "/ops/users/child-user/status", "engineering", []byte(`{"is_active":false}`))
+	c.Params = gin.Params{{Key: "id", Value: "child-user"}}
+	NewSDPivotOpsAdminHandler(db, true).UpdateUserStatus(c)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var active bool
+	require.NoError(t, db.Table("users").Select("is_active").Where("id = ?", "child-user").Scan(&active).Error)
+	require.False(t, active)
 }

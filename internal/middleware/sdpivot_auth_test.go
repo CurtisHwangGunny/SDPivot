@@ -127,6 +127,36 @@ func TestRequirePermissionEnforcesViewerAndEditorBoundaries(t *testing.T) {
 	}
 }
 
+func TestRequirePermissionIntersectsAPITokenScopes(t *testing.T) {
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("role", string(types.AccessRoleSuperAdmin))
+		c.Set(sdpivotAPITokenAuthenticatedKey, true)
+		c.Set(sdpivotAPITokenScopesKey, map[Permission]struct{}{PermissionKnowledgeRead: {}})
+		c.Next()
+	})
+	r.GET("/read", RequirePermission(PermissionKnowledgeRead), func(c *gin.Context) { c.Status(http.StatusOK) })
+	r.POST("/admin", RequirePermission(PermissionDepartmentManage), func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/read", nil))
+	assert.Equal(t, http.StatusOK, w.Code)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/admin", nil))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestParseTokenScopesSupportsJSONAndCommaSeparatedValues(t *testing.T) {
+	for _, raw := range []string{`["knowledge.read","knowledge.write"]`, `knowledge.read, knowledge.write`} {
+		scopes, err := parseTokenScopes([]byte(raw))
+		require.NoError(t, err)
+		require.Contains(t, scopes, PermissionKnowledgeRead)
+		require.Contains(t, scopes, PermissionKnowledgeWrite)
+	}
+	_, err := parseTokenScopes([]byte(`["unknown"]`))
+	require.Error(t, err)
+}
+
 func TestRequireRoleNormalizesAndRestrictsAccessRoles(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -158,4 +188,20 @@ func TestRequireRoleNormalizesAndRestrictsAccessRoles(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSDPivotAuthNormalizesLegacyOpsAdminToSuperAdmin(t *testing.T) {
+	manager := auth.NewJWTManager(auth.DefaultJWTConfig("legacy-role-secret"))
+	token, _, err := manager.GenerateAccessToken("u1", 1, "ops_admin", nil, false)
+	require.NoError(t, err)
+	r := gin.New()
+	r.GET("/api/v1/sdp/spaces", SDPivotAuth(manager), func(c *gin.Context) {
+		assert.Equal(t, types.AccessRoleSuperAdmin, GetAccessRole(c))
+		c.Status(http.StatusOK)
+	})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sdp/spaces", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
 }

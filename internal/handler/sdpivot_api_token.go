@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/middleware"
+	"github.com/Tencent/WeKnora/internal/utils"
 )
 
 type sdpivotAdminAPIToken struct {
@@ -26,6 +27,8 @@ type sdpivotAdminAPIToken struct {
 	TokenHash  string          `json:"-"`
 	Prefix     string          `json:"prefix"`
 	Scopes     json.RawMessage `json:"scopes" gorm:"type:jsonb"`
+	AllowedIPs    json.RawMessage `json:"allowed_ips" gorm:"column:allowed_ips;type:jsonb"`
+	ScopeEnforced bool            `json:"-" gorm:"column:scope_enforced"`
 	ExpiresAt  *time.Time      `json:"expires_at,omitempty"`
 	LastUsedAt *time.Time      `json:"last_used_at,omitempty"`
 	RevokedAt  *time.Time      `json:"revoked_at,omitempty"`
@@ -52,9 +55,10 @@ func (h *SDPivotAPITokenHandler) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 type sdpivotAPITokenRequest struct {
-	Name      string     `json:"name" binding:"required,max=100"`
-	Scopes    []string   `json:"scopes"`
-	ExpiresAt *time.Time `json:"expires_at"`
+	Name       string     `json:"name" binding:"required,max=100"`
+	Scopes     []string   `json:"scopes"`
+	AllowedIPs []string   `json:"allowed_ips"`
+	ExpiresAt  *time.Time `json:"expires_at"`
 }
 
 func generateSDPivotAPIToken() (string, string, string, error) {
@@ -77,20 +81,31 @@ func (h *SDPivotAPITokenHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "expires_at must be in the future"})
 		return
 	}
+	normalizedScopes, err := normalizeAPITokenScopes(req.Scopes)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	allowedIPs, err := utils.NormalizeIPWhitelist(req.AllowedIPs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid allowed_ips: " + err.Error()})
+		return
+	}
 	raw, prefix, hash, err := generateSDPivotAPIToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate api token"})
 		return
 	}
-	scopes, err := json.Marshal(req.Scopes)
+	scopes, err := json.Marshal(normalizedScopes)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid scopes"})
 		return
 	}
+	allowedIPsJSON, _ := json.Marshal(allowedIPs)
 	now := time.Now()
 	record := sdpivotAdminAPIToken{
 		ID: uuid.NewString(), UserID: middleware.GetUserID(c), TenantID: middleware.GetTenantID(c),
-		Name: strings.TrimSpace(req.Name), TokenHash: hash, Prefix: prefix, Scopes: scopes,
+		Name: strings.TrimSpace(req.Name), TokenHash: hash, Prefix: prefix, Scopes: scopes, AllowedIPs: allowedIPsJSON, ScopeEnforced: true,
 		ExpiresAt: req.ExpiresAt, CreatedBy: middleware.GetUserID(c), CreatedAt: now, UpdatedAt: now,
 	}
 	if err := middleware.TenantDB(c, h.db).Create(&record).Error; err != nil {
@@ -111,17 +126,29 @@ func (h *SDPivotAPITokenHandler) List(c *gin.Context) {
 
 func (h *SDPivotAPITokenHandler) Update(c *gin.Context) {
 	var req struct {
-		Name   string   `json:"name" binding:"required,max=100"`
-		Scopes []string `json:"scopes"`
+		Name       string   `json:"name" binding:"required,max=100"`
+		Scopes     []string `json:"scopes"`
+		AllowedIPs []string `json:"allowed_ips"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	scopes, _ := json.Marshal(req.Scopes)
+	normalizedScopes, err := normalizeAPITokenScopes(req.Scopes)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	allowedIPs, err := utils.NormalizeIPWhitelist(req.AllowedIPs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid allowed_ips: " + err.Error()})
+		return
+	}
+	scopes, _ := json.Marshal(normalizedScopes)
+	allowedIPsJSON, _ := json.Marshal(allowedIPs)
 	result := middleware.TenantDB(c, h.db).Model(&sdpivotAdminAPIToken{}).
 		Where("id = ? AND tenant_id = ? AND revoked_at IS NULL", c.Param("id"), middleware.GetTenantID(c)).
-		Updates(map[string]interface{}{"name": strings.TrimSpace(req.Name), "scopes": scopes, "updated_at": time.Now()})
+		Updates(map[string]interface{}{"name": strings.TrimSpace(req.Name), "scopes": scopes, "allowed_ips": allowedIPsJSON, "scope_enforced": true, "updated_at": time.Now()})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update api token"})
 		return
@@ -131,6 +158,25 @@ func (h *SDPivotAPITokenHandler) Update(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "api token updated"})
+}
+
+func normalizeAPITokenScopes(scopes []string) ([]string, error) {
+	out := make([]string, 0, len(scopes))
+	seen := make(map[string]struct{}, len(scopes))
+	for _, scope := range scopes {
+		scope = strings.TrimSpace(scope)
+		switch middleware.Permission(scope) {
+		case middleware.PermissionUserRoleAssign, middleware.PermissionDepartmentManage, middleware.PermissionKnowledgeWrite, middleware.PermissionKnowledgeRead:
+		default:
+			return nil, errors.New("invalid scope: " + scope)
+		}
+		if _, ok := seen[scope]; ok {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, scope)
+	}
+	return out, nil
 }
 
 func (h *SDPivotAPITokenHandler) Revoke(c *gin.Context) {

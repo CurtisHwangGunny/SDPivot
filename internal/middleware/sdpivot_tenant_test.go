@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -88,6 +90,14 @@ func TestConfigureSDPivotTenantContextPrimarySuccess(t *testing.T) {
 		t.Fatalf("configure primary context: %v", err)
 	}
 	requireMockExpectations(t, mock)
+}
+
+func TestGetAccessRoleNormalizesLegacyOpsAdminForTenantContext(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+	c.Set("role", "ops_admin")
+	if got := GetAccessRole(c); got != types.AccessRoleSuperAdmin {
+		t.Fatalf("access role = %q, want %q", got, types.AccessRoleSuperAdmin)
+	}
 }
 
 func TestConfigureSDPivotTenantContextRecoversBeforeFallback(t *testing.T) {

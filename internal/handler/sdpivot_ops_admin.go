@@ -90,7 +90,7 @@ func (h *SDPivotOpsAdminHandler) RegisterPublicOpsRoutes(rg *gin.RouterGroup) {
 
 // requireOpsAdmin checks if current user has ops_admin role.
 func requireOpsAdmin(c *gin.Context) bool {
-	return middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign)
+	return middleware.HasContextPermission(c, middleware.PermissionUserRoleAssign)
 }
 
 // Deprecated: Use middleware.RequireRole instead.
@@ -154,6 +154,42 @@ func (h *SDPivotOpsAdminHandler) departmentAdminScope(c *gin.Context) ([]string,
 		return nil, false
 	}
 	return ids, true
+}
+
+func userInDepartmentScope(user *types.User, tenantID uint64, departmentIDs []string) bool {
+	if user == nil || user.TenantID != tenantID || user.DepartmentID == nil {
+		return false
+	}
+	for _, departmentID := range departmentIDs {
+		if *user.DepartmentID == departmentID {
+			return true
+		}
+	}
+	return false
+}
+
+func countActiveSuperAdmins(db *gorm.DB) (int64, error) {
+	var count int64
+	err := db.Model(&types.User{}).
+		Where("access_role = ? AND is_active = ?", types.AccessRoleSuperAdmin, true).
+		Count(&count).Error
+	return count, err
+}
+
+func rejectLastSuperAdminDowngrade(c *gin.Context, db *gorm.DB, user *types.User, newRole types.AccessRole) bool {
+	if user.AccessRole != types.AccessRoleSuperAdmin || !user.IsActive || newRole == types.AccessRoleSuperAdmin {
+		return false
+	}
+	count, err := countActiveSuperAdmins(db)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count active super admins"})
+		return true
+	}
+	if count <= 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "系统至少保留一个 super_admin"})
+		return true
+	}
+	return false
 }
 
 // ── Dashboard ──────────────────────────────────────────────
@@ -380,14 +416,14 @@ func (h *SDPivotOpsAdminHandler) UpdateUserRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "role must be super_admin, department_admin, knowledge_editor, or knowledge_viewer"})
 		return
 	}
-	callerRole := types.NormalizeAccessRole(middleware.GetRole(c))
+	callerRole := middleware.GetAccessRole(c)
 	if callerRole == types.AccessRoleDepartmentAdmin && req.Role != types.AccessRoleKnowledgeEditor && req.Role != types.AccessRoleKnowledgeViewer {
 		c.JSON(http.StatusForbidden, gin.H{"error": "department admins may only assign knowledge_editor or knowledge_viewer"})
 		return
 	}
 
 	var user types.User
-	if err := h.db.Select("id, tenant_id, department_id").Where("id = ?", userID).First(&user).Error; err != nil {
+	if err := h.db.Select("id, tenant_id, department_id, access_role, is_active").Where("id = ?", userID).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		} else {
@@ -400,20 +436,13 @@ func (h *SDPivotOpsAdminHandler) UpdateUserRole(c *gin.Context) {
 		if !ok {
 			return
 		}
-		inScope := user.TenantID == middleware.GetTenantID(c) && user.DepartmentID != nil
-		if inScope {
-			inScope = false
-			for _, departmentID := range departmentIDs {
-				if *user.DepartmentID == departmentID {
-					inScope = true
-					break
-				}
-			}
-		}
-		if !inScope {
+		if !userInDepartmentScope(&user, middleware.GetTenantID(c), departmentIDs) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "user is outside the department scope"})
 			return
 		}
+	}
+	if rejectLastSuperAdminDowngrade(c, h.db, &user, req.Role) {
+		return
 	}
 
 	var departmentID *string
@@ -465,32 +494,41 @@ func (h *SDPivotOpsAdminHandler) UpdateUserStatus(c *gin.Context) {
 		return
 	}
 
-	if !req.IsActive {
-		var user types.User
-		if err := h.db.Select("access_role").Where("id = ?", userID).First(&user).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load user"})
-			}
+	var user types.User
+	if err := h.db.Select("id, tenant_id, department_id, access_role, is_active").Where("id = ?", userID).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load user"})
+		}
+		return
+	}
+	if middleware.GetAccessRole(c) == types.AccessRoleDepartmentAdmin {
+		departmentIDs, ok := h.departmentAdminScope(c)
+		if !ok {
 			return
 		}
-		if user.AccessRole == types.AccessRoleSuperAdmin {
-			var activeSuperAdmins int64
-			if err := h.db.Model(&types.User{}).
-				Where("access_role = ? AND is_active = ?", types.AccessRoleSuperAdmin, true).
-				Count(&activeSuperAdmins).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count active super admins"})
-				return
-			}
-			if activeSuperAdmins <= 1 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "不允许禁用最后一个超级管理员"})
-				return
-			}
+		if !userInDepartmentScope(&user, middleware.GetTenantID(c), departmentIDs) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "user is outside the department scope"})
+			return
+		}
+	}
+	if !req.IsActive && user.IsActive && user.AccessRole == types.AccessRoleSuperAdmin {
+		activeSuperAdmins, err := countActiveSuperAdmins(h.db)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to count active super admins"})
+			return
+		}
+		if activeSuperAdmins <= 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "不允许禁用最后一个超级管理员"})
+			return
 		}
 	}
 
-	if err := h.db.Table("users").Where("id = ?", userID).Update("is_active", req.IsActive).Error; err != nil {
+	if err := h.db.Model(&types.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"is_active":  req.IsActive,
+		"updated_at": time.Now(),
+	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user status"})
 		return
 	}

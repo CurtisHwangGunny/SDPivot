@@ -50,7 +50,7 @@ func (h *SDPivotSpaceHandler) RegisterRoutes(rg *gin.RouterGroup) {
 // CreateSpace creates a new knowledge space.
 func (h *SDPivotSpaceHandler) CreateSpace(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
-	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionKnowledgeWrite) {
+	if !middleware.HasContextPermission(c, middleware.PermissionKnowledgeWrite) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient permission", "permission": middleware.PermissionKnowledgeWrite})
 		return
 	}
@@ -128,7 +128,7 @@ func (h *SDPivotSpaceHandler) ListSpaces(c *gin.Context) {
 		tenantDB,
 		tenantID,
 		userID,
-		middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign),
+		middleware.HasContextPermission(c, middleware.PermissionUserRoleAssign),
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list spaces"})

@@ -171,7 +171,7 @@ func (h *SDPivotOpsHandler) OpsRefreshToken(c *gin.Context) {
 // OpsChangePassword handles forced password change (PRD 1.1.4).
 func (h *SDPivotOpsHandler) OpsChangePassword(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
+	if !middleware.HasContextPermission(c, middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "ops admin access required"})
 		return
 	}
@@ -241,7 +241,7 @@ func (h *SDPivotOpsHandler) OpsChangePassword(c *gin.Context) {
 // CheckFirstLogin checks if ops admin needs to change password.
 func (h *SDPivotOpsHandler) CheckFirstLogin(c *gin.Context) {
 	userID := middleware.GetUserID(c)
-	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
+	if !middleware.HasContextPermission(c, middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "ops admin access required"})
 		return
 	}

@@ -456,6 +456,9 @@ func (h *SDPivotAdminUsersHandler) UpdateUserRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "department_id is required for department_admin"})
 		return
 	}
+	if rejectLastSuperAdminDowngrade(c, db, &user, req.Role) {
+		return
+	}
 	oldRole := user.AccessRole
 	if err := db.Model(&types.User{}).Where("id = ? AND tenant_id = ?", user.ID, tenantID).Updates(map[string]interface{}{
 		"access_role": req.Role, "department_id": departmentID, "is_ops_admin": req.Role == types.AccessRoleSuperAdmin, "updated_at": time.Now(),

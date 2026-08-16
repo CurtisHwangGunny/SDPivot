@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -54,7 +55,7 @@ func SDPivotTenantContext(baseDB *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		isOpsAdmin := GetRole(c) == "ops_admin"
+		isOpsAdmin := GetAccessRole(c) == types.AccessRoleSuperAdmin
 		tx := baseDB.WithContext(c.Request.Context()).Begin()
 		if tx.Error != nil {
 			c.JSON(500, gin.H{"error": "failed to start tenant database transaction"})

@@ -136,9 +136,9 @@ func TestCannotDisableLastSuperAdmin(t *testing.T) {
 	db, mock := newOpsAdminSQLMock(t)
 	h := NewSDPivotOpsAdminHandler(db, true)
 
-	mock.ExpectQuery(`SELECT "access_role" FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT id, tenant_id, department_id, access_role, is_active FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
 		WithArgs("last-admin", 1).
-		WillReturnRows(sqlmock.NewRows([]string{"access_role"}).AddRow(types.AccessRoleSuperAdmin))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "department_id", "access_role", "is_active"}).AddRow("last-admin", 1, nil, types.AccessRoleSuperAdmin, true))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE \(access_role = \$1 AND is_active = \$2\) AND "users"\."deleted_at" IS NULL`).
 		WithArgs(types.AccessRoleSuperAdmin, true).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
@@ -158,6 +158,37 @@ func TestCannotDisableLastSuperAdmin(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body["error"] != "不允许禁用最后一个超级管理员" {
+		t.Fatalf("unexpected error: %q", body["error"])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("database expectations: %v", err)
+	}
+}
+
+func TestCannotDowngradeLastSuperAdmin(t *testing.T) {
+	db, mock := newOpsAdminSQLMock(t)
+	h := NewSDPivotOpsAdminHandler(db, true)
+	mock.ExpectQuery(`SELECT id, tenant_id, department_id, access_role, is_active FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"\."id" LIMIT \$2`).
+		WithArgs("last-admin", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "department_id", "access_role", "is_active"}).AddRow("last-admin", 1, nil, types.AccessRoleSuperAdmin, true))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE \(access_role = \$1 AND is_active = \$2\) AND "users"\."deleted_at" IS NULL`).
+		WithArgs(types.AccessRoleSuperAdmin, true).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	c, w := newOpsAdminContext(http.MethodPut, "/ops/users/last-admin/role")
+	c.Params = gin.Params{{Key: "id", Value: "last-admin"}}
+	c.Request = httptest.NewRequest(http.MethodPut, "/ops/users/last-admin/role", bytes.NewBufferString(`{"role":"knowledge_viewer"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.UpdateUserRole(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error"] != "系统至少保留一个 super_admin" {
 		t.Fatalf("unexpected error: %q", body["error"])
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

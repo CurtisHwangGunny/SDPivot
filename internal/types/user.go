@@ -153,15 +153,21 @@ type AuthToken struct {
 // APIToken is a long-lived, user-scoped credential intended for CLI and
 // automation use. TokenHash is persisted instead of the raw credential.
 type APIToken struct {
-	ID         string     `json:"id" gorm:"type:varchar(36);primaryKey"`
-	UserID     string     `json:"user_id" gorm:"type:varchar(36);index;not null"`
-	TenantID   uint64     `json:"tenant_id" gorm:"index;not null"`
-	Name       string     `json:"name" gorm:"type:varchar(100);not null"`
-	TokenHash  string     `json:"-" gorm:"type:char(64);uniqueIndex;not null"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
-	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	RevokedAt  *time.Time `json:"revoked_at,omitempty" gorm:"index"`
+	ID         string          `json:"id" gorm:"type:varchar(36);primaryKey"`
+	UserID     string          `json:"user_id" gorm:"type:varchar(36);index;not null"`
+	TenantID   uint64          `json:"tenant_id" gorm:"index;not null"`
+	Name       string          `json:"name" gorm:"type:varchar(100);not null"`
+	TokenHash  string          `json:"-" gorm:"type:char(64);uniqueIndex;not null"`
+	Prefix     string          `json:"prefix,omitempty" gorm:"type:varchar(6);not null;default:''"`
+	Scopes     json.RawMessage `json:"scopes,omitempty" gorm:"type:jsonb;not null;default:'[]'"`
+	AllowedIPs json.RawMessage `json:"allowed_ips,omitempty" gorm:"column:allowed_ips;type:jsonb;not null;default:'[]'"`
+	ScopeEnforced bool         `json:"-" gorm:"column:scope_enforced;not null;default:false"`
+	CreatedBy  string          `json:"created_by,omitempty" gorm:"type:varchar(36)"`
+	LastUsedAt *time.Time      `json:"last_used_at,omitempty"`
+	ExpiresAt  *time.Time      `json:"expires_at,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+	RevokedAt  *time.Time      `json:"revoked_at,omitempty" gorm:"index"`
 }
 
 // CreateAPITokenRequest configures a new long-lived API token.

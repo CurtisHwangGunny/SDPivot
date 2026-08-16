@@ -469,7 +469,7 @@ func (h *SDPivotQAHandler) DeleteSession(c *gin.Context) {
 // ListAllMembers lists all members across organizations (admin view).
 func (h *SDPivotQAHandler) ListAllMembers(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
-	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
+	if !middleware.HasContextPermission(c, middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
 		return
 	}
@@ -486,7 +486,7 @@ func (h *SDPivotQAHandler) ListAllMembers(c *gin.Context) {
 // GetAdminStats returns admin dashboard statistics.
 func (h *SDPivotQAHandler) GetAdminStats(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
-	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
+	if !middleware.HasContextPermission(c, middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
 		return
 	}
@@ -514,7 +514,7 @@ func (h *SDPivotQAHandler) GetAdminStats(c *gin.Context) {
 // ListAllSpaces lists all spaces in the tenant (admin view).
 func (h *SDPivotQAHandler) ListAllSpaces(c *gin.Context) {
 	tenantDB := middleware.TenantDB(c, h.db)
-	if !middleware.HasPermission(middleware.GetRole(c), middleware.PermissionUserRoleAssign) {
+	if !middleware.HasContextPermission(c, middleware.PermissionUserRoleAssign) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
 		return
 	}
