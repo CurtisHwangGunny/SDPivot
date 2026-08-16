@@ -1,4 +1,9 @@
 -- OP RBAC v2 compatibility layer on the official v0.7.2 schema.
+-- The smoke PostgreSQL image provides pgcrypto but not uuid-ossp.  The
+-- official core chain uses uuid_generate_v4(), so make this compatibility
+-- migration self-sufficient instead of relying on image initialization.
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 ALTER TABLE users ADD COLUMN IF NOT EXISTS access_role VARCHAR(32) NOT NULL DEFAULT 'knowledge_viewer';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id VARCHAR(36);
 CREATE INDEX IF NOT EXISTS idx_users_access_role ON users(access_role);

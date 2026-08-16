@@ -265,14 +265,14 @@ BEGIN
                 ('ip', 19, 'character varying'::regtype, 54)
         ), expected_current(attname, attnum, atttypid, atttypmod) AS (
             VALUES
-                ('user_id', 14, 'character varying'::regtype, 40),
-                ('resource_type', 15, 'character varying'::regtype, 36),
-                ('resource_id', 16, 'character varying'::regtype, 68),
-                ('ip_address', 17, 'character varying'::regtype, 49)
+                ('scope_type', 14, 'character varying'::regtype, 36),
+                ('scope_id', 15, 'character varying'::regtype, 68)
         ), expected_current_projection(attname, attnum, atttypid, atttypmod) AS (
             VALUES
-                ('username', 18, 'character varying'::regtype, 104),
-                ('resource', 19, 'character varying'::regtype, 104),
+                ('user_id', 16, 'character varying'::regtype, 40),
+                ('username', 17, 'character varying'::regtype, 104),
+                ('resource', 18, 'character varying'::regtype, 104),
+                ('resource_id', 19, 'character varying'::regtype, 68),
                 ('detail', 20, 'text'::regtype, -1),
                 ('ip', 21, 'character varying'::regtype, 54)
         ), actual_columns AS (
@@ -402,10 +402,10 @@ BEGIN
               OR EXISTS (SELECT 1 FROM invalid_sequence)
               OR EXISTS (SELECT 1 FROM invalid_primary_key)
               OR EXISTS (SELECT 1 FROM invalid_indexes)
-              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 17, 19, 21)
+              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 15, 17, 19, 21)
             THEN 'invalid'
             WHEN (SELECT count(*) FROM actual_columns) = 13 THEN 'migration44_exact'
-            WHEN (SELECT count(*) FROM actual_columns) = 17
+            WHEN (SELECT count(*) FROM actual_columns) = 15
               AND NOT EXISTS (SELECT 1 FROM invalid_current_columns) THEN 'core_current_exact'
             WHEN (SELECT count(*) FROM actual_columns) = 19
               AND NOT EXISTS (SELECT 1 FROM invalid_projection_columns) THEN 'baseline_exact'
