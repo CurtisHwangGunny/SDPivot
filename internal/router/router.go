@@ -28,66 +28,68 @@ import (
 type RouterParams struct {
 	dig.In
 
-	Config                       *config.Config
-	FileService                  interfaces.FileService
-	UserService                  interfaces.UserService
-	KBService                    interfaces.KnowledgeBaseService
-	KnowledgeService             interfaces.KnowledgeService
-	ChunkService                 interfaces.ChunkService
-	SessionService               interfaces.SessionService
-	MessageService               interfaces.MessageService
-	ModelService                 interfaces.ModelService
-	EvaluationService            interfaces.EvaluationService
-	KBShareService               interfaces.KBShareService
-	AgentShareService            interfaces.AgentShareService
-	KBHandler                    *handler.KnowledgeBaseHandler
-	KnowledgeHandler             *handler.KnowledgeHandler
-	TenantHandler                *handler.TenantHandler
-	TenantService                interfaces.TenantService
-	TenantAPIKeyService          interfaces.TenantAPIKeyService
-	TenantMemberService          interfaces.TenantMemberService
-	TenantMemberHandler          *handler.TenantMemberHandler
-	TenantInvitationHandler      *handler.TenantInvitationHandler
-	AuditLogHandler              *handler.AuditLogHandler
-	AuditLogService              interfaces.AuditLogService
-	ChunkHandler                 *handler.ChunkHandler
-	SessionHandler               *session.Handler
-	MessageHandler               *handler.MessageHandler
-	MessageSuggestionHandler     *handler.MessageSuggestionHandler
-	ModelHandler                 *handler.ModelHandler
-	ModelCredentialsHandler      *handler.ModelCredentialsHandler
-	EvaluationHandler            *handler.EvaluationHandler
-	AuthHandler                  *handler.AuthHandler
-	InitializationHandler        *handler.InitializationHandler
-	SystemHandler                *handler.SystemHandler
-	MCPServiceHandler            *handler.MCPServiceHandler
-	MCPCredentialsHandler        *handler.MCPCredentialsHandler
-	MCPOAuthHandler              *handler.MCPOAuthHandler
-	WebSearchHandler             *handler.WebSearchHandler
-	WebSearchProviderHandler     *handler.WebSearchProviderHandler
-	WebSearchCredentialsHandler  *handler.WebSearchProviderCredentialsHandler
-	VectorStoreHandler           *handler.VectorStoreHandler
-	StorageBackendHandler        *handler.StorageBackendHandler
-	StorageBackendResolver       interfaces.StorageBackendResolver
-	ResourceCatalog              interfaces.ResourceCatalog
-	FAQHandler                   *handler.FAQHandler
-	TagHandler                   *handler.TagHandler
-	SDPivotAdminHandler          *handler.SDPivotAdminHandler
-	SDPivotTagAutoHandler        *handler.SDPivotTagAutoHandler
-	SDPivotTagDimensionHandler   *handler.SDPivotTagDimensionHandler
-	SDPivotTagFeedbackHandler    *handler.SDPivotTagFeedbackHandler
-	CustomAgentHandler           *handler.CustomAgentHandler
-	UserFavoriteHandler          *handler.UserResourceFavoriteHandler
-	SkillHandler                 *handler.SkillHandler
-	OrganizationHandler          *handler.OrganizationHandler
-	IMHandler                    *handler.IMHandler
-	EmbedChannelHandler          *handler.EmbedChannelHandler
-	EmbedChannelService          interfaces.EmbedChannelService
-	RedisClient                  *redis.Client
-	DataSourceHandler            *handler.DataSourceHandler
-	DataSourceCredentialsHandler *handler.DataSourceCredentialsHandler
-	WeKnoraCloudHandler          *handler.WeKnoraCloudHandler
-	WikiPageHandler              *handler.WikiPageHandler
+	Config                          *config.Config
+	FileService                     interfaces.FileService
+	UserService                     interfaces.UserService
+	KBService                       interfaces.KnowledgeBaseService
+	KnowledgeService                interfaces.KnowledgeService
+	ChunkService                    interfaces.ChunkService
+	SessionService                  interfaces.SessionService
+	MessageService                  interfaces.MessageService
+	ModelService                    interfaces.ModelService
+	EvaluationService               interfaces.EvaluationService
+	KBShareService                  interfaces.KBShareService
+	AgentShareService               interfaces.AgentShareService
+	KBHandler                       *handler.KnowledgeBaseHandler
+	KnowledgeHandler                *handler.KnowledgeHandler
+	TenantHandler                   *handler.TenantHandler
+	TenantService                   interfaces.TenantService
+	TenantAPIKeyService             interfaces.TenantAPIKeyService
+	TenantMemberService             interfaces.TenantMemberService
+	TenantMemberHandler             *handler.TenantMemberHandler
+	TenantInvitationHandler         *handler.TenantInvitationHandler
+	AuditLogHandler                 *handler.AuditLogHandler
+	AuditLogService                 interfaces.AuditLogService
+	ChunkHandler                    *handler.ChunkHandler
+	SessionHandler                  *session.Handler
+	MessageHandler                  *handler.MessageHandler
+	MessageSuggestionHandler        *handler.MessageSuggestionHandler
+	ModelHandler                    *handler.ModelHandler
+	ModelCredentialsHandler         *handler.ModelCredentialsHandler
+	EvaluationHandler               *handler.EvaluationHandler
+	AuthHandler                     *handler.AuthHandler
+	InitializationHandler           *handler.InitializationHandler
+	SystemHandler                   *handler.SystemHandler
+	MCPServiceHandler               *handler.MCPServiceHandler
+	MCPCredentialsHandler           *handler.MCPCredentialsHandler
+	MCPOAuthHandler                 *handler.MCPOAuthHandler
+	WebSearchHandler                *handler.WebSearchHandler
+	WebSearchProviderHandler        *handler.WebSearchProviderHandler
+	WebSearchCredentialsHandler     *handler.WebSearchProviderCredentialsHandler
+	VectorStoreHandler              *handler.VectorStoreHandler
+	StorageBackendHandler           *handler.StorageBackendHandler
+	StorageBackendResolver          interfaces.StorageBackendResolver
+	ResourceCatalog                 interfaces.ResourceCatalog
+	FAQHandler                      *handler.FAQHandler
+	TagHandler                      *handler.TagHandler
+	SDPivotAdminHandler             *handler.SDPivotAdminHandler
+	SDPivotTagAutoHandler           *handler.SDPivotTagAutoHandler
+	SDPivotTagDimensionHandler      *handler.SDPivotTagDimensionHandler
+	SDPivotTagFeedbackHandler       *handler.SDPivotTagFeedbackHandler
+	CustomAgentHandler              *handler.CustomAgentHandler
+	UserFavoriteHandler             *handler.UserResourceFavoriteHandler
+	SkillHandler                    *handler.SkillHandler
+	OrganizationHandler             *handler.OrganizationHandler
+	IMHandler                       *handler.IMHandler
+	EmbedChannelHandler             *handler.EmbedChannelHandler
+	EmbedChannelService             interfaces.EmbedChannelService
+	RedisClient                     *redis.Client
+	DataSourceHandler               *handler.DataSourceHandler
+	DataSourceCredentialsHandler    *handler.DataSourceCredentialsHandler
+	WeKnoraCloudHandler             *handler.WeKnoraCloudHandler
+	WikiPageHandler                 *handler.WikiPageHandler
+	SDPivotWritingHandler           *handler.SDPivotWritingHandler
+	SDPivotWritingManagementHandler *handler.SDPivotWritingManagementHandler
 }
 
 // NewRouter 创建新的路由
@@ -271,6 +273,15 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterDataSourceRoutes(v1, params.DataSourceHandler, params.DataSourceCredentialsHandler, rbacGuards)
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler, rbacGuards)
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
+		if params.SDPivotWritingHandler != nil {
+			writing := v1.Group("/sdp")
+			writing.Use(rbacGuards.Contributor())
+			params.SDPivotWritingHandler.RegisterRoutes(writing)
+			if params.SDPivotWritingManagementHandler != nil {
+				params.SDPivotWritingManagementHandler.RegisterRoutes(writing)
+				params.SDPivotWritingManagementHandler.RegisterTieredTemplateRoutes(writing)
+			}
+		}
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
 		// Fail fast if any declared API-key policy points at a route

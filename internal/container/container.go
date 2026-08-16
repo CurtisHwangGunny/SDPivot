@@ -381,6 +381,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewDataSourceHandler))
 	// Wiki page handler
 	must(container.Provide(handler.NewWikiPageHandler))
+	// SDPivot writing handlers
+	must(container.Provide(handler.NewSDPivotWritingHandler))
+	must(container.Provide(handler.NewSDPivotWritingManagementHandler))
 	// IM integration
 	logger.Debugf(ctx, "[Container] Registering IM integration...")
 	must(container.Provide(imPkg.NewService))
