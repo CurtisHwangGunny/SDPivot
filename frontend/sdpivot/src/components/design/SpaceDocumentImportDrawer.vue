@@ -6,7 +6,7 @@
           <div>
             <p class="eyebrow">Space / Document Import</p>
             <h2 id="space-import-title">导入文档</h2>
-            <p class="subtle">文件加入队列后，按状态完成上传、解析、标签确认和入库。</p>
+            <p class="subtle">文件加入队列并确认标签后，系统将依次完成上传、解析和入库。</p>
           </div>
           <button class="close" type="button" aria-label="关闭导入文档" @click="close">×</button>
         </header>
@@ -27,11 +27,16 @@
                 <div>
                   <div class="upload-icon" aria-hidden="true">↑</div>
                   <h3>拖入文件或点击选择</h3>
-                  <p class="subtle">PDF、Word、Excel、Markdown、CSV</p>
+                  <p class="subtle">PDF、Word、Excel、PowerPoint、Markdown、TXT、CSV</p>
                   <button class="btn primary select-file" type="button" @click.stop="triggerFileInput">选择文件</button>
-                  <input ref="fileInput" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.csv,.txt,.png,.jpg,.jpeg" hidden @change="handleFileSelect" />
+                  <input ref="fileInput" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.csv,.txt" hidden @change="handleFileSelect" />
                 </div>
               </div>
+              <label class="tag-field">
+                <span>文档标签（选填）</span>
+                <input v-model.trim="confirmedTags" type="text" placeholder="例如：合同, 客户案例" :disabled="uploading">
+                <small>标签将应用到本次尚未上传的文件，开始导入即视为确认。</small>
+              </label>
             </div>
           </section>
 
@@ -58,9 +63,10 @@
                 <div class="file-actions">
                   <button v-if="file.state === 'waiting'" class="btn ghost row-button" type="button" @click="removeFile(index)">移除</button>
                   <button v-else-if="file.state === 'uploading'" class="btn ghost row-button" type="button" @click="cancelUpload(file)">取消</button>
-                  <button v-else-if="file.state === 'parsing'" class="btn ghost row-button" type="button" @click="cancelParsing(file)">取消</button>
-                  <button v-else-if="file.state === 'completed'" class="btn ghost row-button" type="button" @click="viewFile">查看</button>
-                  <button v-else class="btn secondary row-button" type="button" :disabled="file.retrying || file.oversized" @click="retryFile(file)">{{ file.retrying ? '重试中' : '重试' }}</button>
+                  <button v-else-if="file.state === 'parsing'" class="btn ghost row-button" type="button" @click="stopWaiting(file)">停止等待</button>
+                  <button v-else-if="file.state === 'completed'" class="btn ghost row-button" type="button" @click="viewFile(file)">查看</button>
+                  <button v-else-if="file.failureKind === 'duplicate' && file.documentId" class="btn secondary row-button" type="button" @click="viewFile(file)">查看已有</button>
+                  <button v-else class="btn secondary row-button" type="button" :disabled="file.retrying || file.oversized" @click="retryFile(file)">{{ file.retrying ? '处理中' : retryText(file) }}</button>
                 </div>
               </div>
               <SdpEmptyState v-if="!fileQueue.length" variant="compact" title="队列为空" description="选择或拖入文件后，将在此显示导入进度。" />
@@ -69,7 +75,7 @@
 
           <div v-if="failed > 0" class="notice danger" role="alert">
             <div class="notice-mark">!</div>
-            <div><strong>{{ failed }} 个文件需要处理</strong><br>可修正文件格式后重试，或移除失败文件继续完成其他导入。</div>
+             <div><strong>{{ failed }} 个文件需要处理</strong><br>可根据失败原因重试；如提示文档已存在，可直接查看已有文档。</div>
           </div>
         </div>
 
@@ -79,7 +85,7 @@
           </span>
           <div class="actions">
             <button class="btn secondary" type="button" @click="close">关闭</button>
-            <button class="btn primary" type="button" :disabled="!canStartImport" @click="startImport">开始导入</button>
+            <button class="btn primary" type="button" :disabled="!canStartImport" @click="startImport">{{ uploading ? '导入中…' : '开始导入' }}</button>
           </div>
         </footer>
       </aside>
@@ -107,6 +113,7 @@ const emit = defineEmits<{
 const router = useRouter();
 const fileInput = ref<HTMLInputElement | null>(null);
 type QueueState = 'waiting' | 'uploading' | 'parsing' | 'completed' | 'failed';
+type FailureKind = 'validation' | 'upload' | 'parse' | 'status' | 'duplicate';
 interface QueueItem {
   key: string;
   name: string;
@@ -120,10 +127,12 @@ interface QueueItem {
   retrying: boolean;
   oversized?: boolean;
   notified?: boolean;
+  failureKind?: FailureKind;
 }
 
 const fileQueue = reactive<QueueItem[]>([]);
 const uploading = ref(false);
+const confirmedTags = ref('');
 const pollTimers = new Map<string, number>();
 const uploadControllers = new Map<string, AbortController>();
 
@@ -137,7 +146,7 @@ const canStartImport = computed(() => spaceIdAvailable.value && hasPendingFiles.
 
 function fileTypeIcon(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() || '';
-  const map: Record<string, string> = { pdf: 'PDF', doc: 'DOC', docx: 'DOC', xls: 'XLS', xlsx: 'XLS', ppt: 'FILE', pptx: 'FILE', md: 'MD', csv: 'CSV', txt: 'TXT', png: 'IMG', jpg: 'IMG', jpeg: 'IMG' };
+  const map: Record<string, string> = { pdf: 'PDF', doc: 'DOC', docx: 'DOC', xls: 'XLS', xlsx: 'XLS', ppt: 'PPT', pptx: 'PPT', md: 'MD', csv: 'CSV', txt: 'TXT' };
   return map[ext] || 'FILE';
 }
 
@@ -150,10 +159,13 @@ function addFiles(files: FileList | File[]) {
   const selected = Array.from(files);
   if (selected.length > available) MessagePlugin.warning(`一次最多导入 20 个文件，已保留前 ${available} 个`);
   for (const file of selected.slice(0, available)) {
-    if (fileQueue.some(item => item.file.name === file.name && item.file.size === file.size)) continue;
+    if (fileQueue.some(item => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified)) {
+      MessagePlugin.warning(`${file.name} 已在队列中`);
+      continue;
+    }
     const size = formatFileSize(file.size);
     if (file.size > 50 * 1024 * 1024) {
-      fileQueue.push({ key: fileKey(file), name: file.name, size, meta: '文件超过 50MB 限制', progress: 0, state: 'failed', file, started: true, retrying: false, oversized: true });
+      fileQueue.push({ key: fileKey(file), name: file.name, size, meta: '文件超过 50MB 限制', progress: 0, state: 'failed', file, started: true, retrying: false, oversized: true, failureKind: 'validation' });
       continue;
     }
     fileQueue.push({ key: fileKey(file), name: file.name, size, meta: '等待开始导入', progress: 0, state: 'waiting', file, started: false, retrying: false });
@@ -212,20 +224,29 @@ function cancelUpload(item: QueueItem) {
   resetToWaiting(item);
 }
 
-function cancelParsing(item: QueueItem) {
+function stopWaiting(item: QueueItem) {
   stopPolling(item.key);
-  resetToWaiting(item);
+  const index = fileQueue.indexOf(item);
+  if (index >= 0) fileQueue.splice(index, 1);
+  MessagePlugin.info(`${item.name} 已移出队列，服务器解析任务可能仍在继续`);
 }
 
 function resetToWaiting(item: QueueItem) {
   item.state = 'waiting';
   item.progress = 0;
   item.meta = '等待开始导入';
+  item.started = false;
+  item.retrying = false;
+  item.notified = false;
+  item.documentId = undefined;
+  item.failureKind = undefined;
 }
 
-function viewFile() {
+function viewFile(item: QueueItem) {
   const spaceId = props.spaceId?.trim();
-  if (spaceId) router.push({ name: 'spaceDocuments', params: { id: spaceId } });
+  if (!spaceId || !item.documentId) return;
+  close();
+  router.push({ name: 'spaceDocuments', params: { id: spaceId }, query: { document: item.documentId } });
 }
 
 async function startImport() {
@@ -262,7 +283,7 @@ async function uploadFile(item: QueueItem, spaceId?: string) {
   item.meta = '正在上传';
   item.progress = 0;
   try {
-    const response = await uploadDocument({ space_id: targetSpaceId, file: item.file }, percent => { item.progress = percent; }, controller.signal);
+    const response = await uploadDocument({ space_id: targetSpaceId, file: item.file, tags: confirmedTags.value || undefined }, percent => { item.progress = percent; }, controller.signal);
     if (controller.signal.aborted) return;
     item.documentId = response.data.document.id;
     item.state = 'parsing';
@@ -270,7 +291,15 @@ async function uploadFile(item: QueueItem, spaceId?: string) {
     item.meta = '上传完成，等待解析';
     schedulePoll(item, 0);
   } catch (error: unknown) {
-    if (!controller.signal.aborted) markFailed(item, errorMessage(error, '上传失败，请重试'));
+    if (!controller.signal.aborted) {
+      const duplicateId = duplicateDocumentId(error);
+      if (duplicateId) {
+        item.documentId = duplicateId;
+        markFailed(item, '相同内容的文档已存在，请查看已有文档', 'duplicate');
+      } else {
+        markFailed(item, errorMessage(error, '上传失败，请重试'), 'upload');
+      }
+    }
   } finally {
     uploadControllers.delete(item.key);
   }
@@ -291,10 +320,11 @@ async function retryFile(item: QueueItem) {
   item.retrying = true;
   item.notified = false;
   try {
-    if (item.documentId) await restartParsing(item);
+    if (item.failureKind === 'status') await refreshParseStatus(item);
+    else if (item.documentId) await restartParsing(item);
     else await uploadFile(item);
   } catch (error: unknown) {
-    markFailed(item, errorMessage(error, '重试失败，请稍后再试'));
+    markFailed(item, errorMessage(error, '重试失败，请稍后再试'), item.failureKind || 'upload');
   } finally {
     item.retrying = false;
   }
@@ -324,21 +354,32 @@ async function pollParseStatus(item: QueueItem) {
       return;
     }
     if (status === 'failed') {
-      markFailed(item, response.data.error || '文档解析失败，请重试');
+      markFailed(item, response.data.error || '文档解析失败，请重试', 'parse');
       return;
     }
     item.state = 'parsing';
     item.meta = status === 'pending' ? '等待解析任务' : '正在解析文档内容';
     schedulePoll(item);
   } catch (error: unknown) {
-    markFailed(item, errorMessage(error, '解析状态获取失败，请重试'));
+    markFailed(item, errorMessage(error, '解析状态获取失败，请刷新状态'), 'status');
   }
 }
 
-function markFailed(item: QueueItem, reason: string) {
+async function refreshParseStatus(item: QueueItem) {
+  item.state = 'parsing';
+  item.meta = '正在刷新解析状态';
+  await pollParseStatus(item);
+}
+
+function retryText(item: QueueItem) {
+  return item.failureKind === 'status' ? '刷新状态' : '重试';
+}
+
+function markFailed(item: QueueItem, reason: string, kind: FailureKind = 'parse') {
   stopPolling(item.key);
   item.state = 'failed';
   item.meta = reason;
+  item.failureKind = kind;
 }
 
 function stopPolling(key?: string) {
@@ -365,6 +406,12 @@ function errorMessage(error: unknown, fallback: string) {
   if (typeof error !== 'object' || !error) return fallback;
   const value = error as { message?: string; response?: { data?: { error?: string; message?: string } } };
   return value.response?.data?.error || value.response?.data?.message || value.message || fallback;
+}
+
+function duplicateDocumentId(error: unknown): string {
+  if (typeof error !== 'object' || !error) return '';
+  const value = error as { response?: { status?: number; data?: { document_id?: string } } };
+  return value.response?.status === 409 ? value.response.data?.document_id || '' : '';
 }
 </script>
 
@@ -400,6 +447,9 @@ function errorMessage(error: unknown, fallback: string) {
 .upload-zone h3 { margin: 0; font-size: var(--text-base); }
 .upload-zone .subtle { margin-top: var(--space-1); }
 .select-file { margin-top: var(--space-4); }
+.tag-field { display: grid; gap: var(--space-2); margin-top: var(--space-4); color: var(--ink-800); font-size: var(--text-sm); font-weight: var(--font-weight-semibold); }
+.tag-field input { width: 100%; min-height: 40px; padding: var(--space-2) var(--space-3); border: 1px solid var(--ink-300); border-radius: var(--radius-sm); color: var(--ink-900); background: white; font: inherit; font-weight: var(--font-weight-regular); }
+.tag-field small { color: var(--ink-500); font-size: var(--text-xs); font-weight: var(--font-weight-regular); }
 .file-list { display: grid; gap: 10px; }
 .file-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 112px 94px 76px; align-items: center; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--ink-200); border-radius: var(--radius-md); background: white; }
 .file-icon { width: 44px; height: 44px; border-radius: var(--radius-md); display: grid; place-items: center; background: var(--brand-50); color: var(--brand-800); border: 1px solid var(--brand-100); font-size: var(--text-xs); font-weight: var(--font-weight-bold); }
@@ -429,7 +479,8 @@ function errorMessage(error: unknown, fallback: string) {
   .file-row { grid-template-columns: 44px minmax(0, 1fr) 76px; }
   .file-row > .progress { grid-column: 2 / -1; width: 100%; }
   .file-row > .badge { grid-column: 2; justify-self: start; }
-  .file-actions { grid-column: 3; grid-row: 2; }
+  .file-actions { grid-column: 3; grid-row: 2; width: auto; }
+  .row-button { width: auto; min-width: 76px; }
 }
 @media (max-height: 650px) {
   .drawer-head { padding-top: var(--space-4); padding-bottom: var(--space-3); }

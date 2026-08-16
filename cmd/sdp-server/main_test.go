@@ -19,7 +19,7 @@ import (
 )
 
 func TestValidateStandaloneConfig(t *testing.T) {
-	for _, name := range []string{"SDP_JWT_SECRET", "SMARTKNORA_JWT_SECRET", "SDP_DB_PASSWORD", "SMART_DB_PASSWORD"} {
+	for _, name := range []string{"SDP_JWT_SECRET", "SMARTKNORA_JWT_SECRET", "SDP_DB_PASSWORD", "SMART_DB_PASSWORD", "DOCREADER_ADDR"} {
 		t.Setenv(name, "")
 	}
 	product := &config.ProductConfig{OPMode: true}
@@ -38,13 +38,18 @@ func TestValidateStandaloneConfig(t *testing.T) {
 	t.Setenv("SDP_JWT_SECRET", "")
 	t.Setenv("SMARTKNORA_JWT_SECRET", "legacy-jwt")
 	t.Setenv("SMART_DB_PASSWORD", "legacy-db")
+	if err := validateStandaloneConfig(product); err == nil || !strings.Contains(err.Error(), "DOCREADER_ADDR") {
+		t.Fatalf("expected missing docreader error, got %v", err)
+	}
+
+	t.Setenv("DOCREADER_ADDR", "docreader:50051")
 	if err := validateStandaloneConfig(product); err != nil {
 		t.Fatalf("legacy compatibility variables should pass: %v", err)
 	}
 }
 
 func TestValidateStandaloneConfigNonOPAllowsDefaults(t *testing.T) {
-	for _, name := range []string{"SDP_JWT_SECRET", "SMARTKNORA_JWT_SECRET", "SDP_DB_PASSWORD", "SMART_DB_PASSWORD"} {
+	for _, name := range []string{"SDP_JWT_SECRET", "SMARTKNORA_JWT_SECRET", "SDP_DB_PASSWORD", "SMART_DB_PASSWORD", "DOCREADER_ADDR"} {
 		t.Setenv(name, "")
 	}
 	if err := validateStandaloneConfig(&config.ProductConfig{}); err != nil {

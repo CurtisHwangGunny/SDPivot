@@ -182,6 +182,9 @@ services:
       SDP_DB_CONN_MAX_LIFETIME: ${SDP_DB_CONN_MAX_LIFETIME:-10m}
       SDP_REDIS_ADDR: redis:6379
       SDP_REDIS_PASSWORD: ${OP_REDIS_PASSWORD:?OP_REDIS_PASSWORD is required}
+      DOCREADER_ADDR: docreader:50051
+      DOCREADER_TRANSPORT: grpc
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
       SDP_UPLOAD_DIR: /data/sdpivot-uploads
       SDP_JWT_SECRET: ${OP_SDP_JWT_SECRET:?OP_SDP_JWT_SECRET is required}
       SDP_BOOTSTRAP_ADMIN_EMAIL: ${OP_BOOTSTRAP_ADMIN_EMAIL:-}
@@ -206,6 +209,8 @@ services:
       migration:
         condition: service_completed_successfully
       redis:
+        condition: service_healthy
+      docreader:
         condition: service_healthy
     cpus: "0.20"
     mem_limit: 384m

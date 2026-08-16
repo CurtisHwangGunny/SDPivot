@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -656,15 +657,18 @@ func (h *SDPivotDocumentHandler) loadDocumentContent(ctx context.Context, doc *t
 func (h *SDPivotDocumentHandler) parseAndStoreDocument(ctx context.Context, tenantDB *gorm.DB, doc *types.SDPivotDocument, content []byte) error {
 	now := time.Now()
 	tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "parsing", "updated_at": now})
+	logger.Infof(ctx, "[SDPivotDocument] parsing started document_id=%s file_name=%q file_type=%s bytes=%d", doc.ID, doc.FileName, doc.FileType, len(content))
 
 	text, err := h.parseDocumentContent(ctx, doc, content)
 	if err != nil {
 		tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "chunk_count": 0, "updated_at": time.Now()})
+		logger.Errorf(ctx, "[SDPivotDocument] parsing failed document_id=%s file_name=%q file_type=%s: %v", doc.ID, doc.FileName, doc.FileType, err)
 		return err
 	}
 	chunks := splitDocumentText(text, 2000, 200)
 	if len(chunks) == 0 {
 		tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "chunk_count": 0, "updated_at": time.Now()})
+		logger.Errorf(ctx, "[SDPivotDocument] parsing produced no chunks document_id=%s file_name=%q file_type=%s", doc.ID, doc.FileName, doc.FileType)
 		return fmt.Errorf("document content is empty")
 	}
 
@@ -682,8 +686,10 @@ func (h *SDPivotDocumentHandler) parseAndStoreDocument(ctx context.Context, tena
 	})
 	if err != nil {
 		tenantDB.Model(doc).Updates(map[string]interface{}{"parse_status": "failed", "updated_at": time.Now()})
-		return fmt.Errorf("failed to store chunks")
+		logger.Errorf(ctx, "[SDPivotDocument] chunk storage failed document_id=%s chunks=%d: %v", doc.ID, len(chunks), err)
+		return fmt.Errorf("failed to store chunks: %w", err)
 	}
+	logger.Infof(ctx, "[SDPivotDocument] parsing completed document_id=%s file_type=%s chunks=%d", doc.ID, doc.FileType, len(chunks))
 	return nil
 }
 
@@ -694,6 +700,7 @@ func (h *SDPivotDocumentHandler) parseDocumentContent(ctx context.Context, doc *
 		if h.documentReader == nil {
 			return "", fmt.Errorf("document parser is unavailable for file type: %s", doc.FileType)
 		}
+		logger.Infof(ctx, "[SDPivotDocument] calling docreader document_id=%s file_type=%s", doc.ID, ext)
 		result, err := h.documentReader.Read(ctx, &types.ReadRequest{
 			FileContent: content,
 			FileName:    doc.FileName,
@@ -724,7 +731,7 @@ func normalizeDocumentContent(fileType string, content []byte) (string, error) {
 	ext := strings.ToLower(strings.TrimPrefix(fileType, "."))
 	text := string(content)
 	switch ext {
-	case "md", "markdown", "txt", "text":
+	case "md", "markdown", "txt", "text", "csv":
 		return normalizeWhitespace(text), nil
 	case "html", "htm":
 		return normalizeWhitespace(stripHTMLTags(text)), nil

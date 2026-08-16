@@ -6,7 +6,7 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 type AppliedTheme = 'light' | 'dark'
 
 const STORAGE_KEY = STORAGE_KEYS.themeMode
-const themeMode = ref<ThemeMode>('system')
+const themeMode = ref<ThemeMode>('light')
 const appliedTheme = ref<AppliedTheme>('light')
 let initialized = false
 let mediaQuery: MediaQueryList | null = null

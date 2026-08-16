@@ -325,6 +325,25 @@ func TestParseAndStoreDocumentKeepsTextFallback(t *testing.T) {
 	}
 }
 
+func TestParseAndStoreDocumentKeepsCSVFallback(t *testing.T) {
+	db := newSDPivotDocumentTestDB(t)
+	doc := &types.SDPivotDocument{ID: "doc-csv", TenantID: 1, SpaceID: "space-1", FileName: "customers.csv", FileType: "csv", ParseStatus: "pending"}
+	if err := db.Create(doc).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	handler := &SDPivotDocumentHandler{db: db}
+	if err := handler.parseAndStoreDocument(context.Background(), db, doc, []byte("name,type\nAcme,customer")); err != nil {
+		t.Fatalf("parse CSV fallback: %v", err)
+	}
+	var chunk types.SDPivotDocumentChunk
+	if err := db.Where("document_id = ?", doc.ID).First(&chunk).Error; err != nil {
+		t.Fatalf("load CSV chunk: %v", err)
+	}
+	if chunk.Content != "name,type Acme,customer" {
+		t.Fatalf("unexpected CSV fallback content: %q", chunk.Content)
+	}
+}
+
 func TestParseAndStoreDocumentMarksDocReaderFailure(t *testing.T) {
 	db := newSDPivotDocumentTestDB(t)
 	doc := types.SDPivotDocument{ID: "failed-document", TenantID: 93, SpaceID: "space-1", FileName: "report.pdf", FileType: ".pdf", ParseStatus: "pending"}

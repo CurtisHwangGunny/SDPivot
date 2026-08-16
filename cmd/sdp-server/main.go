@@ -25,9 +25,11 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/router"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
@@ -49,6 +51,17 @@ func main() {
 	if err := validateStandaloneConfig(product); err != nil {
 		log.Fatalf("Invalid standalone configuration: %v", err)
 	}
+	documentReader, err := newStandaloneDocumentReader()
+	if err != nil {
+		log.Fatalf("Failed to initialize document reader: %v", err)
+	}
+	defer func() {
+		if closer, ok := documentReader.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				log.Printf("[DocReader] Close warning: %v", err)
+			}
+		}
+	}()
 	poolConfig, err := loadDBPoolConfig()
 	if err != nil {
 		log.Fatalf("Invalid database pool configuration: %v", err)
@@ -128,10 +141,11 @@ func main() {
 	))
 
 	router.NewSDPivotRouter(router.SDPivotRouterParams{
-		DB:            db,
-		RedisClient:   redisClient,
-		Config:        &config.Config{Product: product},
-		BackupService: backupService,
+		DB:             db,
+		RedisClient:    redisClient,
+		Config:         &config.Config{Product: product},
+		DocumentReader: documentReader,
+		BackupService:  backupService,
 	}).RegisterRoutes(r)
 
 	// ── Start Server ───────────────────────────────────────────
@@ -480,7 +494,29 @@ func validateStandaloneConfig(product *config.ProductConfig) error {
 	if strings.TrimSpace(getEnvFallback("SDP_DB_PASSWORD", "SMART_DB_PASSWORD", "")) == "" {
 		return fmt.Errorf("OP mode requires SDP_DB_PASSWORD or SMART_DB_PASSWORD")
 	}
+	if strings.TrimSpace(os.Getenv("DOCREADER_ADDR")) == "" {
+		return fmt.Errorf("OP mode requires DOCREADER_ADDR")
+	}
 	return nil
+}
+
+func newStandaloneDocumentReader() (interfaces.DocumentReader, error) {
+	addr := strings.TrimSpace(os.Getenv("DOCREADER_ADDR"))
+	transport := strings.ToLower(strings.TrimSpace(os.Getenv("DOCREADER_TRANSPORT")))
+	if transport == "" {
+		transport = "grpc"
+	}
+	switch transport {
+	case "http", "https":
+		if addr != "" && !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+			addr = "http://" + addr
+		}
+		return docparser.NewHTTPDocumentReader(addr)
+	case "grpc":
+		return docparser.NewGRPCDocumentReader(addr)
+	default:
+		return nil, fmt.Errorf("unsupported DOCREADER_TRANSPORT %q", transport)
+	}
 }
 
 func loadDBPoolConfig() (dbPoolConfig, error) {

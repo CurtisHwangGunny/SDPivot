@@ -14,6 +14,17 @@ test('root page mounts the main application without fatal errors', async ({ page
   expect(pageErrors).toEqual([])
 })
 
+test('new users default to light theme while saved preferences are preserved', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('/login')
+  await expect.poll(() => page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe('light')
+  expect(await page.evaluate(() => localStorage.getItem('sdp_theme_mode'))).toBeNull()
+
+  await page.evaluate(() => localStorage.setItem('sdp_theme_mode', 'dark'))
+  await page.reload()
+  await expect.poll(() => page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe('dark')
+})
+
 test('successful login persists the session and opens the spaces dashboard', async ({ page }) => {
   await page.route('**/api/v1/sdp/auth/login', async (route) => {
     await route.fulfill({
@@ -125,6 +136,9 @@ test('document import starts an upload request and completes parsing', async ({ 
   await expect.poll(() => uploadedBody).toContain('name="space_id"\r\n\r\nspace-1')
   expect(uploadedBody).toContain('filename="contract.txt"')
   await expect(page.getByText('已完成')).toBeVisible()
+
+  await page.getByRole('button', { name: '查看', exact: true }).click()
+  await expect(page).toHaveURL(/\/spaces\/space-1\/documents\?document=doc-1$/)
 })
 
 test('document import drawer remains usable in short viewports', async ({ page }) => {
@@ -142,7 +156,7 @@ test('document import drawer remains usable in short viewports', async ({ page }
   await page.route('**/api/v1/sdp/documents?**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"documents":[],"total":0,"page":1,"page_size":100}' }))
   await page.route('**/api/v1/sdp/qa/sessions', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sessions":[]}' }))
 
-  for (const viewport of [{ width: 1440, height: 650 }, { width: 1024, height: 600 }]) {
+  for (const viewport of [{ width: 1440, height: 650 }, { width: 1024, height: 600 }, { width: 375, height: 667 }]) {
     await page.setViewportSize(viewport)
     await page.goto('/spaces/space-1')
     await page.getByRole('button', { name: '导入文档' }).first().click()

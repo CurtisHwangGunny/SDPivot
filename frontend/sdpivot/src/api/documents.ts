@@ -41,6 +41,7 @@ export function uploadDocument(data: { space_id: string; file: File; tags?: stri
   if (data.tags) form.append('tags', data.tags)
   return client.post<{ document: Document; message: string }>('/documents/upload', form, {
     signal,
+    timeout: 5 * 60 * 1000,
     onUploadProgress: event => {
       if (event.total) onProgress?.(Math.round((event.loaded * 100) / event.total))
     },

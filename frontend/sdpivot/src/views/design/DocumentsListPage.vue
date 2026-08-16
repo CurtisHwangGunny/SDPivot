@@ -44,7 +44,7 @@
               <caption class="sr-only">当前空间文档列表</caption>
               <thead><tr><th scope="col">文档名称</th><th scope="col">类型</th><th scope="col">大小</th><th scope="col">解析状态</th><th scope="col">更新时间</th><th scope="col">操作</th></tr></thead>
               <tbody>
-                <tr v-for="document in documents" :key="document.id">
+                <tr v-for="document in documents" :id="`document-${document.id}`" :key="document.id" :class="{ 'sdp-documents-list__target': targetDocumentId === document.id }">
                   <td><strong>{{ document.title || document.file_name }}</strong><small>{{ document.chunk_count }} 个分块</small></td>
                   <td>{{ document.file_type || '未知' }}</td>
                   <td>{{ formatSize(document.file_size) }}</td>
@@ -87,6 +87,7 @@ import { getRoleFromToken } from '@/utils/jwt'
 
 const route = useRoute()
 const spaceId = computed(() => String(route.params.id || ''))
+const targetDocumentId = computed(() => String(route.query.document || ''))
 const documents = ref<Document[]>([])
 const total = ref(0)
 const loading = ref(false)
@@ -116,6 +117,8 @@ async function loadDocuments() {
     const response = await listDocuments({ space_id: spaceId.value, search: searchQuery.value.trim() || undefined, parse_status: statusFilter.value || undefined, page: 1, page_size: 100 })
     documents.value = response.data.documents || []
     total.value = response.data.total || documents.value.length
+    await nextTick()
+    if (targetDocumentId.value) document.getElementById(`document-${targetDocumentId.value}`)?.scrollIntoView({ block: 'center' })
   } catch (error: unknown) {
     documents.value = []
     total.value = 0
@@ -169,6 +172,7 @@ function errorMessage(error: unknown, fallback: string) { if (typeof error !== '
 function trapDialogFocus(event: KeyboardEvent) { const elements = Array.from(dialogRef.value?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)') || []); if (!elements.length) return; const first = elements[0]; const last = elements[elements.length - 1]; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() } }
 
 watch([spaceId, statusFilter], loadDocuments, { immediate: true })
+watch(targetDocumentId, () => { if (targetDocumentId.value) loadDocuments() })
 watch(searchQuery, () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadDocuments, 300) })
 onBeforeUnmount(() => clearTimeout(searchTimer))
 </script>
@@ -197,6 +201,7 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
 .sdp-documents-list th, .sdp-documents-list td { padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--ink-200); color: var(--ink-700); font-size: var(--text-sm); white-space: nowrap; }
 .sdp-documents-list th { color: var(--ink-600); background: var(--ink-100); font-size: var(--text-xs); font-weight: var(--font-weight-semibold); letter-spacing: .04em; }
 .sdp-documents-list tbody tr:hover { background: var(--brand-50); }
+.sdp-documents-list tbody tr.sdp-documents-list__target { background: var(--brand-100); box-shadow: inset 4px 0 0 var(--brand-700); }
 .sdp-documents-list td strong, .sdp-documents-list td small { display: block; max-width: calc(var(--space-24) * 2.5); overflow: hidden; text-overflow: ellipsis; }
 .sdp-documents-list td strong { color: var(--ink-950); }
 .sdp-documents-list__actions { display: flex; align-items: center; gap: var(--space-1); }
