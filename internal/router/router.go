@@ -72,6 +72,10 @@ type RouterParams struct {
 	ResourceCatalog              interfaces.ResourceCatalog
 	FAQHandler                   *handler.FAQHandler
 	TagHandler                   *handler.TagHandler
+	SDPivotAdminHandler          *handler.SDPivotAdminHandler
+	SDPivotTagAutoHandler        *handler.SDPivotTagAutoHandler
+	SDPivotTagDimensionHandler   *handler.SDPivotTagDimensionHandler
+	SDPivotTagFeedbackHandler    *handler.SDPivotTagFeedbackHandler
 	CustomAgentHandler           *handler.CustomAgentHandler
 	UserFavoriteHandler          *handler.UserResourceFavoriteHandler
 	SkillHandler                 *handler.SkillHandler
@@ -241,6 +245,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 			params.ResourceCatalog,
 		)
 		RegisterKnowledgeTagRoutes(v1, params.TagHandler, rbacGuards)
+		RegisterSDPivotTagRoutes(v1, params, rbacGuards)
 		RegisterKnowledgeRoutes(v1, params.KnowledgeHandler, rbacGuards)
 		RegisterFAQRoutes(v1, params.FAQHandler, rbacGuards)
 		RegisterChunkRoutes(v1, params.ChunkHandler, rbacGuards)

@@ -69,7 +69,7 @@ var queueDefinitions = []QueueDefinition{
 		TypeKnowledgePostProcess,
 	}},
 	{Name: QueueSummary, Pool: WorkerPoolEnrichment, Weight: 2, SharedWeight: 2, TaskTypes: []string{
-		TypeSummaryGeneration, TypeDataTableSummary,
+		TypeSummaryGeneration, TypeDataTableSummary, TypeAutoTagGeneration,
 	}},
 	{Name: QueueMultimodal, Pool: WorkerPoolEnrichment, Weight: 1, SharedWeight: 1, TaskTypes: []string{TypeImageMultimodal}},
 	{Name: QueueGraph, Pool: WorkerPoolEnrichment, Weight: 1, SharedWeight: 1, TaskTypes: []string{TypeChunkExtract}},
@@ -228,19 +228,20 @@ type WorkerServerStat struct {
 
 const (
 	TypeChunkExtract             = "chunk:extract"
-	TypeDocumentProcess          = "document:process"           // 文档处理任务
-	TypeFAQImport                = "faq:import"                 // FAQ导入任务（包含dry run模式）
-	TypeQuestionGeneration       = "question:generation"        // 问题生成任务
-	TypeSummaryGeneration        = "summary:generation"         // 摘要生成任务
-	TypeKBClone                  = "kb:clone"                   // 知识库复制任务
-	TypeIndexDelete              = "index:delete"               // 索引删除任务
-	TypeKBDelete                 = "kb:delete"                  // 知识库删除任务
-	TypeKnowledgeListDelete      = "knowledge:list_delete"      // 批量删除知识任务
-	TypeKnowledgeListReparse     = "knowledge:list_reparse"     // 批量重解析知识任务
-	TypeKnowledgeMove            = "knowledge:move"             // 知识移动任务
-	TypeDataTableSummary         = "datatable:summary"          // 表格摘要任务
-	TypeImageMultimodal          = "image:multimodal"           // 图片多模态处理任务（OCR + VLM Caption）
-	TypeKnowledgePostProcess     = "knowledge:post_process"     // 知识后处理任务（统一调度）
+	TypeDocumentProcess          = "document:process"       // 文档处理任务
+	TypeFAQImport                = "faq:import"             // FAQ导入任务（包含dry run模式）
+	TypeQuestionGeneration       = "question:generation"    // 问题生成任务
+	TypeSummaryGeneration        = "summary:generation"     // 摘要生成任务
+	TypeKBClone                  = "kb:clone"               // 知识库复制任务
+	TypeIndexDelete              = "index:delete"           // 索引删除任务
+	TypeKBDelete                 = "kb:delete"              // 知识库删除任务
+	TypeKnowledgeListDelete      = "knowledge:list_delete"  // 批量删除知识任务
+	TypeKnowledgeListReparse     = "knowledge:list_reparse" // 批量重解析知识任务
+	TypeKnowledgeMove            = "knowledge:move"         // 知识移动任务
+	TypeDataTableSummary         = "datatable:summary"      // 表格摘要任务
+	TypeImageMultimodal          = "image:multimodal"       // 图片多模态处理任务（OCR + VLM Caption）
+	TypeKnowledgePostProcess     = "knowledge:post_process" // 知识后处理任务（统一调度）
+	TypeAutoTagGeneration        = "auto_tag:generation"
 	TypeManualProcess            = "manual:process"             // 手工知识更新任务（cleanup + 重新索引）
 	TypeDataSourceSync           = "datasource:sync"            // 数据源同步任务
 	TypeWikiIngest               = "wiki:ingest"                // Wiki 页面同步任务
@@ -368,6 +369,15 @@ type SummaryGenerationPayload struct {
 	// can record a postprocess.summary subspan under the right attempt's
 	// postprocess stage. See QuestionGenerationPayload.Attempt notes.
 	Attempt int `json:"attempt,omitempty"`
+}
+
+type AutoTagGenerationPayload struct {
+	TracingContext
+	TenantID        uint64 `json:"tenant_id"`
+	KnowledgeBaseID string `json:"knowledge_base_id"`
+	KnowledgeID     string `json:"knowledge_id"`
+	Language        string `json:"language,omitempty"`
+	Attempt         int    `json:"attempt,omitempty"`
 }
 
 // KBClonePayload represents the knowledge base clone task payload
