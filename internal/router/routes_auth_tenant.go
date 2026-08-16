@@ -271,6 +271,18 @@ func RegisterSystemAdminRoutes(
 		g.apiKeyRoute(adminRoutes, http.MethodDelete, "/settings/:key",
 			apiKeyPlatform(types.APIKeyCapabilitySystemSettingsManage), handler.ResetSystemSetting)
 
+		// Platform-wide upstream model provider configurations.
+		g.apiKeyRoute(adminRoutes, http.MethodGet, "/model-configs",
+			apiKeyPlatform(types.APIKeyCapabilitySystemSettingsRead, types.APIKeyCapabilitySystemSettingsManage), handler.ListModelConfigs)
+		g.apiKeyRoute(adminRoutes, http.MethodPost, "/model-configs",
+			apiKeyPlatform(types.APIKeyCapabilitySystemSettingsManage), handler.CreateModelConfig)
+		g.apiKeyRoute(adminRoutes, http.MethodGet, "/model-configs/:id",
+			apiKeyPlatform(types.APIKeyCapabilitySystemSettingsRead, types.APIKeyCapabilitySystemSettingsManage), handler.GetModelConfig)
+		g.apiKeyRoute(adminRoutes, http.MethodPut, "/model-configs/:id",
+			apiKeyPlatform(types.APIKeyCapabilitySystemSettingsManage), handler.UpdateModelConfig)
+		g.apiKeyRoute(adminRoutes, http.MethodDelete, "/model-configs/:id",
+			apiKeyPlatform(types.APIKeyCapabilitySystemSettingsManage), handler.DeleteModelConfig)
+
 		// Runtime operations: live asynq queue depths, safe task projections,
 		// and state-checked task actions for the SystemAdmin dashboard. Lite
 		// mode returns available=false.
