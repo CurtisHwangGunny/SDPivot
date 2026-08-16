@@ -1,0 +1,24 @@
+你的任务：在升级分支（官方 v0.7.2 + 已 backport OP 迁移13 + 品牌）把 OP 的**模型统一配置**模块 backport 过来。当前工作目录 = 升级 worktree `/home/ubuntu/projects/weknora-v072`。OP 源分支在 `/home/ubuntu/projects/weknora`（feature/redesign-v1）。不提交 git。
+
+# 背景
+方案A步骤3「模型统一配置 §2.4.2」：OP 有模型管理后台（sdpivot_ops 的模型增删改查 + 隐藏逻辑）。需适配官方 v0.7.2 的 model/router 重构后保留 OP 模型配置能力。
+
+# 现状（已探明）
+- **OP 模型管理文件**（feature/redesign-v1 分支 internal/handler/）：`sdpivot_ops.go`、`sdpivot_operations.go`、`model_config.go`、`model_credentials.go`、`model.go`、`model_test.go`（对照 /home/ubuntu/projects/weknora）。
+- OP 模型用官方 `models`（types.Model）+ OP 自定义配置；早前修过 `modelServiceHealth`（is_active→status）。
+- **官方 v0.7.2**：internal/handler/ 也有 model 相关（官方重构），需 diff 确认差异。
+
+# 任务
+1. **diff 评估**：对比 OP 的模型配置 backend（sdpivot_ops.go/model_config.go/model_credentials.go/model.go）vs 官方 v0.7.2 对应实现（`git diff feature/redesign-v1..v0.7.2 -- internal/handler/ internal/types/ | grep -i model`），列出 OP 模型配置的独有 API/逻辑。
+2. **backport OP 模型配置 handler**：把 OP 的模型管理端点（增删改查/凭据/隐藏逻辑）叠加到官方 v0.7.2，适配官方 v0.7.2 的 router 注册方式（OP 在 cmd/server/sdpivot.go 或 router 注册，官方 v0.7.2 结构可能变，需找到对应注入点）。
+3. **保留 OP 单模型隐藏逻辑**、凭据加密（AES）。
+4. **编译验证**：`go build ./...` 通过（go1.26）。若有 OP handler 依赖的 OP 表/字段在官方 v0.7.2 不存在，用迁移已 backport 的 bootstrap 补，或在 handler 里做兼容。
+5. 说明哪些属于"需研发深度融合"（官方 v0.7.2 差异过大无法机械 backport 的点）。
+
+# 约束
+- 保持官方 v0.7.2 基线，不破坏官方 model 基础能力；OP 模型管理作为增量叠加。
+- go build 通过为硬性；跑不动的深度融合点如实记录，不假装完成。
+- 不提交 git。
+
+# 完成标准
+- OP 模型配置 handler/路由在升级分支可编译叠加；列清修改文件、OP 独有 API 清单、需研发深度融合的点、编译结果。
