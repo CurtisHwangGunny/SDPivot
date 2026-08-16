@@ -43,6 +43,9 @@ const (
 	LangfuseTraceContextKey ContextKey = "LangfuseTrace"
 	// SystemAdminContextKey is the context key indicating whether the user is a system administrator
 	SystemAdminContextKey ContextKey = "SystemAdmin"
+	// AccessRoleContextKey carries the normalized OP product role.
+	AccessRoleContextKey ContextKey = "AccessRole"
+	DepartmentContextKey ContextKey = "DepartmentID"
 	// BackgroundTaskContextKey marks a context whose model calls originate from
 	// an asynq background worker (document parse / summary / question / graph /
 	// multimodal enrichment) rather than a user-facing HTTP request. The chat

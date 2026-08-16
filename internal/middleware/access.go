@@ -60,7 +60,26 @@ func IsCrossTenantSuperuser(ctx context.Context, cfg *config.Config) bool {
 	if !ok || u == nil {
 		return false
 	}
-	return u.CanAccessAllTenants
+	return u.CanAccessAllTenants || types.NormalizeAccessRole(string(u.AccessRole)) == types.AccessRoleSuperAdmin || types.AccessRoleFromContext(ctx) == types.AccessRoleSuperAdmin
+}
+
+// IsProductSuperAdmin is intentionally based on normalized access_role, not
+// historical role strings or the mutable tenant-member matrix.
+func IsProductSuperAdmin(ctx context.Context) bool {
+	return productAccessRole(ctx) == types.AccessRoleSuperAdmin
+}
+
+// IsDepartmentInScope prevents department_admin from operating outside the
+// department stored in the authenticated user context.
+func IsDepartmentInScope(ctx context.Context, departmentID string) bool {
+	if IsProductSuperAdmin(ctx) {
+		return true
+	}
+	if productAccessRole(ctx) != types.AccessRoleDepartmentAdmin {
+		return false
+	}
+	callerDepartment, _ := ctx.Value(types.DepartmentContextKey).(string)
+	return callerDepartment != "" && departmentID != "" && callerDepartment == departmentID
 }
 
 // IsTenantAccessible reports whether `user` is allowed to operate inside
@@ -87,7 +106,7 @@ func IsTenantAccessible(
 	if user.TenantID == targetTenantID {
 		return true
 	}
-	if cfg != nil && cfg.Tenant != nil && cfg.Tenant.EnableCrossTenantAccess && user.CanAccessAllTenants {
+	if cfg != nil && cfg.Tenant != nil && cfg.Tenant.EnableCrossTenantAccess && (user.CanAccessAllTenants || types.NormalizeAccessRole(string(user.AccessRole)) == types.AccessRoleSuperAdmin) {
 		return true
 	}
 	if memberService == nil {

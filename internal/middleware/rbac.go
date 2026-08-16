@@ -75,8 +75,7 @@ func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		role := types.TenantRoleFromContext(ctx)
-		if role.HasPermission(min) {
+		if productRoleHasTenantFloor(ctx, min) {
 			c.Next()
 			return
 		}
@@ -87,27 +86,50 @@ func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 		uid, _ := types.UserIDFromContext(ctx)
 		if !rbacEnforcementEnabled(cfg) {
 			logger.Warnf(ctx,
-				"[rbac] role insufficient (logged but not enforced): user=%s have=%s need=%s path=%s",
-				uid, role, min, c.Request.URL.Path)
+				"[rbac] role insufficient (logged but not enforced): user=%s access_role=%s need=%s path=%s",
+				uid, productAccessRole(ctx), min, c.Request.URL.Path)
 			c.Next()
 			return
 		}
 		logger.Warnf(ctx,
-			"[rbac] role insufficient: user=%s have=%s need=%s path=%s",
-			uid, role, min, c.Request.URL.Path)
+			"[rbac] role insufficient: user=%s access_role=%s need=%s path=%s",
+			uid, productAccessRole(ctx), min, c.Request.URL.Path)
 		// Durable audit row for the reject. AuditServiceProvider
 		// injects the service; subject to 1-minute sliding-window
 		// dedup inside the service so probing clients can't fill the
 		// table.
 		if svc := AuditServiceFromContext(c); svc != nil {
 			tenantID, _ := types.TenantIDFromContext(ctx)
-			_ = svc.LogDenied(ctx, c, tenantID, uid, string(role), min)
+			_ = svc.LogDenied(ctx, c, tenantID, uid, string(types.TenantRoleFromContext(ctx)), min)
 		}
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "Forbidden: insufficient workspace role",
 		})
 		c.Abort()
 	}
+}
+
+// productAccessRole is the single product authorization source. The fallback
+// exists only for old unit/service contexts that predate AccessRoleContextKey;
+// authenticated requests always populate the key in applyAuthSession.
+func productAccessRole(ctx context.Context) types.AccessRole {
+	if _, ok := ctx.Value(types.AccessRoleContextKey).(types.AccessRole); ok {
+		return types.AccessRoleFromContext(ctx)
+	}
+	return types.NormalizeAccessRole(string(types.TenantRoleFromContext(ctx)))
+}
+
+func productRoleHasTenantFloor(ctx context.Context, min types.TenantRole) bool {
+	required := types.AccessRoleKnowledgeViewer
+	switch min {
+	case types.TenantRoleOwner:
+		required = types.AccessRoleSuperAdmin
+	case types.TenantRoleAdmin:
+		required = types.AccessRoleDepartmentAdmin
+	case types.TenantRoleContributor:
+		required = types.AccessRoleKnowledgeEditor
+	}
+	return productAccessRole(ctx).HasPermission(required)
 }
 
 // RequireRoleOrSystemAdmin applies the tenant role floor while also allowing
@@ -165,7 +187,7 @@ func RequireSystemAdmin(cfg *config.Config) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if types.IsSystemAdminFromContext(ctx) {
+		if types.IsSystemAdminFromContext(ctx) || IsProductSuperAdmin(ctx) {
 			c.Next()
 			return
 		}
@@ -225,7 +247,7 @@ func RequireOwnershipOrRole(min types.TenantRole, lookup CreatorLookup, cfg *con
 		role := types.TenantRoleFromContext(ctx)
 
 		// 1. Fast path: role meets the bar.
-		if role.HasPermission(min) {
+		if productRoleHasTenantFloor(ctx, min) {
 			c.Next()
 			return
 		}
@@ -244,8 +266,8 @@ func RequireOwnershipOrRole(min types.TenantRole, lookup CreatorLookup, cfg *con
 		if !rbacEnforcementEnabled(cfg) {
 			logger.Warnf(ctx,
 				"[rbac] ownership/role would be checked (enforcement off, lookup skipped): "+
-					"user=%s have=%s need=%s path=%s",
-				uid, role, min, c.Request.URL.Path)
+					"user=%s access_role=%s need=%s path=%s",
+				uid, productAccessRole(ctx), min, c.Request.URL.Path)
 			c.Next()
 			return
 		}
@@ -283,7 +305,7 @@ func RequireOwnershipOrRole(min types.TenantRole, lookup CreatorLookup, cfg *con
 		// Same durable audit hook as RequireRole — subject to dedup.
 		if svc := AuditServiceFromContext(c); svc != nil {
 			tenantID, _ := types.TenantIDFromContext(ctx)
-			_ = svc.LogDenied(ctx, c, tenantID, uid, string(role), min)
+			_ = svc.LogDenied(ctx, c, tenantID, uid, string(types.TenantRoleFromContext(ctx)), min)
 		}
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": "Forbidden: must own the resource or have the required role",

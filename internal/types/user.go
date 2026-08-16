@@ -88,6 +88,10 @@ type User struct {
 	IsActive bool `json:"is_active"  gorm:"default:true"`
 	// Whether the user can access all workspaces (cross-workspace access)
 	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
+	// AccessRole is the OP product-level authorization source of truth.
+	AccessRole   AccessRole `json:"access_role" gorm:"type:varchar(32);not null;default:'knowledge_viewer';index"`
+	DepartmentID *string    `json:"department_id,omitempty" gorm:"type:varchar(36);index"`
+	IsOpsAdmin   bool       `json:"is_ops_admin" gorm:"default:false;index"`
 	// Whether the user is a system administrator (independent of workspace roles)
 	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
 	// Per-user UI/feature preferences.
@@ -242,6 +246,8 @@ type UserInfo struct {
 	IsActive            bool            `json:"is_active"`
 	CanAccessAllTenants bool            `json:"can_access_all_tenants"`
 	IsSystemAdmin       bool            `json:"is_system_admin"`
+	AccessRole          AccessRole      `json:"access_role"`
+	DepartmentID        *string         `json:"department_id,omitempty"`
 	Preferences         UserPreferences `json:"preferences"`
 	CreatedAt           time.Time       `json:"created_at"`
 	UpdatedAt           time.Time       `json:"updated_at"`
@@ -258,6 +264,8 @@ func (u *User) ToUserInfo() *UserInfo {
 		IsActive:            u.IsActive,
 		CanAccessAllTenants: u.CanAccessAllTenants,
 		IsSystemAdmin:       u.IsSystemAdmin,
+		AccessRole:          NormalizeAccessRole(string(u.AccessRole)),
+		DepartmentID:        u.DepartmentID,
 		Preferences:         u.Preferences,
 		CreatedAt:           u.CreatedAt,
 		UpdatedAt:           u.UpdatedAt,

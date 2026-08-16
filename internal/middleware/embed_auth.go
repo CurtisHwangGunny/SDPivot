@@ -171,6 +171,7 @@ func EmbedAuth(
 			TenantID: ch.TenantID,
 			Tenant:   tenant,
 			Role:     types.TenantRoleViewer,
+			AccessRole: types.AccessRoleKnowledgeViewer,
 			Extra:    map[types.ContextKey]any{EmbedChannelContextKey: ch},
 		})
 		c.Next()

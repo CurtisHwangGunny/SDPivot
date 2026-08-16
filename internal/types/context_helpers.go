@@ -150,6 +150,16 @@ func IsSystemAdminFromContext(ctx context.Context) bool {
 	return v
 }
 
+// AccessRoleFromContext returns the normalized product role. Missing values
+// fail closed to the least-privileged product role.
+func AccessRoleFromContext(ctx context.Context) AccessRole {
+	v, ok := ctx.Value(AccessRoleContextKey).(AccessRole)
+	if !ok || !v.IsValid() {
+		return AccessRoleKnowledgeViewer
+	}
+	return NormalizeAccessRole(string(v))
+}
+
 // SessionTenantIDFromContext extracts the session-owner tenant ID from ctx.
 // Falls back to TenantIDFromContext when the session key is absent.
 func SessionTenantIDFromContext(ctx context.Context) (uint64, bool) {

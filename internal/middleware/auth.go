@@ -255,14 +255,33 @@ func authenticateJWTUser(
 		"[auth] resolved role=%s for user=%s in tenant=%d (jwt_tenant=%d, header=%q, cross_switch=%v)",
 		role, user.ID, targetTenantID, jwtTenantID, c.GetHeader("X-Tenant-ID"), crossTenantSwitch)
 	applyAuthSession(c, authSession{
-		User:        user,
-		Principal:   types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
-		TenantID:    targetTenantID,
-		Tenant:      tenant,
-		Role:        role,
-		SystemAdmin: user.IsSystemAdmin,
+		User:         user,
+		Principal:    types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
+		TenantID:     targetTenantID,
+		Tenant:       tenant,
+		Role:         role,
+		AccessRole:   resolvedAccessRole(user, role),
+		DepartmentID: userDepartmentID(user),
+		SystemAdmin:  user.IsSystemAdmin,
 	})
 	return true
+}
+
+func userDepartmentID(user *types.User) string {
+	if user == nil || user.DepartmentID == nil {
+		return ""
+	}
+	return *user.DepartmentID
+}
+
+func resolvedAccessRole(user *types.User, tenantRole types.TenantRole) types.AccessRole {
+	if user != nil && (user.IsSystemAdmin || user.IsOpsAdmin) {
+		return types.AccessRoleSuperAdmin
+	}
+	if user != nil && strings.TrimSpace(string(user.AccessRole)) != "" {
+		return types.NormalizeAccessRole(string(user.AccessRole))
+	}
+	return types.NormalizeAccessRole(string(tenantRole))
 }
 
 // resolveTargetTenant decides which tenant this request operates in.
@@ -539,11 +558,12 @@ func attachAPIKeyAuthContext(
 		apiKeyTenantRoleContext = types.TenantRoleOwner
 	}
 	session := authSession{
-		User:      user,
-		Principal: principal,
-		TenantID:  tenantID,
-		Tenant:    t,
-		Role:      apiKeyTenantRoleContext,
+		User:       user,
+		Principal:  principal,
+		TenantID:   tenantID,
+		Tenant:     t,
+		Role:       apiKeyTenantRoleContext,
+		AccessRole: types.AccessRoleKnowledgeViewer,
 	}
 	if key != nil {
 		session.APIKeyScope = &types.TenantAPIKeyScope{

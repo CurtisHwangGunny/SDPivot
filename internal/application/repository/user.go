@@ -221,14 +221,14 @@ func (r *userRepository) RevokeSystemAdmin(ctx context.Context, userID, actorID 
 			}
 			return err
 		}
-		if !user.IsSystemAdmin {
+		if !user.IsSystemAdmin && types.NormalizeAccessRole(string(user.AccessRole)) != types.AccessRoleSuperAdmin {
 			revoked = &user
 			return ErrUserNotSystemAdmin
 		}
 
 		var admins []types.User
 		if err := locking(tx).
-			Where("is_system_admin = ?", true).
+			Where("is_system_admin = ? OR access_role IN ?", true, []string{string(types.AccessRoleSuperAdmin), string(types.AccessRoleOpsAdmin)}).
 			Find(&admins).Error; err != nil {
 			return err
 		}
@@ -237,6 +237,7 @@ func (r *userRepository) RevokeSystemAdmin(ctx context.Context, userID, actorID 
 		}
 
 		user.IsSystemAdmin = false
+		user.AccessRole = types.AccessRoleKnowledgeViewer
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}
