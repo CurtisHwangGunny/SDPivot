@@ -369,8 +369,8 @@ function errorMessage(error: unknown, fallback: string) {
 </script>
 
 <style scoped>
-.drawer-overlay { position: fixed; inset: 0; z-index: var(--z-modal, 300); display: grid; grid-template-rows: minmax(0, 1fr); justify-items: end; background: rgba(15, 23, 19, .42); backdrop-filter: blur(4px); }
-.drawer { width: 720px; max-width: 100vw; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-50); border-left: 1px solid rgba(255,255,255,.32); box-shadow: -32px 0 80px rgba(0,0,0,.20); animation: drawer-in .24s var(--ease-out-expo); }
+.drawer-overlay { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: var(--z-modal, 300); display: grid; grid-template-rows: minmax(0, 1fr); justify-items: end; overflow: hidden; background: rgba(15, 23, 19, .42); backdrop-filter: blur(4px); }
+.drawer { width: 720px; max-width: 100vw; min-height: 0; height: 100%; max-height: 100vh; max-height: 100dvh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-50); border-left: 1px solid rgba(255,255,255,.32); box-shadow: -32px 0 80px rgba(0,0,0,.20); animation: drawer-in .24s var(--ease-out-expo); }
 .drawer-head { padding: 24px 28px 18px; background: white; border-bottom: 1px solid var(--ink-200); display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-5); }
 .drawer-head h2 { margin: var(--space-1) 0 0; font-size: var(--text-2xl); letter-spacing: -.035em; }
 .drawer-body { min-height: 0; padding: 22px 28px; overflow: auto; display: grid; align-content: start; gap: var(--space-5); }
@@ -430,6 +430,16 @@ function errorMessage(error: unknown, fallback: string) {
   .file-row > .progress { grid-column: 2 / -1; width: 100%; }
   .file-row > .badge { grid-column: 2; justify-self: start; }
   .file-actions { grid-column: 3; grid-row: 2; }
+}
+@media (max-height: 650px) {
+  .drawer-head { padding-top: var(--space-4); padding-bottom: var(--space-3); }
+  .drawer-head .subtle { margin-top: var(--space-1); }
+  .drawer-body { padding-top: var(--space-3); padding-bottom: var(--space-3); gap: var(--space-3); }
+  .notice, .panel-head, .panel-body { padding: var(--space-3); }
+  .upload-zone { min-height: 140px; padding: var(--space-4); }
+  .upload-icon { width: 36px; height: 36px; margin-bottom: var(--space-2); }
+  .select-file { margin-top: var(--space-2); }
+  .drawer-foot { padding-top: var(--space-3); padding-bottom: var(--space-3); }
 }
 @media (prefers-reduced-motion: reduce) { .drawer { animation-duration: .01ms; } }
 </style>

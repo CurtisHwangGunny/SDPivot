@@ -19,6 +19,15 @@ const (
 	spaceAccessOwner
 )
 
+const spaceAccessDeniedMessage = "您不是该空间的成员，无法执行此操作。请联系空间管理员将您添加为成员。"
+
+func respondSpaceAccessDenied(c *gin.Context) {
+	c.JSON(http.StatusForbidden, gin.H{
+		"error": spaceAccessDeniedMessage,
+		"code":  "space_access_denied",
+	})
+}
+
 func authorizeSpace(c *gin.Context, db *gorm.DB, spaceID string, level spaceAccessLevel) (*types.KnowledgeSpace, bool) {
 	var space types.KnowledgeSpace
 	err := db.Where("id = ? AND tenant_id = ?", spaceID, middleware.GetTenantID(c)).First(&space).Error
@@ -38,7 +47,7 @@ func authorizeSpace(c *gin.Context, db *gorm.DB, spaceID string, level spaceAcce
 	var member types.SpaceMember
 	err = db.Where("space_id = ? AND user_id = ?", spaceID, middleware.GetUserID(c)).First(&member).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "space access denied"})
+		respondSpaceAccessDenied(c)
 		return nil, false
 	}
 	if err != nil {
@@ -50,7 +59,7 @@ func authorizeSpace(c *gin.Context, db *gorm.DB, spaceID string, level spaceAcce
 		(level == spaceAccessEdit && (member.Role == "owner" || member.Role == "editor")) ||
 		(level == spaceAccessOwner && member.Role == "owner")
 	if !allowed {
-		c.JSON(http.StatusForbidden, gin.H{"error": "space access denied"})
+		respondSpaceAccessDenied(c)
 		return nil, false
 	}
 	return &space, true

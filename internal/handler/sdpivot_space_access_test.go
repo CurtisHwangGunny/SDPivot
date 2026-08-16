@@ -65,6 +65,10 @@ func TestGetSpaceRejectsPrivateSpaceNonMember(t *testing.T) {
 	h.GetSpace(c)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
+	var response map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.Equal(t, spaceAccessDeniedMessage, response["error"])
+	require.Equal(t, "space_access_denied", response["code"])
 }
 
 func TestAddSpaceMemberRequiresOwner(t *testing.T) {
@@ -158,6 +162,10 @@ func TestViewerCannotUpdateSpace(t *testing.T) {
 	h.UpdateSpace(c)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
+	var response map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.Equal(t, spaceAccessDeniedMessage, response["error"])
+	require.Equal(t, "space_access_denied", response["code"])
 	var space types.KnowledgeSpace
 	require.NoError(t, db.Where("id = ?", "private").First(&space).Error)
 	require.Equal(t, "Private", space.Name)

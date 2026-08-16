@@ -126,3 +126,57 @@ test('document import starts an upload request and completes parsing', async ({ 
   expect(uploadedBody).toContain('filename="contract.txt"')
   await expect(page.getByText('已完成')).toBeVisible()
 })
+
+test('document import drawer remains usable in short viewports', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('sdp_access_token', 'access-123')
+    localStorage.setItem('sdp_refresh_token', 'refresh-123')
+    localStorage.setItem('sdp_user', JSON.stringify({ id: 'user-1', username: 'operator' }))
+  })
+  await page.route('**/api/v1/sdp/spaces/space-1', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ id: 'space-1', name: '测试空间', description: '', visibility: 'private', owner_id: 'user-1', created_at: '2026-08-15T00:00:00Z', updated_at: '2026-08-15T00:00:00Z' }),
+  }))
+  await page.route('**/api/v1/sdp/spaces/space-1/members', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"members":[]}' }))
+  await page.route('**/api/v1/sdp/documents?**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"documents":[],"total":0,"page":1,"page_size":100}' }))
+  await page.route('**/api/v1/sdp/qa/sessions', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sessions":[]}' }))
+
+  for (const viewport of [{ width: 1440, height: 650 }, { width: 1024, height: 600 }]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/spaces/space-1')
+    await page.getByRole('button', { name: '导入文档' }).first().click()
+
+    const drawer = page.locator('.drawer')
+    const body = page.locator('.drawer-body')
+    const footer = page.locator('.drawer-foot')
+    const selectFile = page.getByRole('button', { name: '选择文件', exact: true })
+    await expect(drawer).toBeVisible()
+    await expect(footer).toBeVisible()
+    await expect(selectFile).toBeVisible()
+
+    const layout = await page.evaluate(() => {
+      const drawerElement = document.querySelector<HTMLElement>('.drawer')!
+      const bodyElement = document.querySelector<HTMLElement>('.drawer-body')!
+      const footerElement = document.querySelector<HTMLElement>('.drawer-foot')!
+      const selectElement = document.querySelector<HTMLElement>('.select-file')!
+      return {
+        drawerBottom: drawerElement.getBoundingClientRect().bottom,
+        footerTop: footerElement.getBoundingClientRect().top,
+        footerBottom: footerElement.getBoundingClientRect().bottom,
+        bodyBottom: bodyElement.getBoundingClientRect().bottom,
+        selectBottom: selectElement.getBoundingClientRect().bottom,
+        bodyOverflowY: getComputedStyle(bodyElement).overflowY,
+      }
+    })
+    expect(layout.drawerBottom).toBeLessThanOrEqual(viewport.height)
+    expect(layout.footerBottom).toBeLessThanOrEqual(viewport.height)
+    expect(layout.bodyBottom).toBeLessThanOrEqual(layout.footerTop)
+    expect(layout.selectBottom).toBeLessThanOrEqual(layout.footerTop)
+    expect(layout.bodyOverflowY).toBe('auto')
+
+    const fileChooserPromise = page.waitForEvent('filechooser')
+    await selectFile.click()
+    await fileChooserPromise
+  }
+})
