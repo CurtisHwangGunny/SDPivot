@@ -1,0 +1,255 @@
+name: sdpivot-op
+
+x-runtime-defaults: &runtime-defaults
+  restart: unless-stopped
+  networks:
+    - op-internal
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    <<: *runtime-defaults
+    image: ${OP_POSTGRES_IMAGE:?OP_POSTGRES_IMAGE is required}
+    environment:
+      POSTGRES_USER: ${OP_DB_USER:?OP_DB_USER is required}
+      POSTGRES_PASSWORD: ${OP_DB_PASSWORD:?OP_DB_PASSWORD is required}
+      POSTGRES_DB: ${OP_DB_NAME:?OP_DB_NAME is required}
+    volumes:
+      - op-postgres-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      # The image entrypoint starts a temporary PostgreSQL during initdb; pg_isready alone
+      # would mark that transient instance healthy and race the one-shot migration service.
+      test: ["CMD-SHELL", 'test "$$(cat /proc/1/comm)" = postgres && pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 1m
+    cpus: "0.60"
+    mem_limit: 1024m
+    mem_reservation: 512m
+
+  redis:
+    <<: *runtime-defaults
+    image: ${OP_REDIS_IMAGE:?OP_REDIS_IMAGE is required}
+    environment:
+      REDIS_PASSWORD: ${OP_REDIS_PASSWORD:?OP_REDIS_PASSWORD is required}
+    command:
+      - sh
+      - -ec
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    volumes:
+      - op-redis-data:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping 2>/dev/null | grep -qx PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    cpus: "0.15"
+    mem_limit: 256m
+    mem_reservation: 64m
+
+  migration:
+    image: ${OP_MIGRATION_IMAGE:?OP_MIGRATION_IMAGE is required}
+    build:
+      context: ..
+      dockerfile: deploy/migration/Dockerfile
+    restart: "no"
+    networks:
+      - op-internal
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      OP_DATABASE_URL: postgresql://${OP_DB_USER:?OP_DB_USER is required}:${OP_DB_PASSWORD:?OP_DB_PASSWORD is required}@postgres:5432/${OP_DB_NAME:?OP_DB_NAME is required}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+    cpus: "0.20"
+    mem_limit: 192m
+    mem_reservation: 64m
+
+  docreader:
+    <<: *runtime-defaults
+    image: ${OP_DOCREADER_IMAGE:?OP_DOCREADER_IMAGE is required - use an immutable tag or digest}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.docreader
+      args:
+        APT_MIRROR: ${APT_MIRROR:-}
+    environment:
+      DOCREADER_IMAGE_OUTPUT_DIR: /tmp/docreader
+      DOCREADER_PDF_FORCE_SCANNED: ${DOCREADER_PDF_FORCE_SCANNED:-false}
+      DOCREADER_ODL_MAX_WORKERS: ${DOCREADER_ODL_MAX_WORKERS:-1}
+      DOCREADER_ODL_HYBRID: "off"
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+    volumes:
+      - op-docreader-data:/tmp/docreader
+    expose:
+      - "50051"
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    cpus: "0.30"
+    mem_limit: 640m
+    mem_reservation: 256m
+
+  app:
+    <<: *runtime-defaults
+    image: ${OP_APP_IMAGE:?OP_APP_IMAGE is required - use an immutable tag or digest}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.app
+      args:
+        APK_MIRROR_ARG: ${APK_MIRROR_ARG:-}
+    environment:
+      AUTO_MIGRATE: "false"
+      GIN_MODE: release
+      OP_MODE: "true"
+      SDP_ENABLE_LEGACY_ALIAS: ${SDP_ENABLE_LEGACY_ALIAS:-false}
+      DB_DRIVER: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${OP_DB_USER:?OP_DB_USER is required}
+      DB_PASSWORD: ${OP_DB_PASSWORD:?OP_DB_PASSWORD is required}
+      DB_NAME: ${OP_DB_NAME:?OP_DB_NAME is required}
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${OP_REDIS_PASSWORD:?OP_REDIS_PASSWORD is required}
+      REDIS_DB: ${OP_REDIS_DB:-0}
+      REDIS_PREFIX: ${OP_REDIS_PREFIX:-sdpivot:}
+      DOCREADER_ADDR: docreader:50051
+      DOCREADER_TRANSPORT: grpc
+      STORAGE_TYPE: local
+      LOCAL_STORAGE_BASE_DIR: /data/files
+      JWT_SECRET: ${OP_JWT_SECRET:?OP_JWT_SECRET is required}
+      TENANT_AES_KEY: ${OP_TENANT_AES_KEY:?OP_TENANT_AES_KEY is required}
+      SYSTEM_AES_KEY: ${OP_SYSTEM_AES_KEY:?OP_SYSTEM_AES_KEY is required}
+      DISABLE_REGISTRATION: ${DISABLE_REGISTRATION:-true}
+      WEKNORA_ASYNQ_CONCURRENCY: ${WEKNORA_ASYNQ_CONCURRENCY:-2}
+      CONCURRENCY_POOL_SIZE: ${CONCURRENCY_POOL_SIZE:-2}
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - op-app-files:/data/files
+      - op-docreader-data:/tmp/docreader:ro
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      docreader:
+        condition: service_healthy
+    cpus: "0.35"
+    mem_limit: 768m
+    mem_reservation: 256m
+
+  sdp-backend:
+    <<: *runtime-defaults
+    # Build requires the executable frontend/sdpivot/sdp-server artifact.
+    # Generate it with: go build -trimpath -buildvcs=false -o frontend/sdpivot/sdp-server ./cmd/sdp-server
+    image: ${OP_SDP_BACKEND_IMAGE:?OP_SDP_BACKEND_IMAGE is required}
+    build:
+      context: ../frontend/sdpivot
+      dockerfile: Dockerfile.backend
+    environment:
+      OP_MODE: "true"
+      BRAND: sdpivot
+      SDP_ENABLE_LEGACY_ALIAS: ${SDP_ENABLE_LEGACY_ALIAS:-false}
+      SDP_DB_HOST: postgres
+      SDP_DB_PORT: "5432"
+      SDP_DB_USER: ${OP_DB_USER:?OP_DB_USER is required}
+      SDP_DB_PASSWORD: ${OP_DB_PASSWORD:?OP_DB_PASSWORD is required}
+      SDP_DB_NAME: ${OP_DB_NAME:?OP_DB_NAME is required}
+      SDP_DB_MAX_OPEN_CONNS: ${SDP_DB_MAX_OPEN_CONNS:-5}
+      SDP_DB_MAX_IDLE_CONNS: ${SDP_DB_MAX_IDLE_CONNS:-2}
+      SDP_DB_CONN_MAX_LIFETIME: ${SDP_DB_CONN_MAX_LIFETIME:-10m}
+      SDP_REDIS_ADDR: redis:6379
+      SDP_REDIS_PASSWORD: ${OP_REDIS_PASSWORD:?OP_REDIS_PASSWORD is required}
+      DOCREADER_ADDR: docreader:50051
+      DOCREADER_TRANSPORT: grpc
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+      SDP_UPLOAD_DIR: /data/sdpivot-uploads
+      SDP_JWT_SECRET: ${OP_SDP_JWT_SECRET:?OP_SDP_JWT_SECRET is required}
+      SDP_BOOTSTRAP_ADMIN_EMAIL: ${OP_BOOTSTRAP_ADMIN_EMAIL:-}
+      SDP_BOOTSTRAP_ADMIN_PASSWORD: ${OP_BOOTSTRAP_ADMIN_PASSWORD:-}
+      SDP_BOOTSTRAP_SYSADMIN_EMAIL: ${OP_BOOTSTRAP_SYSADMIN_EMAIL:-}
+      SDP_BOOTSTRAP_SYSADMIN_PASSWORD: ${OP_BOOTSTRAP_SYSADMIN_PASSWORD:-}
+      SDP_ALLOWED_ORIGINS: ${OP_ALLOWED_ORIGINS:?OP_ALLOWED_ORIGINS is required}
+      SDP_READY_TIMEOUT: ${SDP_READY_TIMEOUT:-3s}
+      GIN_MODE: release
+      PORT: "8081"
+    volumes:
+      - op-sdp-files:/data/sdpivot-uploads
+    expose:
+      - "8081"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/ready"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      docreader:
+        condition: service_healthy
+    cpus: "0.20"
+    mem_limit: 384m
+    mem_reservation: 128m
+
+  sdp-frontend:
+    <<: *runtime-defaults
+    # Build requires an OP-only frontend/sdpivot/dist artifact produced by `npm run build:op`.
+    # The artifact must contain index.html and must not contain ops.html.
+    image: ${OP_SDP_FRONTEND_IMAGE:?OP_SDP_FRONTEND_IMAGE is required}
+    build:
+      context: ../frontend/sdpivot
+      dockerfile: Dockerfile.frontend
+    networks:
+      - op-internal
+      - op-ingress
+    ports:
+      - "${OP_HTTP_BIND:-127.0.0.1}:${OP_HTTP_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      sdp-backend:
+        condition: service_healthy
+    cpus: "0.10"
+    mem_limit: 128m
+    mem_reservation: 32m
+
+networks:
+  op-internal:
+    internal: true
+  op-ingress:
+
+volumes:
+  op-postgres-data:
+  op-redis-data:
+  op-app-files:
+  op-docreader-data:
+  op-sdp-files:
