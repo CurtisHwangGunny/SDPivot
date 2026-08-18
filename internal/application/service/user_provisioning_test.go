@@ -137,6 +137,37 @@ func TestBootstrapOPAdminIsIdempotentAndDoesNotResetExistingPassword(t *testing.
 	}
 }
 
+func TestBootstrapOPAdminPreservesExistingPasswordChangeState(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("Existing9"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := &bootstrapUserRepo{user: &types.User{
+		ID: "existing", Email: "operator@example.com", PasswordHash: string(hash),
+		IsActive: true, AccessRole: types.AccessRoleSuperAdmin, MustChangePassword: false,
+	}}
+	memberSvc := &bootstrapMemberService{}
+	svc := &userService{
+		userRepo: repo, tenantService: &provisioningTenantService{}, memberService: memberSvc,
+	}
+
+	if err := svc.BootstrapOPAdmin(context.Background(), repo.user.Email, "Bootstrap9"); err != nil {
+		t.Fatalf("BootstrapOPAdmin: %v", err)
+	}
+	if repo.user.MustChangePassword {
+		t.Fatal("bootstrap must preserve an existing user's cleared password-change state")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(repo.user.PasswordHash), []byte("Existing9")); err != nil {
+		t.Fatalf("existing password was changed: %v", err)
+	}
+}
+
+func TestBootstrapOPAdminMissingDependenciesReturnsError(t *testing.T) {
+	if err := (&userService{}).BootstrapOPAdmin(context.Background(), "operator@example.com", "Bootstrap9"); err == nil {
+		t.Fatal("BootstrapOPAdmin should report missing dependencies")
+	}
+}
+
 func TestResolveLoginTenantIDRepairsTenantlessUserWithMembership(t *testing.T) {
 	repo := &provisioningUserRepo{}
 	tenantSvc := &provisioningTenantService{}

@@ -206,6 +206,9 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 // BootstrapOPAdmin idempotently provisions the operator account configured by
 // the OP runtime. Existing passwords are never replaced by this method.
 func (s *userService) BootstrapOPAdmin(ctx context.Context, email, password string) error {
+	if s == nil || s.userRepo == nil {
+		return errors.New("user service dependencies unavailable")
+	}
 	email = strings.TrimSpace(email)
 	if email == "" || strings.TrimSpace(password) == "" {
 		return nil
@@ -220,6 +223,9 @@ func (s *userService) BootstrapOPAdmin(ctx context.Context, email, password stri
 	}
 	isNewUser := user == nil
 	if user == nil {
+		if s.tenantService == nil {
+			return errors.New("tenant service unavailable")
+		}
 		hash, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if hashErr != nil {
 			return hashErr
@@ -233,6 +239,9 @@ func (s *userService) BootstrapOPAdmin(ctx context.Context, email, password stri
 
 	changed := false
 	if user.TenantID == 0 {
+		if s.tenantService == nil {
+			return errors.New("tenant service unavailable")
+		}
 		tenant, createErr := s.tenantService.CreateTenant(ctx, &types.Tenant{
 			Name: "Operator Workspace", Description: "OP operator workspace", Status: "active",
 		})
@@ -248,10 +257,6 @@ func (s *userService) BootstrapOPAdmin(ctx context.Context, email, password stri
 	}
 	if types.NormalizeAccessRole(string(user.AccessRole)) != types.AccessRoleSuperAdmin {
 		user.AccessRole = types.AccessRoleSuperAdmin
-		changed = true
-	}
-	if !user.MustChangePassword {
-		user.MustChangePassword = true
 		changed = true
 	}
 	if isNewUser {
