@@ -13,7 +13,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 # 版本信息
-VERSION="1.0.0"
+VERSION="$(tr -d '\n\r' < "$PROJECT_ROOT/VERSION" 2>/dev/null || printf '1.0.0')"
 SCRIPT_NAME=$(basename "$0")
 
 # 显示帮助信息
@@ -95,8 +95,8 @@ check_platform() {
 # 获取版本信息
 get_version_info() {
     # 从VERSION文件获取版本号
-    if [ -f "VERSION" ]; then
-        VERSION=$(cat VERSION | tr -d '\n\r')
+    if [ -f "$PROJECT_ROOT/VERSION" ]; then
+        VERSION=$(tr -d '\n\r' < "$PROJECT_ROOT/VERSION")
     else
         VERSION="unknown"
     fi

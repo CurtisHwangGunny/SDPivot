@@ -18,6 +18,9 @@ import (
 
 const defaultServer = "http://localhost:8080"
 
+// opVersion is injected by the release build and is shown by --version.
+var opVersion = "1.0.0"
+
 type config struct {
 	Server string `json:"server"`
 	Token  string `json:"token"`
@@ -28,6 +31,10 @@ type client struct {
 }
 
 func main() {
+	if hasVersionFlag(os.Args[1:]) {
+		fmt.Printf("sdpivot-cli %s\n", opVersion)
+		return
+	}
 	server, args, err := parseServer(os.Args[1:])
 	if err != nil {
 		fatal(err)
@@ -68,6 +75,15 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+}
+
+func hasVersionFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--version" || arg == "-v" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseServer(args []string) (string, []string, error) {
@@ -289,6 +305,6 @@ func saveConfig(cfg config) error {
 	return os.WriteFile(path, data, 0600)
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "SDPivot CLI\n\nUsage:\n  sdpivot-cli [--server URL] auth --email EMAIL --password PASSWORD\n  sdpivot-cli [--server URL] search --query QUERY\n  sdpivot-cli [--server URL] doc list --space SPACE_ID\n  sdpivot-cli [--server URL] doc upload --space SPACE_ID --file PATH\n  sdpivot-cli [--server URL] qa --session SESSION_ID --content CONTENT")
+	fmt.Fprintf(os.Stderr, "SDPivot CLI %s\n\nUsage:\n  sdpivot-cli [--server URL] auth --email EMAIL --password PASSWORD\n  sdpivot-cli [--server URL] search --query QUERY\n  sdpivot-cli [--server URL] doc list --space SPACE_ID\n  sdpivot-cli [--server URL] doc upload --space SPACE_ID --file PATH\n  sdpivot-cli [--server URL] qa --session SESSION_ID --content CONTENT\n  sdpivot-cli --version\n", opVersion)
 }
 func fatal(err error) { fmt.Fprintln(os.Stderr, "error:", err); os.Exit(1) }

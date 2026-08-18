@@ -12,7 +12,7 @@ BINARY      := weknora
 BUILD_DIR   := bin
 PKG         := github.com/Tencent/WeKnora/cli
 
-VERSION     := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION     := $(shell tr -d '\n\r' < ../VERSION 2>/dev/null || echo 1.0.0)
 COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE        := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 

@@ -5,7 +5,7 @@
 package build
 
 var (
-	Version = "dev"
+	Version = "1.0.0"
 	Commit  = "none"
 	Date    = "unknown"
 )

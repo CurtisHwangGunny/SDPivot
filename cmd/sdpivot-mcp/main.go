@@ -19,10 +19,13 @@ import (
 )
 
 const (
-	serverName    = "SDPivot MCP"
-	serverVersion = "2.0.0"
-	defaultAPI    = "http://localhost:8080"
+	serverName = "SDPivot MCP"
+	defaultAPI = "http://localhost:8080"
 )
+
+// opVersion is injected by the release build and keeps MCP handshakes on the
+// independent OP product version rather than the upstream WeKnora version.
+var opVersion = "1.0.0"
 
 type apiClient struct {
 	baseURL, token string
@@ -35,7 +38,7 @@ func main() {
 	api := flag.String("server", env("SDPIVOT_SERVER", defaultAPI), "SDPivot server URL")
 	token := flag.String("token", os.Getenv("SDPIVOT_TOKEN"), "SDPivot access token")
 	flag.Parse()
-	s := server.NewMCPServer(serverName, serverVersion, server.WithToolCapabilities(true))
+	s := server.NewMCPServer(serverName, opVersion, server.WithToolCapabilities(true))
 	c := &apiClient{baseURL: strings.TrimRight(*api, "/"), token: *token, http: &http.Client{Timeout: 90 * time.Second}}
 	registerTools(s, c)
 	var err error

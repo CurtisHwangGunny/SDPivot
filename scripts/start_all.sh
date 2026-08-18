@@ -13,7 +13,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 # 版本信息
-VERSION="1.0.1" # 版本更新
+VERSION="$(tr -d '\n\r' < "$PROJECT_ROOT/VERSION" 2>/dev/null || printf '1.0.0')"
 SCRIPT_NAME=$(basename "$0")
 
 # 显示帮助信息

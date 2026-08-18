@@ -3,15 +3,17 @@
 # 支持本地构建和CI构建环境
 
 # 设置默认值
-VERSION="unknown"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+PROJECT_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+VERSION="1.0.0"
 EDITION="${EDITION:-standard}"
 COMMIT_ID="unknown"
 BUILD_TIME="unknown"
 GO_VERSION="unknown"
 
 # 获取版本号
-if [ -f "VERSION" ]; then
-    VERSION=$(cat VERSION | tr -d '\n\r')
+if [ -f "$PROJECT_ROOT/VERSION" ]; then
+    VERSION=$(tr -d '\n\r' < "$PROJECT_ROOT/VERSION")
 fi
 
 # 获取commit ID
@@ -68,7 +70,7 @@ EOF
         ;;
     "ldflags")
         # 输出Go ldflags格式
-        echo "-X 'github.com/Tencent/WeKnora/internal/handler.Version=$VERSION' -X 'github.com/Tencent/WeKnora/internal/handler.Edition=$EDITION' -X 'github.com/Tencent/WeKnora/internal/handler.CommitID=$COMMIT_ID' -X 'github.com/Tencent/WeKnora/internal/handler.BuildTime=$BUILD_TIME' -X 'github.com/Tencent/WeKnora/internal/handler.GoVersion=$GO_VERSION'"
+        echo "-X 'github.com/Tencent/WeKnora/internal/handler.Version=$VERSION' -X 'github.com/Tencent/WeKnora/internal/handler.Edition=$EDITION' -X 'github.com/Tencent/WeKnora/internal/handler.CommitID=$COMMIT_ID' -X 'github.com/Tencent/WeKnora/internal/handler.BuildTime=$BUILD_TIME' -X 'github.com/Tencent/WeKnora/internal/handler.GoVersion=$GO_VERSION' -X 'github.com/Tencent/WeKnora/cmd/sdpivot-mcp.opVersion=$VERSION' -X 'github.com/Tencent/WeKnora/cmd/sdpivot-cli.opVersion=$VERSION' -X 'github.com/Tencent/WeKnora/cli/internal/build.Version=$VERSION'"
         ;;
     "info")
         # 输出信息格式

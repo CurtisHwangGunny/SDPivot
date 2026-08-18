@@ -14,13 +14,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
-# Resolve version
+# Resolve version from the OP product metadata unless explicitly overridden.
 if [ -n "${1:-}" ]; then
     VERSION="$1"
-elif command -v git >/dev/null 2>&1; then
-    VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
 else
-    VERSION="dev"
+    VERSION="$(tr -d '\n\r' < "${ROOT_DIR}/VERSION" 2>/dev/null || printf '1.0.0')"
 fi
 
 GOOS=$(go env GOOS)
