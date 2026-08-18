@@ -86,6 +86,8 @@ type User struct {
 	TenantID uint64 `json:"tenant_id"  gorm:"index"`
 	// Whether the user is active
 	IsActive bool `json:"is_active"  gorm:"default:true"`
+	// Whether the user must change the password before using business APIs.
+	MustChangePassword bool `json:"must_change_password" gorm:"not null;default:false"`
 	// Whether the user can access all workspaces (cross-workspace access)
 	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
 	// AccessRole is the OP product-level authorization source of truth.
@@ -166,10 +168,11 @@ type OIDCCallbackResponse struct {
 	// Memberships mirrors LoginResponse.Memberships so the OIDC flow
 	// produces the same role information available to password logins.
 	// Always populated (length >= 1 for an authenticated user).
-	Memberships  []Membership `json:"memberships"`
-	Token        string       `json:"token,omitempty"`
-	RefreshToken string       `json:"refresh_token,omitempty"`
-	IsNewUser    bool         `json:"is_new_user,omitempty"`
+	Memberships        []Membership `json:"memberships"`
+	Token              string       `json:"token,omitempty"`
+	RefreshToken       string       `json:"refresh_token,omitempty"`
+	IsNewUser          bool         `json:"is_new_user,omitempty"`
+	MustChangePassword bool         `json:"must_change_password"`
 }
 
 type OIDCUserInfo struct {
@@ -209,9 +212,10 @@ func (m TenantProvisioningMode) IsValid() bool {
 
 // LoginResponse represents a login response
 type LoginResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message,omitempty"`
-	User    *User  `json:"user,omitempty"`
+	Success            bool   `json:"success"`
+	Message            string `json:"message,omitempty"`
+	MustChangePassword bool   `json:"must_change_password"`
+	User               *User  `json:"user,omitempty"`
 	// ActiveTenant is the workspace whose ID is encoded in the issued JWT;
 	// future requests are scoped to it until the client calls /auth/switch-tenant.
 	// Defaults to the user's home workspace on a fresh login.
@@ -244,6 +248,7 @@ type UserInfo struct {
 	Avatar              string          `json:"avatar"`
 	TenantID            uint64          `json:"tenant_id"`
 	IsActive            bool            `json:"is_active"`
+	MustChangePassword  bool            `json:"must_change_password"`
 	CanAccessAllTenants bool            `json:"can_access_all_tenants"`
 	IsSystemAdmin       bool            `json:"is_system_admin"`
 	AccessRole          AccessRole      `json:"access_role"`
@@ -262,6 +267,7 @@ func (u *User) ToUserInfo() *UserInfo {
 		Avatar:              u.Avatar,
 		TenantID:            u.TenantID,
 		IsActive:            u.IsActive,
+		MustChangePassword:  u.MustChangePassword,
 		CanAccessAllTenants: u.CanAccessAllTenants,
 		IsSystemAdmin:       u.IsSystemAdmin,
 		AccessRole:          NormalizeAccessRole(string(u.AccessRole)),

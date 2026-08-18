@@ -203,6 +203,82 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	return user, nil
 }
 
+// BootstrapOPAdmin idempotently provisions the operator account configured by
+// the OP runtime. Existing passwords are never replaced by this method.
+func (s *userService) BootstrapOPAdmin(ctx context.Context, email, password string) error {
+	email = strings.TrimSpace(email)
+	if email == "" || strings.TrimSpace(password) == "" {
+		return nil
+	}
+	if err := ValidatePasswordPolicy(password); err != nil {
+		return err
+	}
+
+	user, err := s.userRepo.GetUserByEmail(ctx, email)
+	if err != nil && !errors.Is(err, apprepo.ErrUserNotFound) {
+		return err
+	}
+	isNewUser := user == nil
+	if user == nil {
+		hash, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return hashErr
+		}
+		user = &types.User{
+			ID: uuid.New().String(), Username: bootstrapUsername(email), Email: email,
+			PasswordHash: string(hash), IsActive: true, AccessRole: types.AccessRoleSuperAdmin,
+			MustChangePassword: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}
+	}
+
+	changed := false
+	if user.TenantID == 0 {
+		tenant, createErr := s.tenantService.CreateTenant(ctx, &types.Tenant{
+			Name: "Operator Workspace", Description: "OP operator workspace", Status: "active",
+		})
+		if createErr != nil {
+			return createErr
+		}
+		user.TenantID = tenant.ID
+		changed = true
+	}
+	if !user.IsActive {
+		user.IsActive = true
+		changed = true
+	}
+	if types.NormalizeAccessRole(string(user.AccessRole)) != types.AccessRoleSuperAdmin {
+		user.AccessRole = types.AccessRoleSuperAdmin
+		changed = true
+	}
+	if !user.MustChangePassword {
+		user.MustChangePassword = true
+		changed = true
+	}
+	if isNewUser {
+		if err := s.userRepo.CreateUser(ctx, user); err != nil {
+			return err
+		}
+	} else if changed || user.CreatedAt.IsZero() {
+		user.UpdatedAt = time.Now()
+		if err := s.userRepo.UpdateUser(ctx, user); err != nil {
+			return err
+		}
+	}
+	if s.memberService == nil {
+		return errors.New("tenant membership service unavailable")
+	}
+	_, err = s.memberService.EnsureOwner(ctx, user.ID, user.TenantID)
+	return err
+}
+
+func bootstrapUsername(email string) string {
+	name := strings.TrimSpace(strings.SplitN(email, "@", 2)[0])
+	if name == "" {
+		return "operator"
+	}
+	return name
+}
+
 // Login authenticates a user and returns tokens
 func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*types.LoginResponse, error) {
 	logger.Info(ctx, "Start user login")
@@ -275,13 +351,14 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 
 	logger.Info(ctx, "User logged in successfully")
 	return &types.LoginResponse{
-		Success:      true,
-		Message:      "Login successful",
-		User:         user,
-		ActiveTenant: tenant,
-		Memberships:  memberships,
-		Token:        accessToken,
-		RefreshToken: refreshToken,
+		Success:            true,
+		Message:            "Login successful",
+		MustChangePassword: user.MustChangePassword,
+		User:               user,
+		ActiveTenant:       tenant,
+		Memberships:        memberships,
+		Token:              accessToken,
+		RefreshToken:       refreshToken,
 	}, nil
 }
 
@@ -523,14 +600,15 @@ func (s *userService) LoginWithOIDC(
 	memberships := s.buildMembershipsForUser(ctx, user, tenant)
 
 	return &types.OIDCCallbackResponse{
-		Success:      true,
-		Message:      "登录成功",
-		User:         user,
-		Tenant:       tenant,
-		Memberships:  memberships,
-		Token:        accessToken,
-		RefreshToken: refreshToken,
-		IsNewUser:    isNewUser,
+		Success:            true,
+		Message:            "登录成功",
+		User:               user,
+		Tenant:             tenant,
+		Memberships:        memberships,
+		Token:              accessToken,
+		RefreshToken:       refreshToken,
+		IsNewUser:          isNewUser,
+		MustChangePassword: user.MustChangePassword,
 	}, nil
 }
 
@@ -628,6 +706,9 @@ func (s *userService) DeleteUser(ctx context.Context, id string) error {
 
 // ChangePassword changes user password
 func (s *userService) ChangePassword(ctx context.Context, userID string, oldPassword, newPassword string) error {
+	if err := ValidatePasswordPolicy(newPassword); err != nil {
+		return err
+	}
 	user, err := s.userRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return err
@@ -646,6 +727,7 @@ func (s *userService) ChangePassword(ctx context.Context, userID string, oldPass
 	}
 
 	user.PasswordHash = string(hashedPassword)
+	user.MustChangePassword = false
 	user.UpdatedAt = time.Now()
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
@@ -967,13 +1049,14 @@ func (s *userService) SwitchTenant(
 	memberships := s.buildMembershipsForUser(ctx, user, tenant)
 
 	return &types.LoginResponse{
-		Success:      true,
-		Message:      "Workspace switched",
-		User:         user,
-		ActiveTenant: tenant,
-		Memberships:  memberships,
-		Token:        accessToken,
-		RefreshToken: refreshToken,
+		Success:            true,
+		Message:            "Workspace switched",
+		MustChangePassword: user.MustChangePassword,
+		User:               user,
+		ActiveTenant:       tenant,
+		Memberships:        memberships,
+		Token:              accessToken,
+		RefreshToken:       refreshToken,
 	}, nil
 }
 
@@ -1132,6 +1215,9 @@ func (s *userService) RefreshToken(
 	user, err := s.userRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return "", "", err
+	}
+	if user.MustChangePassword {
+		return "", "", errors.New("password change required")
 	}
 
 	// Revoke old refresh token

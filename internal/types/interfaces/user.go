@@ -88,6 +88,13 @@ type UserService interface {
 	UpdateUserPreferences(ctx context.Context, userID string, patch types.UserPreferences) (types.UserPreferences, error)
 }
 
+// OPBootstrapAdminService is implemented by the UserService used by the OP
+// server. It is separate from UserService so bootstrap-only wiring does not
+// force unrelated test doubles or alternate editions to implement it.
+type OPBootstrapAdminService interface {
+	BootstrapOPAdmin(ctx context.Context, email, password string) error
+}
+
 // UserRepository defines the user repository interface
 type UserRepository interface {
 	// CreateUser creates a user

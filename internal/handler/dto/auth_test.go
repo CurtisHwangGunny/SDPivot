@@ -26,6 +26,14 @@ func TestAuthLoginResponse_ViewerOmitsActiveTenantSecrets(t *testing.T) {
 	assert.NotContains(t, s, "parser-secret-123")
 }
 
+func TestAuthLoginResponseIncludesMustChangePassword(t *testing.T) {
+	resp := NewAuthLoginResponse(&types.LoginResponse{Success: true, MustChangePassword: true})
+	body, err := json.Marshal(resp)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"must_change_password":true`)
+	assert.NotContains(t, string(body), "password_hash")
+}
+
 func TestAuthLoginResponse_OwnerOmitsLegacyTenantAPIKey(t *testing.T) {
 	tenant := sampleSecretTenant()
 	resp := NewAuthLoginResponse(&types.LoginResponse{

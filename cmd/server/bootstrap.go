@@ -32,6 +32,11 @@ import (
 //     silently undone on the next restart.
 const bootstrapEnvVar = "WEKNORA_BOOTSTRAP_SYSTEM_ADMIN_EMAIL"
 
+const (
+	opBootstrapEmailEnv    = "SDP_BOOTSTRAP_ADMIN_EMAIL"
+	opBootstrapPasswordEnv = "SDP_BOOTSTRAP_ADMIN_PASSWORD"
+)
+
 // runStartupBootstrap consults the env and applies any one-shot
 // bootstrap actions. Currently it only handles system-admin promotion;
 // future bootstrap steps (default model seeding, etc.) can be added
@@ -50,6 +55,17 @@ func runStartupBootstrap(c *dig.Container) {
 		}
 	}); err != nil {
 		logger.Warnf(ctx, "[bootstrap] failed to resolve TenantAPIKeyService: %v", err)
+	}
+	if email, password := strings.TrimSpace(os.Getenv(opBootstrapEmailEnv)), os.Getenv(opBootstrapPasswordEnv); email != "" && strings.TrimSpace(password) != "" {
+		if err := c.Invoke(func(userSvc interfaces.UserService) {
+			if opSvc, ok := userSvc.(interfaces.OPBootstrapAdminService); ok {
+				if err := opSvc.BootstrapOPAdmin(ctx, email, password); err != nil {
+					logger.Warnf(ctx, "[bootstrap] OP admin initialization failed: %v", err)
+				}
+			}
+		}); err != nil {
+			logger.Warnf(ctx, "[bootstrap] failed to resolve UserService for OP admin: %v", err)
+		}
 	}
 
 	email := strings.TrimSpace(os.Getenv(bootstrapEnvVar))

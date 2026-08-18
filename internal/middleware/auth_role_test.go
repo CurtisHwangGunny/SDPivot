@@ -3,12 +3,49 @@ package middleware
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/gin-gonic/gin"
 )
+
+func TestEnforcePasswordChangeAllowsOnlyIdentityEndpoints(t *testing.T) {
+	allowed := []struct {
+		path   string
+		method string
+	}{
+		{"/api/v1/auth/change-password", "POST"},
+		{"/api/v1/auth/logout", "POST"},
+		{"/api/v1/auth/validate", "GET"},
+		{"/api/v1/auth/me", "GET"},
+	}
+	for _, tc := range allowed {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(tc.method, tc.path, nil)
+		if !enforcePasswordChange(c, &types.User{MustChangePassword: true}) {
+			t.Fatalf("%s %s should be allowed", tc.method, tc.path)
+		}
+	}
+}
+
+func TestEnforcePasswordChangeRejectsBusinessAPI(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest("GET", "/api/v1/documents", nil)
+	if enforcePasswordChange(c, &types.User{MustChangePassword: true}) {
+		t.Fatal("business API should be rejected")
+	}
+	if recorder.Code != 403 {
+		t.Fatalf("status = %d, want 403", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), "PASSWORD_CHANGE_REQUIRED") {
+		t.Fatalf("response = %s", recorder.Body.String())
+	}
+}
 
 // fakeMemberService is a hand-rolled stand-in for
 // interfaces.TenantMemberService. It backs Get/HasAnyMembers/AddMember

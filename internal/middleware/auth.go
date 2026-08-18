@@ -103,6 +103,33 @@ func isTenantOptionalAPI(path, method string) bool {
 	}
 }
 
+func isPasswordChangeAllowedAPI(path, method string) bool {
+	switch {
+	case path == "/api/v1/auth/change-password" && method == http.MethodPost:
+		return true
+	case path == "/api/v1/auth/logout" && method == http.MethodPost:
+		return true
+	case path == "/api/v1/auth/validate" && method == http.MethodGet:
+		return true
+	case path == "/api/v1/auth/me" && (method == http.MethodGet || method == http.MethodPut):
+		return true
+	default:
+		return false
+	}
+}
+
+func enforcePasswordChange(c *gin.Context, user *types.User) bool {
+	if user == nil || !user.MustChangePassword || isPasswordChangeAllowedAPI(c.Request.URL.Path, c.Request.Method) {
+		return true
+	}
+	c.JSON(http.StatusForbidden, gin.H{
+		"error": "Password change required",
+		"code":  "PASSWORD_CHANGE_REQUIRED",
+	})
+	c.Abort()
+	return false
+}
+
 func attachTenantlessUserContext(c *gin.Context, user *types.User) {
 	applyAuthSession(c, authSession{
 		User:        user,
@@ -213,7 +240,7 @@ func authenticateJWTUser(
 		// 其余路由返回 TENANT_REQUIRED 让前端引导用户创建/加入空间。
 		if isTenantOptionalAPI(c.Request.URL.Path, c.Request.Method) {
 			attachTenantlessUserContext(c, user)
-			return true
+			return enforcePasswordChange(c, user)
 		}
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "Workspace required",
@@ -264,7 +291,7 @@ func authenticateJWTUser(
 		DepartmentID: userDepartmentID(user),
 		SystemAdmin:  user.IsSystemAdmin,
 	})
-	return true
+	return enforcePasswordChange(c, user)
 }
 
 func userDepartmentID(user *types.User) string {

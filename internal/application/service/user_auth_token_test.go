@@ -220,6 +220,24 @@ func TestAdminResetPasswordRejectsWeakPasswordBeforeWrite(t *testing.T) {
 	}
 }
 
+func TestChangePasswordClearsMustChangePassword(t *testing.T) {
+	tokenRepo := &stubAuthTokenRepo{tokens: map[string]*types.AuthToken{}}
+	repo := &stubUserRepoForAuth{users: map[string]*types.User{}}
+	hash, err := bcrypt.GenerateFromPassword([]byte("OldPass1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.users["user-1"] = &types.User{ID: "user-1", PasswordHash: string(hash), MustChangePassword: true}
+	svc := &userService{userRepo: repo, tokenRepo: tokenRepo}
+
+	if err := svc.ChangePassword(context.Background(), "user-1", "OldPass1", "NewPass2"); err != nil {
+		t.Fatalf("ChangePassword() err = %v", err)
+	}
+	if repo.users["user-1"].MustChangePassword {
+		t.Fatal("ChangePassword must clear MustChangePassword")
+	}
+}
+
 func TestUserIDFromSignedTokenAcceptsExpiredToken(t *testing.T) {
 	expired := signTestJWT(jwt.MapClaims{
 		"user_id": "user-1",
