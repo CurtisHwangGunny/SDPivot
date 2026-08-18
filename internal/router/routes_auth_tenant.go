@@ -174,32 +174,36 @@ func RegisterMyInvitationRoutes(r *gin.RouterGroup, invitationHandler *handler.T
 }
 
 // RegisterAuthRoutes registers authentication routes
-func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler, g *rbacGuards) {
-	r.POST("/auth/register", handler.Register)
+func RegisterAuthRoutes(r *gin.RouterGroup, authHandler *handler.AuthHandler, g *rbacGuards) {
 	// Share-link surfaces are unauthenticated and accept a plaintext
 	// token from the caller; rate-limit by IP to bound brute-force /
 	// enumeration / abuse traffic. Limiter is shared across both
 	// endpoints (see middleware/auth_public_ratelimit.go) so total
 	// budget per IP is intuitive.
 	publicAuthRL := middleware.PublicAuthRateLimit()
-	r.POST("/auth/register-by-invite", publicAuthRL, handler.RegisterByInvite)
-	r.POST("/auth/invitations/lookup", publicAuthRL, handler.LookupInvitationByToken)
-	r.POST("/auth/login", handler.Login)
-	r.POST("/auth/auto-setup", handler.AutoSetup)
-	r.GET("/auth/config", handler.GetAuthConfig)
-	r.POST("/auth/switch-tenant", handler.SwitchTenant)
-	r.GET("/auth/oidc/config", handler.GetOIDCConfig)
-	r.GET("/auth/oidc/url", handler.GetOIDCAuthorizationURL)
-	r.GET("/auth/oidc/callback", handler.OIDCRedirectCallback)
-	r.POST("/auth/refresh", handler.RefreshToken)
-	r.GET("/auth/validate", handler.ValidateToken)
-	r.POST("/auth/logout", handler.Logout)
+	// OP has no public account-entry surface. Keep the SaaS routes intact for
+	// standard builds; the handler retains a defence-in-depth edition gate.
+	if !handler.IsOPEdition() {
+		r.POST("/auth/register", authHandler.Register)
+		r.POST("/auth/register-by-invite", publicAuthRL, authHandler.RegisterByInvite)
+		r.POST("/auth/invitations/lookup", publicAuthRL, authHandler.LookupInvitationByToken)
+	}
+	r.POST("/auth/login", authHandler.Login)
+	r.POST("/auth/auto-setup", authHandler.AutoSetup)
+	r.GET("/auth/config", authHandler.GetAuthConfig)
+	r.POST("/auth/switch-tenant", authHandler.SwitchTenant)
+	r.GET("/auth/oidc/config", authHandler.GetOIDCConfig)
+	r.GET("/auth/oidc/url", authHandler.GetOIDCAuthorizationURL)
+	r.GET("/auth/oidc/callback", authHandler.OIDCRedirectCallback)
+	r.POST("/auth/refresh", authHandler.RefreshToken)
+	r.GET("/auth/validate", authHandler.ValidateToken)
+	r.POST("/auth/logout", authHandler.Logout)
 	// auth/me returns only the caller's own identity/profile, so it is safe
 	// for any valid API key. Chat clients / MCP call it to discover "who am I";
 	// leaving it default-deny was why scoped keys got a 403 here.
-	g.apiKeyRoute(r, http.MethodGet, "/auth/me", apiKeyAny(), handler.GetCurrentUser)
-	r.PUT("/auth/me/preferences", handler.UpdateMyPreferences)
-	r.POST("/auth/change-password", handler.ChangePassword)
+	g.apiKeyRoute(r, http.MethodGet, "/auth/me", apiKeyAny(), authHandler.GetCurrentUser)
+	r.PUT("/auth/me/preferences", authHandler.UpdateMyPreferences)
+	r.POST("/auth/change-password", authHandler.ChangePassword)
 }
 
 // RegisterSystemRoutes registers system information routes

@@ -606,7 +606,7 @@ const loadOIDCConfig = async () => {
 const loadAuthConfig = async () => {
   try {
     const response = await getAuthConfig()
-    registrationEnabled.value = response.registration_mode !== 'invite_only'
+    registrationEnabled.value = response.edition?.toLowerCase() !== 'op' && response.registration_mode !== 'invite_only'
   } catch {
     registrationEnabled.value = true
   }

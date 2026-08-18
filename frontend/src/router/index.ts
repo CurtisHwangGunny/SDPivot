@@ -61,6 +61,12 @@ const router = createRouter({
       // that would duplicate the OIDC / language-switch / styling
       // surface for one extra field.
       component: () => import("../views/auth/Login.vue"),
+      beforeEnter: async (to) => {
+        const config = await import('@/api/auth').then(({ getAuthConfig }) => getAuthConfig())
+        if (config.edition?.toLowerCase() === 'op') return '/login'
+        if (config.registration_mode === 'invite_only' && !to.query.token) return '/login'
+        return true
+      },
       meta: { requiresAuth: false, requiresInit: false }
     },
     {

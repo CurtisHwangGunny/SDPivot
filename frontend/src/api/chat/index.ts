@@ -39,11 +39,13 @@ export async function agentChat(data: {
   session_id: string; 
   query: string;
   knowledge_base_ids?: string[];
+  space_ids?: string[];
   agent_enabled: boolean;
 }) {
   return postChat(`/api/v1/agent-chat/${data.session_id}`, { 
     query: data.query,
     knowledge_base_ids: data.knowledge_base_ids,
+    space_ids: data.space_ids,
     agent_enabled: data.agent_enabled,
     channel: "web"
   });

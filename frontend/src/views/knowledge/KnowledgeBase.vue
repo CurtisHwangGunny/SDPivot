@@ -1441,6 +1441,19 @@ const onReparseMenuClick = (index: number, item: KnowledgeCard) => {
   }
 };
 
+const retryFailedKnowledge = async (item: KnowledgeCard) => {
+  if (!item?.id || item.parse_status !== 'failed') return;
+  try {
+    await reparseKnowledge(item.id);
+    MessagePlugin.success(t('knowledgeBase.rebuildSubmitted'));
+    item.parse_status = 'pending';
+    item.error_message = '';
+    loadKnowledgeFiles(kbId.value);
+  } catch (error: any) {
+    MessagePlugin.error(error?.message || t('knowledgeBase.rebuildFailed'));
+  }
+};
+
 const handleMoveKnowledge = async (item: KnowledgeCard) => {
   moveKnowledgeId.value = item.id;
   moveMenuMode.value = 'targets';
@@ -2154,6 +2167,7 @@ const handleCardAction = (
   if (action === 'edit') return handleManualEdit(idx, item);
   if (action === 'reparse') {
     if (isParseInFlight(item.parse_status)) return onReparseMenuClick(idx, item);
+    if (item.parse_status === 'failed') return retryFailedKnowledge(item);
     return confirmRebuildKnowledge(idx, item);
   }
   if (action === 'cancel-parse') return confirmCancelParseKnowledge(item);

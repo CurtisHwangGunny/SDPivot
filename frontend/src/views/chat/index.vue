@@ -820,6 +820,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     await startStream({
         session_id: session_id.value,
         knowledge_base_ids: kbIds,
+        space_ids: kbIds,
         knowledge_ids: knowledgeIds,
         agent_enabled: agentEnabled,
         agent_id: selectedAgentId,

@@ -487,6 +487,9 @@ const handleAction = (action: 'edit' | 'view-trace' | 'reparse' | 'cancel-parse'
             @keydown.enter.stop="handleAction('view-trace', item)"
             @keydown.space.prevent.stop="handleAction('view-trace', item)"
           >{{ $t('knowledgeBase.parsingFailed') }}</span>
+          <span v-if="item.error_message" class="card-analyze-error" :title="item.error_message">
+            {{ item.error_message }}
+          </span>
           <button
             type="button"
             class="card-analyze-trace-btn"
@@ -662,6 +665,15 @@ const handleAction = (action: 'edit' | 'view-trace' | 'reparse' | 'cancel-parse'
 </template>
 
 <style scoped lang="less">
+.card-analyze-error {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--td-error-color-7);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 @keyframes contentFadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }

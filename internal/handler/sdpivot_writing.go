@@ -45,8 +45,11 @@ func (h *SDPivotWritingHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 func (h *SDPivotWritingHandler) CreateDraft(c *gin.Context) {
 	var req struct {
-		Title, Category, SpaceID, SourceType string
-		WebSearchEnabled                     bool `json:"web_search_enabled"`
+		Title            string `json:"title"`
+		Category         string `json:"category"`
+		SpaceID          string `json:"space_id"`
+		SourceType       string `json:"source_type"`
+		WebSearchEnabled bool   `json:"web_search_enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -124,12 +127,26 @@ func (h *SDPivotWritingHandler) DeleteDraft(c *gin.Context) {
 
 func (h *SDPivotWritingHandler) GenerateContent(c *gin.Context) {
 	var req struct {
-		Category, Prompt, CustomTemplate, SourceType string
-		SpaceID, Tags                                string
-		WebSearchEnabled                             bool `json:"web_search_enabled"`
+		Category         string `json:"category"`
+		Prompt           string `json:"prompt"`
+		KeyPoints        string `json:"key_points"`
+		Template         string `json:"template"`
+		CustomTemplate   string `json:"custom_template"`
+		SourceType       string `json:"source_type"`
+		SpaceID          string `json:"space_id"`
+		Tags             string `json:"tags"`
+		WebSearchEnabled bool   `json:"web_search_enabled"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Prompt) == "" {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "prompt is required"})
+		return
+	}
+	prompt := strings.TrimSpace(req.Prompt)
+	if prompt == "" {
+		prompt = strings.TrimSpace(req.KeyPoints)
+	}
+	if prompt == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "prompt or key_points is required"})
 		return
 	}
 	category := strings.TrimSpace(req.Category)
@@ -137,11 +154,15 @@ func (h *SDPivotWritingHandler) GenerateContent(c *gin.Context) {
 		category = "report"
 	}
 	label, structure := writingLevel(category)
-	content := fmt.Sprintf("# %s\n\n## 写作要求\n%s\n\n## 建议结构\n%s\n\n## 参考约束\n请基于已授权的知识库资料补充事实；资料不足处请明确标注。", label, req.Prompt, structure)
-	if strings.TrimSpace(req.CustomTemplate) != "" {
-		content += "\n\n## 自定义模板\n" + req.CustomTemplate
+	content := fmt.Sprintf("# %s\n\n## 写作要求\n%s\n\n## 建议结构\n%s\n\n## 参考约束\n请基于已授权的知识库资料补充事实；资料不足处请明确标注。", label, prompt, structure)
+	template := strings.TrimSpace(req.Template)
+	if template == "" {
+		template = strings.TrimSpace(req.CustomTemplate)
 	}
-	c.JSON(http.StatusOK, gin.H{"content": content, "category": category, "source_type": req.SourceType, "web_search_enabled": req.WebSearchEnabled, "sources_count": 0})
+	if template != "" {
+		content += "\n\n## 自定义模板\n" + template
+	}
+	c.JSON(http.StatusOK, gin.H{"content": content, "category": category, "template": template, "key_points": prompt, "source_type": req.SourceType, "web_search_enabled": req.WebSearchEnabled, "sources_count": 0})
 }
 
 func writingLevel(category string) (string, string) {

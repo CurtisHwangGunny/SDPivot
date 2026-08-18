@@ -148,7 +148,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	// 生效，不需要重启服务。历史变量 DISABLE_REGISTRATION=true 仍在 config
 	// 启动阶段被等价提升为 invite_only（applyAuthAndTenantDefaults），
 	// 作为 cfg-default 进入 resolveRegistrationMode。
-	if h.resolveRegistrationMode(ctx) == config.AuthRegistrationModeInviteOnly {
+	if registrationClosedForEdition() || h.resolveRegistrationMode(ctx) == config.AuthRegistrationModeInviteOnly {
 		logger.Warn(ctx, "Registration rejected: auth.registration_mode=invite_only")
 		appErr := errors.NewForbiddenError("Registration is invite-only")
 		c.Error(appErr)
@@ -199,6 +199,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	logger.Infof(ctx, "User registered successfully: %s", secutils.SanitizeForLog(user.Email))
 	c.JSON(http.StatusCreated, response)
+}
+
+// registrationClosedForEdition keeps the OP product surface closed without
+// changing the SaaS registration policy. Standard builds continue to use the
+// runtime registration_mode setting above.
+func registrationClosedForEdition() bool {
+	return strings.EqualFold(strings.TrimSpace(Edition), "op")
+}
+
+// IsOPEdition reports whether this server binary was built for the OP product.
+func IsOPEdition() bool {
+	return registrationClosedForEdition()
 }
 
 // Login godoc
@@ -713,9 +725,13 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 	// Same source-of-truth as Register's gate, so the UI hide-the-button
 	// signal can never disagree with the API enforcement signal.
 	mode := h.resolveRegistrationMode(c.Request.Context())
+	if registrationClosedForEdition() {
+		mode = config.AuthRegistrationModeInviteOnly
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success":           true,
 		"registration_mode": mode,
+		"edition":           Edition,
 	})
 }
 

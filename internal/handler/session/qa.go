@@ -159,6 +159,10 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	}
 
 	// Merge @mentioned items into knowledge_base_ids and knowledge_ids
+	// OP calls these containers "spaces". They map to the same server-side
+	// knowledge-base scope, so merge them before the existing tenant/API-key
+	// authorization path rather than creating a second retrieval contract.
+	request.KnowledgeBaseIDs = append(request.KnowledgeBaseIDs, request.SpaceIDs...)
 	kbIDs, knowledgeIDs := mergeKnowledgeTargets(request.KnowledgeBaseIDs, request.KnowledgeIds, request.MentionedItems)
 	if err := types.AuthorizeTenantAPIKeyKnowledgeTargets(ctx, kbIDs, knowledgeIDs); err != nil {
 		return nil, nil, err
@@ -671,7 +675,7 @@ func (h *Handler) SearchKnowledge(c *gin.Context) {
 	}
 
 	// Merge single knowledge_base_id into knowledge_base_ids for backward compatibility
-	knowledgeBaseIDs := request.KnowledgeBaseIDs
+	knowledgeBaseIDs := append(request.KnowledgeBaseIDs, request.SpaceIDs...)
 	if request.KnowledgeBaseID != "" {
 		// Check if it's already in the list to avoid duplicates
 		found := false

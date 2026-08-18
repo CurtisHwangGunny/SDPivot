@@ -100,6 +100,31 @@ func TestRegister_InviteOnlyRejects(t *testing.T) {
 	}
 }
 
+func TestRegister_OPEditionRejects(t *testing.T) {
+	previousEdition := Edition
+	Edition = "op"
+	t.Cleanup(func() { Edition = previousEdition })
+
+	called := false
+	us := &stubRegisterUserService{
+		register: func(context.Context, *types.RegisterRequest) (*types.User, error) {
+			called = true
+			return &types.User{ID: "u1"}, nil
+		},
+	}
+	h := NewAuthHandler(&config.Config{
+		Auth: &config.AuthConfig{RegistrationMode: config.AuthRegistrationModeSelfServe},
+	}, us, nil, nil, nil)
+
+	w := doRegister(t, newRegisterTestRouter(h), validRegisterBody())
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("OP edition must return 403, got %d body=%s", w.Code, w.Body.String())
+	}
+	if called {
+		t.Fatal("UserService.Register must not be called for OP edition")
+	}
+}
+
 func TestRegister_SelfServeAllowsRegistration(t *testing.T) {
 	// Default registration_mode keeps PR 1 behaviour intact: the gate
 	// is dormant and the request reaches the user service. We don't

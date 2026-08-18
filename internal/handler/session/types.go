@@ -44,6 +44,7 @@ type ImageAttachment struct {
 type CreateKnowledgeQARequest struct {
 	Query                 string                       `json:"query"              binding:"required"` // Query text for knowledge base search
 	KnowledgeBaseIDs      []string                     `json:"knowledge_base_ids"`                    // Selected knowledge base ID for this request
+	SpaceIDs              []string                     `json:"space_ids,omitempty"`                   // OP-compatible alias for the selected spaces
 	KnowledgeIds          []string                     `json:"knowledge_ids"`                         // Selected knowledge ID for this request
 	AgentEnabled          bool                         `json:"agent_enabled"`                         // Whether agent mode is enabled for this request
 	AgentID               string                       `json:"agent_id"`                              // Selected custom agent ID (backend resolves shared agent and its workspace from share relation)
@@ -74,6 +75,7 @@ type SearchKnowledgeRequest struct {
 	Query            string                 `json:"query"              binding:"required"` // Query text to search for
 	KnowledgeBaseID  string                 `json:"knowledge_base_id"`                     // Single knowledge base ID (for backward compatibility)
 	KnowledgeBaseIDs []string               `json:"knowledge_base_ids"`                    // IDs of knowledge bases to search (multi-KB support)
+	SpaceIDs         []string               `json:"space_ids,omitempty"`                   // OP-compatible alias for multi-space search
 	KnowledgeIDs     []string               `json:"knowledge_ids"`                         // IDs of specific knowledge (files) to search
 	TagIDs           []string               `json:"tag_ids"`                               // Tag IDs for filtering within a single KB
 	MentionedItems   []MentionedItemRequest `json:"mentioned_items"`                       // Optional scoped tag mentions
