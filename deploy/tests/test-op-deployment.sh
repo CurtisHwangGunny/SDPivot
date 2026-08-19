@@ -133,6 +133,10 @@ assert "  op-ingress:\n    internal: true\n" not in text
 frontend = text.split("  sdp-frontend:\n", 1)[1].split("\nnetworks:\n", 1)[0]
 assert frontend.count("    networks:\n      - op-internal\n      - op-ingress\n") == 1
 assert frontend.count('    ports:\n      - "${OP_HTTP_BIND:-127.0.0.1}:${OP_HTTP_PORT:-8080}:80"\n') == 1
+assert 'http://localhost:8081/health' in text
+assert 'http://127.0.0.1/health' in frontend
+assert '/ready' not in text
+assert '/healthz' not in frontend
 for service in ("postgres", "redis", "migration", "docreader", "app", "sdp-backend"):
     block = text.split(f"  {service}:\n", 1)[1].split("\n  ", 1)[0]
     assert "op-ingress" not in block, service
