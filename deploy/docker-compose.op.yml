@@ -162,12 +162,14 @@ services:
 
   sdp-backend:
     <<: *runtime-defaults
-    # Build requires the executable frontend/sdpivot/sdp-server artifact.
-    # Generate it with: go build -trimpath -buildvcs=false -o frontend/sdpivot/sdp-server ./cmd/sdp-server
+    # Build directly from the main repository server source.
     image: ${OP_SDP_BACKEND_IMAGE:?OP_SDP_BACKEND_IMAGE is required}
     build:
-      context: ../frontend/sdpivot
-      dockerfile: Dockerfile.backend
+      context: ..
+      dockerfile: deploy/Dockerfile.op-backend
+      args:
+        COMMIT_ID: ${OP_BACKEND_COMMIT_ID:-unknown}
+        BUILD_TIME: ${OP_BACKEND_BUILD_TIME:-unknown}
     environment:
       OP_MODE: "true"
       BRAND: sdpivot
@@ -193,10 +195,12 @@ services:
       SDP_BOOTSTRAP_SYSADMIN_PASSWORD: ${OP_BOOTSTRAP_SYSADMIN_PASSWORD:-}
       SDP_ALLOWED_ORIGINS: ${OP_ALLOWED_ORIGINS:?OP_ALLOWED_ORIGINS is required}
       SDP_READY_TIMEOUT: ${SDP_READY_TIMEOUT:-3s}
+      JIEBA_DICT_DIR: /app/gojieba-dict
       GIN_MODE: release
       PORT: "8081"
     volumes:
       - op-sdp-files:/data/sdpivot-uploads
+      - op-sdp-gojieba-dict:/app/gojieba-dict:ro
     expose:
       - "8081"
     healthcheck:
@@ -253,3 +257,4 @@ volumes:
   op-app-files:
   op-docreader-data:
   op-sdp-files:
+  op-sdp-gojieba-dict:

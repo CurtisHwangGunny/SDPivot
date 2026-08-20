@@ -1,0 +1,27 @@
+FROM golang:1.26-bookworm AS builder
+
+WORKDIR /src
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential libsqlite3-dev && rm -rf /var/lib/apt/lists/*
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=1 go build -trimpath -buildvcs=false -o /out/sdp-server ./cmd/server
+
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tzdata && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /out/sdp-server ./sdp-server
+COPY --from=builder /src/config ./config
+COPY deploy/op-backend-entrypoint.sh ./entrypoint.sh
+RUN chmod +x sdp-server entrypoint.sh
+RUN groupadd -r appgroup && useradd -r -g appgroup -s /usr/sbin/nologin appuser
+USER appuser
+EXPOSE 8081
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -f http://localhost:8081/health || exit 1
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["./sdp-server"]
+
+ARG COMMIT_ID=unknown
+ARG BUILD_TIME=unknown
+LABEL org.opencontainers.image.source-commit=$COMMIT_ID \
+      org.opencontainers.image.build-time=$BUILD_TIME
