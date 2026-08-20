@@ -470,8 +470,8 @@ def artifact_manifest():
         ".dockerignore", "go.mod", "go.sum", "Makefile",
         "deploy/docker-compose.op.yml", "deploy/migration/Dockerfile", "deploy/migrate-op.sh",
         "docker/Dockerfile.app", "docker/Dockerfile.docreader",
-        "frontend/sdpivot/Dockerfile.backend", "frontend/sdpivot/Dockerfile.frontend",
-        "frontend/sdpivot/nginx.conf", "frontend/sdpivot/sdp-server",
+        "frontend/sdpivot/Dockerfile.backend", "frontend/Dockerfile", "frontend/nginx.conf",
+        "frontend/docker-entrypoint.sh", "frontend/sdpivot/sdp-server",
     )
     for relative in individual:
         path = os.path.join(REPO_ROOT, relative)
@@ -479,20 +479,19 @@ def artifact_manifest():
         files.add(path)
     for relative in (
         "cmd", "config", "dataset", "deps", "docs", "internal", "migrations", "packages",
-        "scripts", "skills", "docreader", "frontend/sdpivot/deps/cppjieba/dict",
-        "frontend/sdpivot/dist",
+        "scripts", "skills", "docreader", "frontend/dist",
     ):
         add_tree(files, relative)
-    dist = os.path.join(REPO_ROOT, "frontend/sdpivot/dist")
+    dist = os.path.join(REPO_ROOT, "frontend/dist")
     if os.path.lexists(os.path.join(dist, "ops.html")):
-        fail("frontend/sdpivot/dist/ops.html must not exist, including as a dangling symlink")
+        fail("frontend/dist/ops.html must not exist, including as a dangling symlink")
     assets = os.path.join(dist, "assets")
     if os.path.isdir(assets) and any(
         "OpsPage" in name or "OpsLoginPage" in name for name in os.listdir(assets)
     ):
         fail("OP build contains ops page chunks")
     index = os.path.join(dist, "index.html")
-    validate_secure_regular(index, base=REPO_ROOT, label="frontend/sdpivot/dist/index.html")
+    validate_secure_regular(index, base=REPO_ROOT, label="frontend/dist/index.html")
     rows = []
     for path in sorted(files, key=manifest_sort_key):
         rows.append(secure_file_row(path, canonical_manifest_path(path)))

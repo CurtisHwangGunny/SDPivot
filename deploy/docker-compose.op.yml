@@ -218,12 +218,12 @@ services:
 
   sdp-frontend:
     <<: *runtime-defaults
-    # Build requires an OP-only frontend/sdpivot/dist artifact produced by `npm run build:op`.
+    # Build requires an OP-only frontend/dist artifact produced by `npm run build:op`.
     # The artifact must contain index.html and must not contain ops.html.
     image: ${OP_SDP_FRONTEND_IMAGE:?OP_SDP_FRONTEND_IMAGE is required}
     build:
-      context: ../frontend/sdpivot
-      dockerfile: Dockerfile.frontend
+      context: ../frontend
+      dockerfile: Dockerfile
     networks:
       - op-internal
       - op-ingress

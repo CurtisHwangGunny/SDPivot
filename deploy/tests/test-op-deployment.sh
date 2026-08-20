@@ -20,8 +20,8 @@ cleanup_test() {
     exit "$status"
 }
 trap cleanup_test EXIT HUP INT TERM
-/bin/mkdir -p -- "$ROOT/deploy/tests" "$ROOT/deploy/migration" "$ROOT/migrations/postgres-bootstrap" "$ROOT/docker" "$ROOT/frontend/sdpivot/dist" \
-    "$ROOT/frontend/sdpivot/deps/cppjieba/dict" "$ROOT/cmd" "$ROOT/config" "$ROOT/dataset" \
+/bin/mkdir -p -- "$ROOT/deploy/tests" "$ROOT/deploy/migration" "$ROOT/migrations/postgres-bootstrap" "$ROOT/docker" "$ROOT/frontend" "$ROOT/frontend/sdpivot" "$ROOT/frontend/dist" \
+    "$ROOT/cmd" "$ROOT/config" "$ROOT/dataset" \
     "$ROOT/deps" "$ROOT/docs" "$ROOT/internal" "$ROOT/migrations" "$ROOT/packages" \
     "$ROOT/scripts" "$ROOT/skills" "$ROOT/docreader"
 for relative in \
@@ -30,13 +30,13 @@ for relative in \
     migrations/postgres-bootstrap/000012_sdpivot_op_baseline.up.sql \
     deploy/validate-op-deployment.sh deploy/op-deploy.sh deploy/tests/test-op-deployment.sh \
     docker/Dockerfile.app docker/Dockerfile.docreader \
-    frontend/sdpivot/Dockerfile.backend frontend/sdpivot/Dockerfile.frontend \
-    frontend/sdpivot/nginx.conf; do
+    frontend/sdpivot/Dockerfile.backend frontend/Dockerfile frontend/nginx.conf \
+    frontend/docker-entrypoint.sh; do
     /usr/bin/cp -- "$SOURCE_ROOT/$relative" "$ROOT/$relative"
 done
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOT/frontend/sdpivot/sdp-server"
 /bin/chmod 700 "$ROOT/frontend/sdpivot/sdp-server"
-printf '<!doctype html>\n' > "$ROOT/frontend/sdpivot/dist/index.html"
+printf '<!doctype html>\n' > "$ROOT/frontend/dist/index.html"
 /bin/mkdir -p -- "$ROOT/docs/中文目录"
 printf 'UTF-8 artifact fixture\n' > "$ROOT/docs/中文目录/数据源说明.md"
 
@@ -627,20 +627,20 @@ expect_fail backend_symlink "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" v
 /bin/rm "$ROOT/frontend/sdpivot/sdp-server"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$ROOT/frontend/sdpivot/sdp-server"
 /bin/chmod 700 "$ROOT/frontend/sdpivot/sdp-server"
-/bin/rm "$ROOT/frontend/sdpivot/dist/index.html"
-/bin/ln -s /etc/hosts "$ROOT/frontend/sdpivot/dist/index.html"
+/bin/rm "$ROOT/frontend/dist/index.html"
+/bin/ln -s /etc/hosts "$ROOT/frontend/dist/index.html"
 expect_fail index_symlink "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate
-/bin/rm "$ROOT/frontend/sdpivot/dist/index.html"
-printf '<!doctype html>\n' > "$ROOT/frontend/sdpivot/dist/index.html"
-/bin/ln "$ROOT/frontend/sdpivot/dist/index.html" "$ROOT/frontend/sdpivot/dist/index-hardlink.html"
+/bin/rm "$ROOT/frontend/dist/index.html"
+printf '<!doctype html>\n' > "$ROOT/frontend/dist/index.html"
+/bin/ln "$ROOT/frontend/dist/index.html" "$ROOT/frontend/dist/index-hardlink.html"
 expect_fail index_hardlink "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate
-/bin/rm "$ROOT/frontend/sdpivot/dist/index-hardlink.html"
+/bin/rm "$ROOT/frontend/dist/index-hardlink.html"
 /bin/ln "$ROOT/frontend/sdpivot/sdp-server" "$ROOT/frontend/sdpivot/sdp-server-hardlink"
 expect_fail backend_hardlink "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate
 /bin/rm "$ROOT/frontend/sdpivot/sdp-server-hardlink"
-/bin/ln -s missing-target "$ROOT/frontend/sdpivot/dist/ops.html"
+/bin/ln -s missing-target "$ROOT/frontend/dist/ops.html"
 expect_fail dangling_ops "$ROOT/deploy/op-deploy.sh" --env-file "$ENV_FILE" validate
-/bin/rm "$ROOT/frontend/sdpivot/dist/ops.html"
+/bin/rm "$ROOT/frontend/dist/ops.html"
 manifest_dir="$TMP_ROOT/manifest-work"
 /bin/mkdir -m 700 "$manifest_dir"
 manifest="$manifest_dir/test.manifest"
@@ -682,9 +682,9 @@ for current, dirs, names in os.walk(sys.argv[1]):
         os.chmod(os.path.join(current, name), 0o600)
 PY
 /bin/rm -rf "$stage_root"
-printf '<!-- changed -->\n' >> "$ROOT/frontend/sdpivot/dist/index.html"
+printf '<!-- changed -->\n' >> "$ROOT/frontend/dist/index.html"
 expect_fail artifact_manifest_content_changed "$ROOT/deploy/validate-op-deployment.sh" compare-artifacts "$manifest"
-printf '<!doctype html>\n' > "$ROOT/frontend/sdpivot/dist/index.html"
+printf '<!doctype html>\n' > "$ROOT/frontend/dist/index.html"
 /bin/mv "$ROOT/docs/中文目录/数据源说明.md" "$ROOT/docs/中文目录/改名说明.md"
 expect_fail artifact_manifest_path_changed "$ROOT/deploy/validate-op-deployment.sh" compare-artifacts "$manifest"
 /bin/mv "$ROOT/docs/中文目录/改名说明.md" "$ROOT/docs/中文目录/数据源说明.md"
