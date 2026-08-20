@@ -62,6 +62,10 @@ OP_DOCREADER_IMAGE=registry.internal/weknora-docreader:v1.2.3
 OP_MIGRATION_IMAGE=sdpivot-op-migration:local
 OP_SDP_BACKEND_IMAGE=sdpivot-op-backend:local
 OP_SDP_FRONTEND_IMAGE=sdpivot-op-frontend:local
+OP_BOOTSTRAP_ADMIN_EMAIL=admin@example.test
+OP_BOOTSTRAP_ADMIN_PASSWORD=J7mQ2_vL9xR4-tN6.kP8
+OP_BOOTSTRAP_SYSADMIN_EMAIL=sysadmin@example.test
+OP_BOOTSTRAP_SYSADMIN_PASSWORD=V5@pH8!zC3#sK7%yD2&m
 SDP_ENABLE_LEGACY_ALIAS=false
 DISABLE_REGISTRATION=true
 EOF
