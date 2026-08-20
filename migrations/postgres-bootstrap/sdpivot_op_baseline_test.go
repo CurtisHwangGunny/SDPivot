@@ -135,7 +135,7 @@ func TestBaselineRequiresExactAuditFingerprintBeforeProjectionAlter(t *testing.T
 		"invalid_indexes AS",
 		"WHEN NOT EXISTS (SELECT 1 FROM target) THEN 'missing'",
 		"WHEN NOT EXISTS (SELECT 1 FROM target WHERE relkind = 'r' AND relpersistence = 'p')",
-		"OR (SELECT count(*) FROM actual_columns) NOT IN (13, 17, 19, 21)",
+        "OR (SELECT count(*) FROM actual_columns) NOT IN (13, 17, 19, 21, 23)",
 		"WHEN (SELECT count(*) FROM actual_columns) = 13 THEN 'migration44_exact'",
 		"WHEN (SELECT count(*) FROM actual_columns) = 17",
 		"AND NOT EXISTS (SELECT 1 FROM invalid_current_columns) THEN 'core_current_exact'",

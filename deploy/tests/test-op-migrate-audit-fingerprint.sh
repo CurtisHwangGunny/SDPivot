@@ -101,6 +101,7 @@ run_case core62_exact_allowed 62 migration44_exact allow
 run_case core44_mixed_rejected_before_migrate 44 invalid reject
 run_case core62_mixed_rejected_before_migrate 62 invalid reject
 run_case core63_missing_rejected_before_mutation 63 missing reject
+run_case core72_baseline_projection_allowed 72 baseline_current_exact allow
 
 
 if [[ -n "${OP_TEST_PG_CONTAINER:-}" ]]; then

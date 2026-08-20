@@ -265,16 +265,34 @@ BEGIN
                 ('ip', 19, 'character varying'::regtype, 54)
         ), expected_current(attname, attnum, atttypid, atttypmod) AS (
             VALUES
-                ('scope_type', 14, 'character varying'::regtype, 36),
-                ('scope_id', 15, 'character varying'::regtype, 68)
+                ('user_id', 14, 'character varying'::regtype, 40),
+                ('resource_type', 15, 'character varying'::regtype, 36),
+                ('resource_id', 16, 'character varying'::regtype, 68),
+                ('ip_address', 17, 'character varying'::regtype, 49),
+                ('scope_type', 18, 'character varying'::regtype, 36),
+                ('scope_id', 19, 'character varying'::regtype, 68)
         ), expected_current_projection(attname, attnum, atttypid, atttypmod) AS (
             VALUES
-                ('user_id', 16, 'character varying'::regtype, 40),
-                ('username', 17, 'character varying'::regtype, 104),
-                ('resource', 18, 'character varying'::regtype, 104),
-                ('resource_id', 19, 'character varying'::regtype, 68),
+                ('username', 18, 'character varying'::regtype, 104),
+                ('resource', 19, 'character varying'::regtype, 104),
                 ('detail', 20, 'text'::regtype, -1),
                 ('ip', 21, 'character varying'::regtype, 54)
+        ), expected_core_current_v2(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('user_id', 14, 'character varying'::regtype, 40),
+                ('resource_type', 15, 'character varying'::regtype, 36),
+                ('resource_id', 16, 'character varying'::regtype, 68),
+                ('ip_address', 17, 'character varying'::regtype, 49),
+                ('scope_type', 18, 'character varying'::regtype, 36),
+                ('scope_id', 19, 'character varying'::regtype, 68)
+        ), expected_baseline_current_v2(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('username', 18, 'character varying'::regtype, 104),
+                ('resource', 19, 'character varying'::regtype, 104),
+                ('detail', 20, 'text'::regtype, -1),
+                ('ip', 21, 'character varying'::regtype, 54),
+                ('scope_type', 22, 'character varying'::regtype, 36),
+                ('scope_id', 23, 'character varying'::regtype, 68)
         ), actual_columns AS (
             SELECT a.attname, a.attnum, a.atttypid, a.atttypmod, a.attnotnull, a.attidentity,
                    d.oid AS default_oid, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS default_expr
@@ -328,6 +346,20 @@ BEGIN
             LEFT JOIN actual_columns a ON a.attname = e.attname
             WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
                OR a.atttypmod <> e.atttypmod OR a.attnotnull OR a.default_oid IS NOT NULL
+        ), invalid_core_current_v2 AS (
+            SELECT 1
+            FROM expected_core_current_v2 e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR NOT a.attnotnull
+               OR a.default_expr IS NULL
+         ), invalid_baseline_current_v2 AS (
+            SELECT 1
+            FROM expected_baseline_current_v2 e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR NOT a.attnotnull
+               OR a.default_expr IS NULL
         ), invalid_sequence AS (
             SELECT 1
             FROM target t
@@ -402,16 +434,21 @@ BEGIN
               OR EXISTS (SELECT 1 FROM invalid_sequence)
               OR EXISTS (SELECT 1 FROM invalid_primary_key)
               OR EXISTS (SELECT 1 FROM invalid_indexes)
-              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 15, 17, 19, 21)
+              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 17, 19, 21, 23)
             THEN 'invalid'
             WHEN (SELECT count(*) FROM actual_columns) = 13 THEN 'migration44_exact'
-            WHEN (SELECT count(*) FROM actual_columns) = 15
+            WHEN (SELECT count(*) FROM actual_columns) = 17
               AND NOT EXISTS (SELECT 1 FROM invalid_current_columns) THEN 'core_current_exact'
             WHEN (SELECT count(*) FROM actual_columns) = 19
               AND NOT EXISTS (SELECT 1 FROM invalid_projection_columns) THEN 'baseline_exact'
             WHEN (SELECT count(*) FROM actual_columns) = 21
               AND NOT EXISTS (SELECT 1 FROM invalid_current_columns)
               AND NOT EXISTS (SELECT 1 FROM invalid_current_projection_columns) THEN 'baseline_current_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 19
+              AND NOT EXISTS (SELECT 1 FROM invalid_core_current_v2) THEN 'core_current_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 23
+              AND NOT EXISTS (SELECT 1 FROM invalid_current_projection_columns)
+              AND NOT EXISTS (SELECT 1 FROM invalid_baseline_current_v2) THEN 'baseline_current_exact'
             ELSE 'invalid'
         END
     )

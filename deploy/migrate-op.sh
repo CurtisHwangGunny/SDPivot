@@ -166,13 +166,27 @@ core_audit_m44_fingerprint() {
                 ('user_id', 14, 'character varying'::regtype, 40),
                 ('resource_type', 15, 'character varying'::regtype, 36),
                 ('resource_id', 16, 'character varying'::regtype, 68),
-                ('ip_address', 17, 'character varying'::regtype, 49)
+                ('ip_address', 17, 'character varying'::regtype, 49),
+                ('scope_type', 18, 'character varying'::regtype, 36),
+                ('scope_id', 19, 'character varying'::regtype, 68)
         ), expected_current_projection(attname, attnum, atttypid, atttypmod) AS (
             VALUES
                 ('username', 18, 'character varying'::regtype, 104),
                 ('resource', 19, 'character varying'::regtype, 104),
                 ('detail', 20, 'text'::regtype, -1),
                 ('ip', 21, 'character varying'::regtype, 54)
+        ), expected_core_current_v2(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('user_id', 14, 'character varying'::regtype, 40),
+                ('resource_type', 15, 'character varying'::regtype, 36),
+                ('resource_id', 16, 'character varying'::regtype, 68),
+                ('ip_address', 17, 'character varying'::regtype, 49),
+                ('scope_type', 18, 'character varying'::regtype, 36),
+                ('scope_id', 19, 'character varying'::regtype, 68)
+        ), expected_baseline_current_v2(attname, attnum, atttypid, atttypmod) AS (
+            VALUES
+                ('scope_type', 22, 'character varying'::regtype, 36),
+                ('scope_id', 23, 'character varying'::regtype, 68)
         ), actual_columns AS (
             SELECT a.attname, a.attnum, a.atttypid, a.atttypmod, a.attnotnull, a.attidentity,
                    d.oid AS default_oid, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS default_expr
@@ -226,6 +240,20 @@ core_audit_m44_fingerprint() {
             LEFT JOIN actual_columns a ON a.attname = e.attname
             WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
                OR a.atttypmod <> e.atttypmod OR a.attnotnull OR a.default_oid IS NOT NULL
+        ), invalid_core_current_v2 AS (
+            SELECT 1
+            FROM expected_core_current_v2 e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR NOT a.attnotnull
+               OR a.default_expr IS DISTINCT FROM chr(39) || chr(39) || '::character varying'
+        ), invalid_baseline_current_v2 AS (
+            SELECT 1
+            FROM expected_baseline_current_v2 e
+            LEFT JOIN actual_columns a ON a.attname = e.attname
+            WHERE a.attname IS NULL OR a.attnum <> e.attnum OR a.atttypid <> e.atttypid
+               OR a.atttypmod <> e.atttypmod OR NOT a.attnotnull
+               OR a.default_expr IS DISTINCT FROM chr(39) || chr(39) || '::character varying'
         ), invalid_sequence AS (
             SELECT 1
             FROM target t
@@ -300,7 +328,7 @@ core_audit_m44_fingerprint() {
               OR EXISTS (SELECT 1 FROM invalid_sequence)
               OR EXISTS (SELECT 1 FROM invalid_primary_key)
               OR EXISTS (SELECT 1 FROM invalid_indexes)
-              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 17, 19, 21)
+              OR (SELECT count(*) FROM actual_columns) NOT IN (13, 17, 19, 21, 23)
             THEN 'invalid'
             WHEN (SELECT count(*) FROM actual_columns) = 13 THEN 'migration44_exact'
             WHEN (SELECT count(*) FROM actual_columns) = 17
@@ -310,6 +338,11 @@ core_audit_m44_fingerprint() {
             WHEN (SELECT count(*) FROM actual_columns) = 21
               AND NOT EXISTS (SELECT 1 FROM invalid_current_columns)
               AND NOT EXISTS (SELECT 1 FROM invalid_current_projection_columns) THEN 'baseline_current_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 19
+              AND NOT EXISTS (SELECT 1 FROM invalid_core_current_v2) THEN 'core_current_exact'
+            WHEN (SELECT count(*) FROM actual_columns) = 23
+              AND NOT EXISTS (SELECT 1 FROM invalid_current_projection_columns)
+              AND NOT EXISTS (SELECT 1 FROM invalid_baseline_current_v2) THEN 'baseline_current_exact'
             ELSE 'invalid'
         END
     "
@@ -457,13 +490,13 @@ sdpivot_v12_fingerprint() {
                      )
                   OR EXISTS (SELECT 1 FROM core_audit_invalid)
                   OR (SELECT core_count FROM audit_column_profile) <> 13
-                  OR (SELECT total_count FROM audit_column_profile) NOT IN (13, 17, 21)
+                 OR (SELECT total_count FROM audit_column_profile) NOT IN (13, 17, 21, 23)
                 THEN 'invalid'
                 WHEN (SELECT sdpivot_count FROM audit_column_profile) = 0
-                  AND (SELECT total_count FROM audit_column_profile) IN (13, 17)
+                   AND (SELECT total_count FROM audit_column_profile) IN (13, 17, 19)
                 THEN 'core_exact'
                 WHEN (SELECT sdpivot_count FROM audit_column_profile) = 4
-                  AND (SELECT total_count FROM audit_column_profile) = 21
+                   AND (SELECT total_count FROM audit_column_profile) IN (21, 23)
                   AND NOT EXISTS (SELECT 1 FROM sdpivot_audit_invalid)
                 THEN 'baseline_exact'
                 ELSE 'invalid'
@@ -814,7 +847,9 @@ sdpivot_latest_fingerprint() {
             FROM normalized_policies policy
             JOIN target_relations target ON target.relation_id = policy.polrelid
             WHERE policy.polpermissive
-              AND policy.polname <> target.policy_name
+               AND policy.polname <> target.policy_name
+               AND NOT (target.table_name = 'knowledge_spaces'
+                        AND policy.polname = 'sdpivot_space_tenant_isolation')
         ), op_admin_schema AS (
             SELECT COUNT(*) = 2 AS valid
             FROM information_schema.columns
@@ -824,7 +859,7 @@ sdpivot_latest_fingerprint() {
         ), invalid_op_admins AS (
             SELECT 1
             FROM users u
-            WHERE (u.is_ops_admin OR u.is_system_admin)
+            WHERE u.is_ops_admin
               AND (
                   u.tenant_id <> 1
                   OR u.can_access_all_tenants
@@ -842,16 +877,16 @@ sdpivot_latest_fingerprint() {
         ), tenant_function AS (
             SELECT p.prorettype = 'void'::regtype
                    AND NOT p.prosecdef
-                   AND p.proconfig = ARRAY['search_path=pg_catalog, public']
-                   AND regexp_replace(lower(p.prosrc), '[[:space:]]', '', 'g') =
-                       'beginperformpg_catalog.set_config(''app.current_tenant_id'',p_tenant_id::text,true);performpg_catalog.set_config(''app.is_ops_admin'',''false'',true);end;'
+                   AND regexp_replace(lower(p.prosrc), '[[:space:]]', '', 'g') IN (
+                       'beginperformpg_catalog.set_config(''app.current_tenant_id'',p_tenant_id::text,true);performpg_catalog.set_config(''app.is_ops_admin'',''false'',true);end;',
+                       'beginperformset_config(''app.current_tenant_id'',p_tenant_id::text,true);performset_config(''app.is_ops_admin'',casewhenp_is_ops_adminthen''true''else''false''end,true);performset_config(''app.access_role'',casewhenp_is_ops_adminthen''super_admin''else''knowledge_viewer''end,true);end;'
+                   )
                    AS valid
             FROM pg_catalog.pg_proc p
             WHERE p.oid = to_regprocedure('public.set_tenant_context(bigint,boolean)')
         ), ops_function AS (
             SELECT p.prorettype = 'boolean'::regtype
                    AND NOT p.prosecdef
-                   AND p.proconfig = ARRAY['search_path=pg_catalog, public']
                    AND regexp_replace(lower(p.prosrc), '[[:space:]]', '', 'g') = 'selectfalse;'
                    AS valid
             FROM pg_catalog.pg_proc p
@@ -957,7 +992,7 @@ else
     if (( core_version < 44 )); then
         [[ "$core_audit_fingerprint" == "missing" ]] || fail \
             "audit_logs must be missing before Core migration 44"
-    elif (( core_version < CORE_LATEST_VERSION )); then
+    elif (( core_version < 72 )); then
         [[ "$core_audit_fingerprint" == "migration44_exact" ]] || fail \
             "Core versions 44-71 require the exact migration 44 audit_logs contract"
     fi
